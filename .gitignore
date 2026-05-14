@@ -1,0 +1,7 @@
+build/
+.cache/
+.vscode/
+.claude/
+CLAUDE.md
+.memsearch/
+config.toml

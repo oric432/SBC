@@ -1,0 +1,113 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 23,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "default",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "vs-default",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "FFMPEG_ROOT": "C:/Ori/packages/ffmpeg-8.0-full_build-shared" 
+            }
+        },
+        {
+            "name": "vs-debug",
+            "inherits": "vs-default",
+            "description": "Visual Studio Debug build with full symbols and no optimization",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vs-release",
+            "inherits": "vs-default",
+            "description": "Visual Studio Release build with optimizations",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vs-relwithdebinfo",
+            "inherits": "vs-default",
+            "description": "Visual Studio optimized build with debug information",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
+        },
+        {
+            "name": "debug",
+            "inherits": "default",
+            "description": "Debug build with full symbols and no optimization",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release",
+            "inherits": "default",
+            "description": "Release build with optimizations",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "relwithdebinfo",
+            "inherits": "default",
+            "description": "Optimized build with debug information",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
+        }
+    ],
+    "buildPresets": [
+                {
+            "name": "vs-build-debug",
+            "configurePreset": "vs-debug"
+        },
+        {
+            "name": "vs-build-release",
+            "configurePreset": "vs-release"
+        },
+        {
+            "name": "vs-build-relwithdebinfo",
+            "configurePreset": "vs-relwithdebinfo"
+        },
+        {
+            "name": "build-debug",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "build-release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "build-relwithdebinfo",
+            "configurePreset": "relwithdebinfo"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "test-debug",
+            "configurePreset": "debug"
+        }
+    ]
+}
