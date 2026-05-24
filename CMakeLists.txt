@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+enable_testing()
+include(CTest)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 include(PreventInSourceBuilds)
@@ -25,6 +28,7 @@ target_compile_options(project_options INTERFACE
 )
 
 include(${CMAKE_SOURCE_DIR}/third_party/spdlog.cmake)
+include(${CMAKE_SOURCE_DIR}/third_party/catch2.cmake)
 
 add_executable(sbc
     src/main.cpp
@@ -49,3 +53,5 @@ target_link_libraries(sbc PRIVATE
 
 include(ClangFormat)
 add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
+
+add_subdirectory(tests)

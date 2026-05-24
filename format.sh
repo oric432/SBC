@@ -1,3 +1,3 @@
 #!/bin/bash
 
-cmake --build --preset default --target format
+cmake --preset debug && cmake --build --preset build-debug --target format
