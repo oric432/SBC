@@ -1,69 +1,59 @@
 #include "options_sm.hpp"
-#include "events.hpp"
-
-#include <boost/sml.hpp>
-#include <memory>
 
 namespace Sbc {
 
 namespace Sml = boost::sml;
 
-// Internal state machine definition (hidden from public header via Pimpl)
-template <typename Actions>
+struct SendOptionsResponse {
+    void operator()(IOptionsContext& context) const { context.send_options_response(); }
+};
+
 struct OptionsSmDef {
     auto operator()() const {
-        auto handle_options = [](Actions& actions) { actions.send_options_response(); };
-
         // clang-format off
         return Sml::make_transition_table(
-            // Idle state: OPTIONS request received, ready to process
-            *Sml::state<OptionsIdle>      +  (Sml::event<MessageReceived> / handle_options) = Sml::state<OptionsResponding>,
+            *Sml::state<OptionsIdle>      + Sml::event<MessageReceived> / SendOptionsResponse{} = Sml::state<OptionsResponding>,
 
-            // Responding state: response sent, ready to complete
-            Sml::state<OptionsResponding> +  Sml::event<ResponseSent>                       = Sml::state<OptionsDone>
+            Sml::state<OptionsResponding> + Sml::event<ResponseSent>                            = Sml::state<OptionsDone>
         );
         // clang-format on
     }
 };
 
-// Implementation class: owns and manages the Boost.SML state machine
-template <typename Actions>
-class OptionsSm<Actions>::Impl {
+class OptionsSm::Impl {
 public:
-    Impl() = default;
+    explicit Impl(IOptionsContext& context)
+        : machine_{context} {}
 
-    template <typename Event>
-    void process_event(const Event& evt) {
-        machine_.process_event(evt);
+    void process_event(const OptionsEvent& event) {
+        std::visit([this](const auto& evt) { machine_.process_event(evt); }, event);
     }
 
-    template <typename State>
-    [[nodiscard]] bool is_in() const {
-        return machine_.is(Sml::state<State>);
+    [[nodiscard]]
+    bool is_in(const OptionsState& state) const {
+        return std::visit([this]<typename T>(const T&) { return machine_.is(Sml::state<T>); }, state);
     }
 
 private:
-    Sml::sm<OptionsSmDef<Actions>> machine_{};
+    Sml::sm<OptionsSmDef> machine_;
 };
 
-// Template method implementations (delegating to Impl)
-template <typename Actions>
-OptionsSm<Actions>::OptionsSm()
-    : pimpl_{std::make_unique<Impl>()} {}
 
-template <typename Actions>
-OptionsSm<Actions>::~OptionsSm() = default;
+OptionsSm::OptionsSm(IOptionsContext& context)
+    : pimpl_{std::make_unique<Impl>(context)} {}
 
-template <typename Actions>
-OptionsSm<Actions>::OptionsSm(OptionsSm&&) noexcept = default;
+OptionsSm::~OptionsSm() = default;
 
-template <typename Actions>
-OptionsSm<Actions>& OptionsSm<Actions>::operator=(OptionsSm&&) noexcept = default;
+OptionsSm::OptionsSm(OptionsSm&&) noexcept = default;
 
-// Explicit template instantiations for test mock types
-// (Real action types are implicitly instantiated when first used)
-#ifdef __INCLUDE_MOCK_ACTIONS__
-template class OptionsSm<MockSetupActions>;
-#endif
+OptionsSm& OptionsSm::operator=(OptionsSm&&) noexcept = default;
+
+void OptionsSm::process_event(const OptionsEvent& event) {
+    pimpl_->process_event(event);
+}
+
+bool OptionsSm::is_in(const OptionsState& state) const {
+    return pimpl_->is_in(state);
+}
 
 } // namespace Sbc

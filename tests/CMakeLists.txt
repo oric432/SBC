@@ -1,6 +1,8 @@
 add_executable(sbc_tests
+    ../src/sm/options_sm.cpp
     test_setup_sm.cpp
     test_dialog_sm.cpp
+    test_options_sm.cpp
 )
 
 # Enable template instantiations for test types in state machine implementations

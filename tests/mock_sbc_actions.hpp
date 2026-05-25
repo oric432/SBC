@@ -13,8 +13,6 @@ class MockSetupActions : public ISetupContext {
 public:
     std::vector<std::string> calls_;
 
-    void send_options_response() override { calls_.emplace_back("send_options_response"); }
-
     void send_100_trying() override { calls_.emplace_back("send_100_trying"); }
 
     void send_400_bad_request() override { calls_.emplace_back("send_400_bad_request"); }
@@ -93,6 +91,21 @@ public:
     void forward_ack_and_commit_media() override { calls_.emplace_back("forward_ack_and_commit_media"); }
 
     void terminate_call() override { calls_.emplace_back("terminate_call"); }
+
+    void cleanup() override { calls_.emplace_back("cleanup"); }
+
+    [[nodiscard]] bool was_called(std::string_view name) const {
+        return std::ranges::any_of(calls_, [name](const auto& call) { return call.starts_with(name); });
+    }
+
+    void reset() { calls_.clear(); }
+};
+
+class MockOptionsActions : public IOptionsContext {
+public:
+    std::vector<std::string> calls_;
+
+    void send_options_response() override { calls_.emplace_back("send_options_response"); }
 
     void cleanup() override { calls_.emplace_back("cleanup"); }
 

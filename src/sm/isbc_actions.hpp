@@ -34,9 +34,6 @@ public:
     ISetupContext& operator=(ISetupContext&&) = delete;
     ~ISetupContext() override = default;
 
-    // Stateless/simple message responses (OPTIONS, INFO, etc.)
-    virtual void send_options_response() = 0;
-
     // Provisional responses (1xx)
     virtual void send_100_trying() = 0;
     virtual void send_400_bad_request() = 0;
@@ -101,6 +98,23 @@ public:
 
     // Call termination
     virtual void terminate_call() = 0;
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// OPTIONS CONTEXT: For OptionsSm and in-options operations
+// ════════════════════════════════════════════════════════════════════════════
+
+class IOptionsContext : public IContext {
+public:
+    IOptionsContext() = default;
+    IOptionsContext(const IOptionsContext&) = delete;
+    IOptionsContext& operator=(const IOptionsContext&) = delete;
+    IOptionsContext(IOptionsContext&&) = delete;
+    IOptionsContext& operator=(IOptionsContext&&) = delete;
+    ~IOptionsContext() override = default;
+
+    // Stateless/simple message responses (OPTIONS, INFO, etc.)
+    virtual void send_options_response() = 0;
 };
 
 } // namespace Sbc

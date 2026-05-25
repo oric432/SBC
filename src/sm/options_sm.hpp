@@ -1,43 +1,36 @@
 #pragma once
 
 #include <memory>
+#include <variant>
+
+#include "isbc_actions.hpp"
+#include "events.hpp"
 
 namespace Sbc {
 
-// Forward declarations
-struct MessageReceived;
-struct ResponseSent;
-
-// State tags for OPTIONS request processing
 struct OptionsIdle {};
 struct OptionsResponding {};
 struct OptionsDone {};
 
-// Pimpl wrapper for OPTIONS request state machine
-// Hides Boost.SML complexity from public interface
-template <typename Actions>
+using OptionsState = std::variant<OptionsIdle, OptionsResponding, OptionsDone>;
+
+using OptionsEvent = std::variant<MessageReceived, ResponseSent>;
+
 class OptionsSm {
 public:
-    OptionsSm();
+    explicit OptionsSm(IOptionsContext& context);
     ~OptionsSm();
 
-    // Not copyable, but movable
     OptionsSm(const OptionsSm&) = delete;
     OptionsSm& operator=(const OptionsSm&) = delete;
+
     OptionsSm(OptionsSm&&) noexcept;
     OptionsSm& operator=(OptionsSm&&) noexcept;
 
-    // Process events (templated to support any event type)
-    template <typename Event>
-    void process_event(const Event& evt) {
-        pimpl_->process_event(evt);
-    }
+    void process_event(const OptionsEvent& event);
 
-    // State queries (templated to check any state type)
-    template <typename State>
-    [[nodiscard]] bool is_in() const {
-        return pimpl_->template is_in<State>();
-    }
+    [[nodiscard]]
+    bool is_in(const OptionsState& state) const;
 
 private:
     class Impl;
