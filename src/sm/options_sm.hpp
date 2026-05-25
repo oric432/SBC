@@ -1,33 +1,44 @@
 #pragma once
 
-#include <boost/sml.hpp>
-
-#include "events.hpp"
+#include <memory>
 
 namespace Sbc {
 
-namespace Sml = boost::sml;
+// Forward declarations
+struct MessageReceived;
+struct ResponseSent;
 
 // State tags for OPTIONS request processing
 struct OptionsIdle {};
 struct OptionsResponding {};
 struct OptionsDone {};
 
+// Pimpl wrapper for OPTIONS request state machine
+// Hides Boost.SML complexity from public interface
 template <typename Actions>
-struct OptionsSm {
-    auto operator()() const {
-        auto handle_options = [](Actions& actions) { actions.send_options_response(); };
+class OptionsSm {
+public:
+    OptionsSm();
+    ~OptionsSm();
 
-        // clang-format off
-        return Sml::make_transition_table(
-            // Idle state: OPTIONS request received, ready to process
-            *Sml::state<OptionsIdle>      +  (Sml::event<MessageReceived> / handle_options) = Sml::state<OptionsResponding>,
+    // Not copyable, but movable
+    OptionsSm(const OptionsSm&) = delete;
+    OptionsSm& operator=(const OptionsSm&) = delete;
+    OptionsSm(OptionsSm&&) noexcept;
+    OptionsSm& operator=(OptionsSm&&) noexcept;
 
-            // Responding state: response sent, ready to complete
-            Sml::state<OptionsResponding> +  Sml::event<ResponseSent>                       = Sml::state<OptionsDone>
-        );
-        // clang-format on
-    }
+    // Process events
+    void process_event(const MessageReceived& evt);
+    void process_event(const ResponseSent& evt);
+
+    // State queries
+    [[nodiscard]] bool is_in_idle() const;
+    [[nodiscard]] bool is_in_responding() const;
+    [[nodiscard]] bool is_in_done() const;
+
+private:
+    class Impl;
+    std::unique_ptr<Impl> pimpl_;
 };
 
 } // namespace Sbc

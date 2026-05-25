@@ -32,6 +32,7 @@ include(${CMAKE_SOURCE_DIR}/third_party/catch2.cmake)
 
 add_executable(sbc
     src/main.cpp
+    src/sm/options_sm.cpp
 )
 
 target_precompile_headers(sbc PRIVATE
