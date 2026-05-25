@@ -27,14 +27,17 @@ public:
     OptionsSm(OptionsSm&&) noexcept;
     OptionsSm& operator=(OptionsSm&&) noexcept;
 
-    // Process events
-    void process_event(const MessageReceived& evt);
-    void process_event(const ResponseSent& evt);
+    // Process events (templated to support any event type)
+    template <typename Event>
+    void process_event(const Event& evt) {
+        pimpl_->process_event(evt);
+    }
 
-    // State queries
-    [[nodiscard]] bool is_in_idle() const;
-    [[nodiscard]] bool is_in_responding() const;
-    [[nodiscard]] bool is_in_done() const;
+    // State queries (templated to check any state type)
+    template <typename State>
+    [[nodiscard]] bool is_in() const {
+        return pimpl_->template is_in<State>();
+    }
 
 private:
     class Impl;

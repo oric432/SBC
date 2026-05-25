@@ -32,21 +32,21 @@ class OptionsSm<Actions>::Impl {
 public:
     Impl() = default;
 
-    void process_event(const MessageReceived& evt) { machine_.process_event(evt); }
+    template <typename Event>
+    void process_event(const Event& evt) {
+        machine_.process_event(evt);
+    }
 
-    void process_event(const ResponseSent& evt) { machine_.process_event(evt); }
-
-    [[nodiscard]] bool is_in_idle() const { return machine_.is(Sml::state<OptionsIdle>); }
-
-    [[nodiscard]] bool is_in_responding() const { return machine_.is(Sml::state<OptionsResponding>); }
-
-    [[nodiscard]] bool is_in_done() const { return machine_.is(Sml::state<OptionsDone>); }
+    template <typename State>
+    [[nodiscard]] bool is_in() const {
+        return machine_.is(Sml::state<State>);
+    }
 
 private:
     Sml::sm<OptionsSmDef<Actions>> machine_{};
 };
 
-// Template method implementations (forwarding to Impl)
+// Template method implementations (delegating to Impl)
 template <typename Actions>
 OptionsSm<Actions>::OptionsSm()
     : pimpl_{std::make_unique<Impl>()} {}
@@ -60,33 +60,8 @@ OptionsSm<Actions>::OptionsSm(OptionsSm&&) noexcept = default;
 template <typename Actions>
 OptionsSm<Actions>& OptionsSm<Actions>::operator=(OptionsSm&&) noexcept = default;
 
-template <typename Actions>
-void OptionsSm<Actions>::process_event(const MessageReceived& evt) {
-    pimpl_->process_event(evt);
-}
-
-template <typename Actions>
-void OptionsSm<Actions>::process_event(const ResponseSent& evt) {
-    pimpl_->process_event(evt);
-}
-
-template <typename Actions>
-bool OptionsSm<Actions>::is_in_idle() const {
-    return pimpl_->is_in_idle();
-}
-
-template <typename Actions>
-bool OptionsSm<Actions>::is_in_responding() const {
-    return pimpl_->is_in_responding();
-}
-
-template <typename Actions>
-bool OptionsSm<Actions>::is_in_done() const {
-    return pimpl_->is_in_done();
-}
-
 // Explicit template instantiations for test mock types
-// (Real action types are implicitly instantiated when first used in message_router.cpp)
+// (Real action types are implicitly instantiated when first used)
 #ifdef __INCLUDE_MOCK_ACTIONS__
 template class OptionsSm<MockSetupActions>;
 #endif
