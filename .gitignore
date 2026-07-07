@@ -6,3 +6,4 @@ CLAUDE.md
 .memsearch/
 config.toml
 docs/
+.claude-flow/

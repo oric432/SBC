@@ -1,40 +1,29 @@
 #pragma once
 
-#include <memory>
-#include <variant>
+#include <boost/sml.hpp>
 
-#include "isbc_actions.hpp"
 #include "events.hpp"
 
 namespace Sbc {
+
+namespace Sml = boost::sml;
 
 struct OptionsIdle {};
 struct OptionsResponding {};
 struct OptionsDone {};
 
-using OptionsState = std::variant<OptionsIdle, OptionsResponding, OptionsDone>;
+template <typename Actions>
+struct OptionsSm {
+    auto operator()() const {
+        auto send_options_response = [](Actions& actions) { actions.send_options_response(); };
 
-using OptionsEvent = std::variant<MessageReceived, ResponseSent>;
-
-class OptionsSm {
-public:
-    explicit OptionsSm(IOptionsContext& context);
-    ~OptionsSm();
-
-    OptionsSm(const OptionsSm&) = delete;
-    OptionsSm& operator=(const OptionsSm&) = delete;
-
-    OptionsSm(OptionsSm&&) noexcept;
-    OptionsSm& operator=(OptionsSm&&) noexcept;
-
-    void process_event(const OptionsEvent& event);
-
-    [[nodiscard]]
-    bool is_in(const OptionsState& state) const;
-
-private:
-    class Impl;
-    std::unique_ptr<Impl> pimpl_;
+        // clang-format off
+        return Sml::make_transition_table(
+            *Sml::state<OptionsIdle>      + (Sml::event<MessageReceived> / send_options_response) = Sml::state<OptionsResponding>,
+             Sml::state<OptionsResponding> +  Sml::event<ResponseSent>                            = Sml::state<OptionsDone>
+        );
+        // clang-format on
+    }
 };
 
 } // namespace Sbc
