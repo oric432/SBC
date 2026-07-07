@@ -29,6 +29,8 @@ target_compile_options(project_options INTERFACE
 
 include(${CMAKE_SOURCE_DIR}/third_party/spdlog.cmake)
 include(${CMAKE_SOURCE_DIR}/third_party/catch2.cmake)
+include(${CMAKE_SOURCE_DIR}/third_party/boost.cmake)
+include(${CMAKE_SOURCE_DIR}/third_party/pjsip.cmake)
 
 add_executable(sbc
     src/main.cpp
@@ -49,6 +51,9 @@ target_link_libraries(sbc PRIVATE
     project_warnings
     project_options
     spdlog::spdlog_header_only
+    Boost::asio
+    Boost::system
+    pjsip_all
 )
 
 include(ClangFormat)
