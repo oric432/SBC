@@ -7,7 +7,7 @@
 #include "mock_sbc_actions.hpp"
 
 namespace Sml = boost::sml;
-using namespace Sbc;
+using namespace SbcEngine;
 
 // Test: OptionsSm initial state
 // Verifies: OPTIONS state machine starts in Idle state
