@@ -7,7 +7,7 @@
 
 #include "sm/isbc_actions.hpp"
 
-namespace Sbc {
+namespace SbcEngine {
 
 class MockSetupActions : public ISetupContext {
 public:
@@ -116,4 +116,4 @@ public:
     void reset() { calls_.clear(); }
 };
 
-} // namespace Sbc
+} // namespace SbcEngineEngine

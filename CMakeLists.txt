@@ -62,7 +62,7 @@ target_compile_options(project_options INTERFACE
 # 7. Code Formatting
 # ==============================================================================
 include(ClangFormat)
-add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
+add_clang_format_target(format ${CMAKE_SOURCE_DIR}/engine)
 
 # ==============================================================================
 # 8. Subdirectories (Dependencies & Project Source)
@@ -71,7 +71,7 @@ add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
 add_subdirectory(third_party)
 
 # Load the main application source
-add_subdirectory(src)
+add_subdirectory(engine)
 
 # Load helper tools (like the schema generator)
 add_subdirectory(tools)

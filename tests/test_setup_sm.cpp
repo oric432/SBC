@@ -7,7 +7,7 @@
 #include "mock_sbc_actions.hpp"
 
 namespace Sml = boost::sml;
-using namespace Sbc;
+using namespace SbcEngine;
 
 // Test: Happy path from initial INVITE through dialog establishment
 // Verifies: Complete successful call setup flow without errors

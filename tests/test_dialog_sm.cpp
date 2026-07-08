@@ -7,7 +7,7 @@
 #include "mock_sbc_actions.hpp"
 
 namespace Sml = boost::sml;
-using namespace Sbc;
+using namespace SbcEngine;
 
 // Test: Caller initiates call termination
 // Verifies: Dialog SM properly handles BYE from caller and cleans up
