@@ -70,7 +70,7 @@ public:
 
     void send_200_ok_to_bye_sender() override { calls_.emplace_back("send_200_ok_to_bye_sender"); }
 
-    void forward_bye_to_other_leg() override { calls_.emplace_back("forward_bye_to_other_leg"); }
+    void forward_bye_to_other_leg(bool /*from_caller*/) override { calls_.emplace_back("forward_bye_to_other_leg"); }
 
     void forward_reinvite(const std::string& sdp) override {
         calls_.push_back("forward_reinvite:" + std::to_string(sdp.length()) + "B");
