@@ -73,5 +73,8 @@ add_subdirectory(third_party)
 # Load the main application source
 add_subdirectory(src)
 
+# Load helper tools (like the schema generator)
+add_subdirectory(tools)
+
 # Load the test suite
 add_subdirectory(tests)
