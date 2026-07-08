@@ -1,156 +1,17 @@
 #include "message_router.hpp"
-#include "sm/types.hpp"
-#include "sm/setup_sm.hpp"
-#include "sm/options_sm.hpp"
+
+#include "call/call_manager.hpp"
+#include "call/call_session.hpp"
 #include "sm/events.hpp"
-#include "sm/isbc_actions.hpp"
+#include "utils/log.hpp"
+
+using namespace SIPI;
 
 namespace Sbc {
 
-// ════════════════════════════════════════════════════════════════════════════
-// REAL IMPLEMENTATION OF ACTIONS (delegates to PJSIP)
-// ════════════════════════════════════════════════════════════════════════════
-
-class RealSetupActions : public ISetupContext {
-public:
-    // Stateless message responses
-    void send_options_response() override {
-        // TODO: Implement using PJSIP API
-        // Send 200 OK with Allow header listing supported methods
-    }
-
-    // Provisional responses
-    void send_100_trying() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void send_400_bad_request() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void send_488_not_acceptable() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // Policy denial responses
-    void send_403_forbidden() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void send_429_too_many_requests() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // Routing
-    void start_routing() override {
-        // TODO: Implement routing logic
-    }
-
-    void send_route_failure_response() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // Outbound leg
-    void create_outbound_leg([[maybe_unused]] const std::string& destination) override {
-        // TODO: Implement using PJSIP API
-        // Creates new outbound dialog to destination
-    }
-
-    void send_outbound_invite() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // Forwarding
-    void forward_180_ringing() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void forward_200_ok([[maybe_unused]] const std::string& sdp) override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void forward_rejection([[maybe_unused]] int status_code) override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // Cancel flow
-    void send_cancel() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void forward_final_response() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // ACK handling
-    void send_ack_then_bye_to_callee() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void send_failure_to_caller() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void forward_ack_and_start_dialog() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // Cleanup
-    void terminate_call() override {
-        // TODO: Implement cleanup logic
-    }
-
-    void cleanup() override {
-        // TODO: Implement cleanup logic
-    }
-};
-
-class RealDialogActions : public IDialogContext {
-public:
-    // BYE handling
-    void send_200_ok_to_bye_sender() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void forward_bye_to_other_leg() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // re-INVITE handling
-    void forward_reinvite([[maybe_unused]] const std::string& sdp) override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void reject_reinvite_488() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void reject_reinvite_491_request_pending() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void forward_reinvite_200_ok([[maybe_unused]] const std::string& sdp) override {
-        // TODO: Implement using PJSIP API
-    }
-
-    void forward_reinvite_rejection([[maybe_unused]] int status_code) override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // ACK after re-INVITE
-    void forward_ack_and_commit_media() override {
-        // TODO: Implement using PJSIP API
-    }
-
-    // Cleanup
-    void terminate_call() override {
-        // TODO: Implement cleanup logic
-    }
-
-    void cleanup() override {
-        // TODO: Implement cleanup logic
-    }
-};
+namespace {
+constexpr int kMinFinalErrorCode = 300;
+} // namespace
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC INTERFACE
@@ -158,12 +19,10 @@ public:
 
 void MessageRouter::on_rx_request(pjsip_rx_data* rx_data) {
     std::string method = extract_method(rx_data);
+    Log::sip()->debug("rx request: {}", method);
 
     if (method == "INVITE") {
         process_invite(rx_data);
-    }
-    else if (method == "OPTIONS") {
-        process_options(rx_data);
     }
     else if (method == "BYE") {
         process_bye(rx_data);
@@ -174,44 +33,104 @@ void MessageRouter::on_rx_request(pjsip_rx_data* rx_data) {
     else if (method == "ACK") {
         process_ack(rx_data);
     }
-    else if (method == "INFO") {
-        process_info(rx_data);
-    }
     else {
         send_405_method_not_allowed(rx_data);
     }
+
+    ctx_->call_manager_->purge_scheduled();
+}
+
+void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+    auto* session = static_cast<CallSession*>(inv->mod_data[ctx_->module_id_]);
+    if (session == nullptr) {
+        session = ctx_->call_manager_->find_by_inv(inv);
+    }
+    if (session == nullptr) {
+        return; // not one of ours (or already removed)
+    }
+
+    const bool is_callee_leg = (inv == session->inv_callee());
+    auto& setup = session->setup_sm();
+
+    switch (inv->state) {
+    case PJSIP_INV_STATE_EARLY:
+        // 180 from the callee → forward ringing to the caller.
+        if (is_callee_leg) {
+            setup.process_event(RingingReceived{});
+        }
+        break;
+
+    case PJSIP_INV_STATE_CONNECTING:
+        // 200 OK from the callee (ACK auto-sent by PJSIP) → forward answer.
+        if (is_callee_leg) {
+            setup.process_event(CallAccepted{extract_sdp(rdata)});
+        }
+        break;
+
+    case PJSIP_INV_STATE_CONFIRMED:
+        // ACK from the caller → dialog established.
+        if (!is_callee_leg) {
+            setup.process_event(AckReceived{});
+        }
+        break;
+
+    case PJSIP_INV_STATE_DISCONNECTED:
+        if (setup.is(Sml::state<Done>)) {
+            handle_dialog_disconnect(session, inv);
+        }
+        else {
+            handle_setup_disconnect(session, inv);
+        }
+        break;
+
+    default: break;
+    }
+
+    ctx_->call_manager_->purge_scheduled();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// STATELESS MESSAGE HANDLERS
+// INVITE-STATE DISCONNECT MAPPING
 // ════════════════════════════════════════════════════════════════════════════
 
-void MessageRouter::process_options([[maybe_unused]] pjsip_rx_data* rx_data) {
-    // OPTIONS: Stateless request handler
-    // Create OptionsSm for this OPTIONS request
-    // OptionsSm is short-lived: receives → processes → responds → done
-    // No state persisted (stateless by design)
+void MessageRouter::handle_setup_disconnect(CallSession* session, pjsip_inv_session* inv) {
+    auto& setup = session->setup_sm();
+    const bool is_callee_leg = (inv == session->inv_callee());
+    const int cause = static_cast<int>(inv->cause);
 
-    Sml::sm<OptionsSm<RealSetupActions>> machine{*setup_actions_};
+    if (is_callee_leg) {
+        if (setup.is(Sml::state<Cancelling>)) {
+            // Our CANCEL took effect; caller side is finished by PJSIP.
+            setup.process_event(InviteTerminated{});
+        }
+        else if (cause >= kMinFinalErrorCode) {
+            // Callee rejected → forward the final error to the caller.
+            setup.process_event(CallRejected{cause});
+        }
+    }
+    else {
+        // Caller leg dropped mid-setup (CANCEL or timeout) → cancel the callee.
+        setup.process_event(CancelReceived{});
+    }
 
-    // Process the OPTIONS request
-    machine.process_event(MessageReceived{});
-
-    // Send response via action (calls setup_actions_->send_options_response())
-    machine.process_event(ResponseSent{});
-
-    // Machine goes out of scope; OptionsSm instance is destroyed
+    if (setup.is(Sml::state<Failed>) || setup.is(Sml::state<Cancelled>)) {
+        setup.process_event(Cleanup{});
+    }
 }
 
-void MessageRouter::process_info([[maybe_unused]] pjsip_rx_data* rx_data) {
-    // INFO: Similar to OPTIONS but might need to know which call it's for
-    // For now, treat as stateless; could be extended to be dialog-aware
-    // Future: might want to find call_session and check if dialog exists
+void MessageRouter::handle_dialog_disconnect(CallSession* session, pjsip_inv_session* inv) {
+    auto& dialog = session->dialog_sm();
 
-    Sml::sm<OptionsSm<RealSetupActions>> machine{*setup_actions_};
-
-    machine.process_event(MessageReceived{});
-    machine.process_event(ResponseSent{});
+    if (dialog.is(Sml::state<Active>)) {
+        // First leg to drop initiates teardown of the other.
+        dialog.process_event(ByeReceived{inv == session->inv_caller()});
+    }
+    else if (dialog.is(Sml::state<Terminating>)) {
+        // Second leg finished → the call is fully over.
+        dialog.process_event(CallEnded{});
+        dialog.process_event(Cleanup{});
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -219,127 +138,143 @@ void MessageRouter::process_info([[maybe_unused]] pjsip_rx_data* rx_data) {
 // ════════════════════════════════════════════════════════════════════════════
 
 void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
-    // INVITE: Initial request, creates new SetupSm instance
-    // SetupSm persists as part of CallSession until call completes
-    // This handler is called by PJSIP when an initial INVITE arrives
+    std::string call_id = extract_call_id(rx_data);
+    if (call_id.empty()) {
+        respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);
+        return;
+    }
+    if (ctx_->call_manager_->find_by_call_id(call_id) != nullptr) {
+        // Retransmission of an INVITE we are already handling; the transaction
+        // layer answers it, nothing to orchestrate.
+        return;
+    }
 
-    // Extract SDP from INVITE message
+    // Let PJSIP vet transaction-level correctness before we orchestrate.
+    unsigned options = 0;
+    pj_status_t status = pjsip_inv_verify_request(rx_data, &options, nullptr, nullptr, ctx_->endpt_, nullptr);
+    if (status != PJ_SUCCESS) {
+        respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);
+        return;
+    }
+
+    pjsip_dialog* dlg = nullptr;
+    status = pjsip_dlg_create_uas_and_inc_lock(pjsip_ua_instance(), rx_data, nullptr, &dlg);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->error("pjsip_dlg_create_uas failed ({})", status);
+        respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    pjsip_inv_session* inv = nullptr;
+    status = pjsip_inv_create_uas(dlg, rx_data, nullptr, 0, &inv);
+    pjsip_dlg_dec_lock(dlg);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->error("pjsip_inv_create_uas failed ({})", status);
+        respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    CallSession* session = ctx_->call_manager_->create_session(call_id, ctx_);
+    session->set_inv_caller(inv);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+    inv->mod_data[ctx_->module_id_] = session;
+
     std::string sdp = extract_sdp(rx_data);
+    session->set_caller_offer_sdp(sdp);
+    session->set_current_rdata(rx_data);
 
-    // Create SetupSm for this INVITE
-    // In production, this would be stored in a CallSession object
-    // The SM instance persists because INVITE starts a long-lived call setup phase
-    Sml::sm<SetupSm<RealSetupActions>, Sml::process_queue<std::queue>> machine{*setup_actions_};
+    auto& setup = session->setup_sm();
+    setup.process_event(InviteReceived{sdp});
 
-    // Process the initial INVITE event
-    // The SM evaluates guards and transitions to Routing or Failed
-    machine.process_event(InviteReceived{sdp});
+    // Stage 1 routing is synchronous and hardcoded: drive the internal events
+    // the moment the SM asks for them.
+    // TODO: move to real actions, it won't be here after adding routing table
+    if (setup.is(Sml::state<Routing>)) {
+        setup.process_event(RouteFound{ctx_->config_.route_dest_uri_});
+    }
+    if (setup.is(Sml::state<Calling>)) {
+        setup.process_event(InviteSent{});
+    }
+    if (setup.is(Sml::state<Failed>)) {
+        setup.process_event(Cleanup{});
+    }
 
-    // At this point, the machine is in one of these states:
-    // - Routing: valid INVITE, routing is starting (RouteFound event coming later)
-    // - Failed: invalid SDP or empty INVITE (cleanup pending)
-
-    // TODO: Store this SM in a CallSession so subsequent messages
-    // for the same call (RouteFound, InviteSent, RingingReceived, etc.)
-    // can retrieve it and post events to continue processing
+    session->set_current_rdata(nullptr);
 }
 
 void MessageRouter::process_bye(pjsip_rx_data* rx_data) {
-    // BYE: In-dialog request, routes to existing DialogSm
-    // Must find the call session first to locate the active dialog
-
-    auto* call_session = find_call_session(rx_data);
-    if (!call_session) {
-        // No matching call; send 481 Call/Transaction Does Not Exist
+    // In-dialog BYEs are consumed by the invite sessions and surface through
+    // on_inv_state_changed; reaching here means the dialog does not exist.
+    if (find_call_session(rx_data) == nullptr) {
         send_481_call_does_not_exist(rx_data);
-        return;
     }
-
-    // BYE belongs to an existing dialog; route to DialogSm
-    // In production, the DialogSm is stored in CallSession
-    // Retrieve it and post the ByeReceived event
-    bool from_caller = is_from_caller(rx_data, call_session);
-    call_session->dialog_sm().process_event(ByeReceived{from_caller});
-
-    // DialogSm processes the BYE and transitions to Terminating
 }
 
 void MessageRouter::process_cancel(pjsip_rx_data* rx_data) {
-    // CANCEL: In-dialog, references an INVITE transaction
-    // Routes to SetupSm in the setup phase
-    // CANCEL cancels an in-progress INVITE before the final response
-
-    auto* call_session = find_call_session(rx_data);
-    if (!call_session) {
+    // Same as BYE: CANCEL for a live INVITE is absorbed by the transaction
+    // layer; an unmatched CANCEL gets 481.
+    if (find_call_session(rx_data) == nullptr) {
         send_481_call_does_not_exist(rx_data);
-        return;
     }
-
-    // Post CANCEL event to SetupSm (if still in setup phase)
-    // In production, this is stored in CallSession
-    call_session->setup_sm().process_event(CancelReceived{});
 }
 
-void MessageRouter::process_ack(pjsip_rx_data* rx_data) {
-    // ACK: In-dialog, matches an INVITE transaction
-    // Routes to SetupSm during setup phase (WaitingForAck state)
-    // After setup completes, could also route to DialogSm
-
-    auto* call_session = find_call_session(rx_data);
-    if (!call_session) {
-        send_481_call_does_not_exist(rx_data);
-        return;
-    }
-
-    // Post ACK event to SetupSm (or DialogSm if already established)
-    call_session->setup_sm().process_event(AckReceived{});
+void MessageRouter::process_ack([[maybe_unused]] pjsip_rx_data* rx_data) {
+    // Stray ACK (no matching dialog): ACK never gets a response; drop it.
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
 // ════════════════════════════════════════════════════════════════════════════
 
-std::string MessageRouter::extract_method([[maybe_unused]] pjsip_rx_data* rx_data) {
-    // Extract SIP method from PJSIP message
-    // Example: INVITE, BYE, CANCEL, OPTIONS, ACK, INFO
-    // Implementation depends on PJSIP API
-    // TODO: Implement using PJSIP message parsing
-    return ""; // Placeholder
+std::string MessageRouter::extract_method(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
+        return {};
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C API
+    const pj_str_t& name = rx_data->msg_info.msg->line.req.method.name;
+    return {name.ptr, static_cast<std::size_t>(name.slen)};
 }
 
-std::string MessageRouter::extract_sdp([[maybe_unused]] pjsip_rx_data* rx_data) {
-    // Extract SDP body from PJSIP message
-    // Returns empty string if no SDP body present
-    // TODO: Implement using PJSIP message body parsing
-    return ""; // Placeholder
+std::string MessageRouter::extract_sdp(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
+        return {};
+    }
+    const pjsip_msg_body* body = rx_data->msg_info.msg->body;
+    if (body == nullptr || body->data == nullptr) {
+        return {};
+    }
+    return {static_cast<const char*>(body->data), static_cast<std::size_t>(body->len)};
 }
 
-CallSession* MessageRouter::find_call_session([[maybe_unused]] pjsip_rx_data* rx_data) {
-    // Find existing CallSession by Call-ID, From tag, To tag
-    // Returns nullptr if no matching call found
-    // TODO: Implement using call session map/database
-    return nullptr; // Placeholder
+std::string MessageRouter::extract_call_id(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.cid == nullptr) {
+        return {};
+    }
+    const pj_str_t& cid = rx_data->msg_info.cid->id;
+    return {cid.ptr, static_cast<std::size_t>(cid.slen)};
 }
 
-bool MessageRouter::is_from_caller(
-    [[maybe_unused]] pjsip_rx_data* rx_data,
-    [[maybe_unused]] CallSession* call_session) {
-    // Determine if request is from the caller or callee leg
-    // Compares source address/port of request with call session leg info
-    // TODO: Implement using PJSIP transport and call session leg info
-    return true; // Placeholder
+CallSession* MessageRouter::find_call_session(pjsip_rx_data* rx_data) {
+    std::string call_id = extract_call_id(rx_data);
+    if (call_id.empty()) {
+        return nullptr;
+    }
+    return ctx_->call_manager_->find_by_call_id(call_id);
+}
+
+void MessageRouter::respond_stateless(pjsip_rx_data* rx_data, int code) {
+    pj_status_t status = pjsip_endpt_respond_stateless(ctx_->endpt_, rx_data, code, nullptr, nullptr, nullptr);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->error("stateless {} response failed ({})", code, status);
+    }
 }
 
 void MessageRouter::send_481_call_does_not_exist(pjsip_rx_data* rx_data) {
-    // Send 481 Call/Transaction Does Not Exist response
-    // This is the standard SIP response when a dialog doesn't exist
-    // TODO: Implement using PJSIP API to send response
+    respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
 }
 
 void MessageRouter::send_405_method_not_allowed(pjsip_rx_data* rx_data) {
-    // Send 405 Method Not Allowed response
-    // This is the standard SIP response for unsupported methods
-    // TODO: Implement using PJSIP API to send response
+    respond_stateless(rx_data, PJSIP_SC_METHOD_NOT_ALLOWED);
 }
 
 } // namespace Sbc

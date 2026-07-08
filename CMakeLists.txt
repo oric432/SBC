@@ -34,6 +34,15 @@ include(${CMAKE_SOURCE_DIR}/third_party/pjsip.cmake)
 
 add_executable(sbc
     src/main.cpp
+    src/call/call_manager.cpp
+    src/call/call_session.cpp
+    src/router/message_router.cpp
+    src/router/options_actions.cpp
+    src/router/real_dialog_actions.cpp
+    src/router/real_setup_actions.cpp
+    src/rtp/RtpSession.cpp
+    src/sip/pjsip_init.cpp
+    src/sip/sdp_mangler.cpp
 )
 
 target_precompile_headers(sbc PRIVATE

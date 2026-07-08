@@ -31,9 +31,9 @@ struct DialogSm {
         };
 
         // Actions
-        auto handle_bye = [](Actions& actions) {
+        auto handle_bye = [](Actions& actions, const ByeReceived& evt) {
             actions.send_200_ok_to_bye_sender();
-            actions.forward_bye_to_other_leg();
+            actions.forward_bye_to_other_leg(evt.from_caller_);
         };
 
         auto handle_reinvite = [](Actions& actions, const ReinviteReceived& evt) {

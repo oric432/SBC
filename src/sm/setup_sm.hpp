@@ -109,11 +109,8 @@ struct SetupSm {
              Sml::state<Cancelling>        + (Sml::event<InviteTerminated>                        / handle_invite_terminated)   = Sml::state<Cancelled>,
 
              // WaitingForAck state
-             Sml::state<WaitingForAck>     + (Sml::event<AckReceived>                             / handle_ack_received)        = Sml::state<Established>,
+             Sml::state<WaitingForAck>     + (Sml::event<AckReceived>                             / handle_ack_received)        = Sml::state<Done>,
              Sml::state<WaitingForAck>     + (Sml::event<AckTimeout>                              / handle_ack_timeout)         = Sml::state<Failed>,
-
-             // Established state
-             Sml::state<Established>       +  Sml::event<DialogStarted>                                                         = Sml::state<Done>,
 
              // Cleanup transitions to Done
              Sml::state<Cancelled>         + (Sml::event<Cleanup>                                 / handle_cleanup)             = Sml::state<Done>,

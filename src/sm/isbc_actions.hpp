@@ -84,7 +84,7 @@ public:
 
     // BYE handling
     virtual void send_200_ok_to_bye_sender() = 0;
-    virtual void forward_bye_to_other_leg() = 0;
+    virtual void forward_bye_to_other_leg(bool from_caller) = 0;
 
     // re-INVITE handling
     virtual void forward_reinvite(const std::string& sdp) = 0;

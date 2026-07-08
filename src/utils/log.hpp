@@ -47,6 +47,19 @@ inline std::shared_ptr<spdlog::logger> sip() {
     return logger;
 }
 
+// Native PJSIP stack output (forwarded via pj_log callback); kept separate from
+// our own "sip" logger so the two are distinguishable and filterable.
+inline std::shared_ptr<spdlog::logger> pjsip() {
+    static auto logger = make_sub_logger("pjsip");
+    return logger;
+}
+
+// Boost.SML state machine transitions/events (see Sbc::SmLogger).
+inline std::shared_ptr<spdlog::logger> sm() {
+    static auto logger = make_sub_logger("sm");
+    return logger;
+}
+
 inline std::shared_ptr<spdlog::logger> rtp() {
     static auto logger = make_sub_logger("rtp");
     return logger;

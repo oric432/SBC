@@ -54,17 +54,11 @@ TEST_CASE("SetupSm happy path", "[setup_sm]") {
     REQUIRE(actions.was_called("forward_200_ok"));
 
     // Step 6: Receive ACK from caller
-    // Expected: Transition to Established, forward ACK and start dialog SM
+    // Expected: Transition to Done, forward ACK
     actions.reset();
     machine.process_event(AckReceived{});
-    REQUIRE(machine.is(Sml::state<Established>));
-    REQUIRE(actions.was_called("forward_ack_and_start_dialog"));
-
-    // Step 7: Dialog established signal from dialog SM
-    // Expected: Transition to Done (setup phase complete)
-    actions.reset();
-    machine.process_event(DialogStarted{});
     REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("forward_ack_and_start_dialog"));
 }
 
 // Test: Invalid INVITE message (empty SDP)
