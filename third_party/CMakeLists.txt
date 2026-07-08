@@ -1,0 +1,15 @@
+include(FetchContent)
+set(FETCHCONTENT_QUIET FALSE)
+
+# 1. Include all dependency declarations (defines where to download them)
+include(${CMAKE_CURRENT_LIST_DIR}/spdlog/declare.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/catch2/declare.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/boost/declare.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/pjsip/declare.cmake)
+
+# 2. Include all dependency configurations (sets options and retrieves/builds them)
+include(${CMAKE_CURRENT_LIST_DIR}/spdlog/configure.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/catch2/configure.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/boost/configure.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/boost-sml/configure.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/pjsip/configure.cmake)

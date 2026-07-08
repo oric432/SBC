@@ -9,8 +9,6 @@ if(PJSIP_JOBS EQUAL 0)
 endif()
 
 # Determine the suffix PJSIP appends to library names.
-# PJSIP uses autoconf's config.guess, which produces the canonical GNU triple
-# (e.g. x86_64-unknown-linux-gnu) — independent of which C compiler is used.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(PJSIP_TARGET "${CMAKE_SYSTEM_PROCESSOR}-unknown-linux-gnu")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -19,8 +17,6 @@ else()
     message(FATAL_ERROR "Unsupported platform for PJSIP: ${CMAKE_SYSTEM_NAME}")
 endif()
 message(STATUS "PJSIP target suffix: ${PJSIP_TARGET}")
-
-set(PJSIP_INSTALL_DIR "${CMAKE_BINARY_DIR}/_pjsip_install")
 
 # Ordered for static linking: most-dependent first
 set(_pj_lib_names
@@ -42,7 +38,7 @@ endforeach()
 
 # Download and build PJSIP using ExternalProject_Add
 ExternalProject_Add(pjsip_external
-    URL "https://github.com/pjsip/pjproject/archive/refs/tags/2.14.1.tar.gz"
+    URL "${PJSIP_URL}"
     DOWNLOAD_EXTRACT_TIMESTAMP ON
 
     BUILD_IN_SOURCE 1
@@ -90,3 +86,5 @@ endforeach()
 
 # System libraries PJSIP depends on (nsl excluded — not available on glibc 2.32+)
 target_link_libraries(pjsip_all INTERFACE uuid m rt pthread dl)
+
+add_library(third_party::pjsip ALIAS pjsip_all)

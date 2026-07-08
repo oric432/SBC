@@ -1,24 +1,6 @@
-include(FetchContent)
-set(FETCHCONTENT_QUIET FALSE)
-
 set(BOOST_INCLUDE_LIBRARIES asio system CACHE STRING "" FORCE)
 set(BOOST_ENABLE_CMAKE ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
-  fetchcontent_declare(
-    Boost
-    URL https://github.com/boostorg/boost/releases/download/boost-1.87.0/boost-1.87.0-cmake.tar.gz
-    DOWNLOAD_EXTRACT_TIMESTAMP ON
-    SYSTEM
-  )
-else()
-  fetchcontent_declare(
-    Boost
-    URL https://github.com/boostorg/boost/releases/download/boost-1.87.0/boost-1.87.0-cmake.tar.gz
-    DOWNLOAD_EXTRACT_TIMESTAMP ON
-  )
-endif()
 
 FetchContent_MakeAvailable(Boost)
 
@@ -34,3 +16,11 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
     endif()
   endforeach()
 endif()
+
+add_library(tp_boost_asio INTERFACE)
+add_library(third_party::boost_asio ALIAS tp_boost_asio)
+target_link_libraries(tp_boost_asio INTERFACE Boost::asio)
+
+add_library(tp_boost_system INTERFACE)
+add_library(third_party::boost_system ALIAS tp_boost_system)
+target_link_libraries(tp_boost_system INTERFACE Boost::system)

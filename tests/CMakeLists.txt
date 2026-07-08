@@ -15,13 +15,10 @@ target_include_directories(sbc_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
-target_include_directories(sbc_tests SYSTEM PRIVATE
-    ${CMAKE_SOURCE_DIR}/third_party/boost-sml/include
-)
-
 target_link_libraries(sbc_tests PRIVATE
-    Catch2::Catch2WithMain
-    spdlog::spdlog_header_only
+    third_party::catch2
+    third_party::spdlog
+    third_party::boost_sml
 )
 
 include(Catch)
