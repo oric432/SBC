@@ -4,6 +4,7 @@ import { logger } from './utils/logger';
 import express from 'express';
 
 import errorHandlerMiddleware from './middlewares/errorHandlerMiddleware';
+import routesRouter from './routes/routesRouter';
 
 // Load environment variables
 dotenv.config();
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // API routes
+app.use('/api/b2bua/routes', routesRouter);
 
 // Error handling middleware (must be last)
 app.use(errorHandlerMiddleware);
