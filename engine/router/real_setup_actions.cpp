@@ -136,7 +136,7 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
     Sdp::rewrite_connection_and_port(session_.pool(), offer, cfg.local_ip_, session_.rtp_callee().port());
 
     // 4. Create the UAC dialog + invite session towards the destination.
-    std::string local_uri_s = "<sip:sbc@" + cfg.local_ip_ + ":" + std::to_string(cfg.sip_port_) + ">";
+    std::string local_uri_s = cfg.own_contact_uri();
     std::string dest_s = destination;
 
     pj_str_t local_uri = pj_str(local_uri_s.data());

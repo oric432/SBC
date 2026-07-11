@@ -1,7 +1,11 @@
 #include "message_router.hpp"
 
+#include <array>
+#include <format>
+
 #include "call/call_manager.hpp"
 #include "call/call_session.hpp"
+#include "routes/routes_store.hpp"
 #include "sm/events.hpp"
 #include "utils/log.hpp"
 
@@ -11,6 +15,18 @@ namespace SbcEngine {
 
 namespace {
 constexpr int kMinFinalErrorCode = 300;
+
+// Pulls the "user" part out of a SIP URI like "sip:callee@sbc.local", so the
+// outbound Request-URI we build for the destination keeps the same user
+// (destinations only carry an IP:port, not an identity of their own).
+std::string extract_uri_user(const std::string& uri) {
+    auto scheme_end = uri.find(':');
+    auto at_pos = uri.find('@');
+    if (scheme_end == std::string::npos || at_pos == std::string::npos || at_pos <= scheme_end) {
+        return {};
+    }
+    return uri.substr(scheme_end + 1, at_pos - scheme_end - 1);
+}
 } // namespace
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -157,8 +173,14 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         return;
     }
 
+    // Explicit contact, or PJSIP falls back to echoing the request's To-URI as
+    // Contact — the caller's ACK (its Request-URI = our Contact) then targets
+    // an address that doesn't exist and silently vanishes.
+    std::string contact_s = ctx_->config_.own_contact_uri();
+    pj_str_t contact = pj_str(contact_s.data());
+
     pjsip_dialog* dlg = nullptr;
-    status = pjsip_dlg_create_uas_and_inc_lock(pjsip_ua_instance(), rx_data, nullptr, &dlg);
+    status = pjsip_dlg_create_uas_and_inc_lock(pjsip_ua_instance(), rx_data, &contact, &dlg);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("pjsip_dlg_create_uas failed ({})", status);
         respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
@@ -186,11 +208,21 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     auto& setup = session->setup_sm();
     setup.process_event(InviteReceived{sdp});
 
-    // Stage 1 routing is synchronous and hardcoded: drive the internal events
-    // the moment the SM asks for them.
-    // TODO: move to real actions, it won't be here after adding routing table
+    // Routing is synchronous: look the request URI up in the routes table the
+    // moment the SM asks for it, and drive the SM's decision directly.
     if (setup.is(Sml::state<Routing>)) {
-        setup.process_event(RouteFound{ctx_->config_.route_dest_uri_});
+        std::string request_uri = extract_request_uri(rx_data);
+        auto route = ctx_->routes_store_ != nullptr ? ctx_->routes_store_->find_route(request_uri) : std::nullopt;
+        if (route) {
+            std::string user = extract_uri_user(route->uri);
+            std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
+                                             : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
+            setup.process_event(RouteFound{dest});
+        }
+        else {
+            Log::sip()->warn("[{}] no route found for {}", call_id, request_uri);
+            setup.process_event(RouteFailed{});
+        }
     }
     if (setup.is(Sml::state<Calling>)) {
         setup.process_event(InviteSent{});
@@ -252,6 +284,23 @@ std::string MessageRouter::extract_call_id(pjsip_rx_data* rx_data) {
     }
     const pj_str_t& cid = rx_data->msg_info.cid->id;
     return {cid.ptr, static_cast<std::size_t>(cid.slen)};
+}
+
+std::string MessageRouter::extract_request_uri(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
+        return {};
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C API
+    pjsip_uri* uri = rx_data->msg_info.msg->line.req.uri;
+    if (uri == nullptr) {
+        return {};
+    }
+    std::array<char, PJSIP_MAX_URL_SIZE> buf{};
+    int len = pjsip_uri_print(PJSIP_URI_IN_REQ_URI, uri, buf.data(), buf.size());
+    if (len < 0) {
+        return {};
+    }
+    return {buf.data(), static_cast<std::size_t>(len)};
 }
 
 CallSession* MessageRouter::find_call_session(pjsip_rx_data* rx_data) {
