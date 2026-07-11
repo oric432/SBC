@@ -4,6 +4,6 @@ build/
 .claude/
 CLAUDE.md
 .memsearch/
-config.toml
 docs/
 .claude-flow/
+settings.toml

@@ -1,5 +1,7 @@
 #include "pjsip_init.hpp"
 
+#include <format>
+
 #include <pjlib-util.h>
 #include <pjsip_ua.h>
 
@@ -13,10 +15,6 @@ namespace SbcEngine {
 namespace {
 
 constexpr unsigned kEventPollMs = 10;
-
-// Let PJSIP generate up to its most detailed output; display filtering happens
-// in spdlog, so `SBC_LOG_LEVEL=trace` reveals full native detail on demand.
-constexpr int kPjLogBasicLevel = 2;
 
 // One active stack at a time; the PJSIP module callbacks are plain C function
 // pointers with no user-data slot, so we recover the stack (and its router)
@@ -68,13 +66,18 @@ void on_inv_media_update(pjsip_inv_session* /*inv*/, pj_status_t /*status*/) {}
 
 } // namespace
 
+std::string PjsipConfig::own_contact_uri() const {
+    return std::format("<sip:{}@{}:{}>", identity_user_, local_ip_, sip_port_);
+}
+
 PjsipStack::~PjsipStack() {
     shutdown();
 }
 
 Error::VoidResult PjsipStack::init(const PjsipConfig& config) {
     // Route native PJSIP logging through spdlog before anything can log.
-    pj_log_set_level(kPjLogBasicLevel);
+    // Settings::pjsip_log_level controls this (default "disabled" -> 0).
+    pj_log_set_level(config.pjsip_log_level_);
 
     pj_status_t status = pj_init();
     if (status != PJ_SUCCESS) {

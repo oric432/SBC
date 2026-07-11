@@ -1,0 +1,7 @@
+local_sip_address = "[IP_ADDRESS]"
+local_sip_port = 5060
+log_level = "info"
+pjsip_log_level = "disabled"
+control_plane_address = "[IP_ADDRESS]"
+control_plane_http_port = 3001
+connection_timeout = 5

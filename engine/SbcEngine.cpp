@@ -5,7 +5,10 @@
 
 #include "call/call_manager.hpp"
 #include "call/sbc_context.hpp"
+#include "config/settings.hpp"
 #include "router/message_router.hpp"
+#include "routes/routes_client.hpp"
+#include "routes/routes_store.hpp"
 #include "sip/pjsip_init.hpp"
 #include "utils/log.hpp"
 
@@ -20,13 +23,40 @@ void handle_signal(int /*signum*/) {
         g_stack->stop();
     }
 }
+
 } // namespace
 
 int main() {
     Log::init_logging();
-    Log::set_log_level("debug");
+
+    auto settings_result = SbcEngine::load_settings("settings.toml");
+    if (!settings_result) {
+        Log::set_log_level("info");
+        Log::crash_error(settings_result.error().what());
+    }
+    SbcEngine::Settings settings = *settings_result;
+    Log::set_log_level(settings.log_level);
+
+    SbcEngine::RoutesStore routes_store;
+    SbcEngine::RoutesClientConfig routes_cfg{
+        .control_plane_address_ = settings.control_plane_address,
+        .control_plane_http_port_ = settings.control_plane_http_port,
+        .connection_timeout_seconds_ = settings.connection_timeout,
+    };
+    auto snapshot_result = SbcEngine::fetch_routes_snapshot(routes_cfg);
+    if (snapshot_result) {
+        Log::app()->info("loaded routing table '{}' version {}", snapshot_result->table_id, snapshot_result->version);
+        routes_store.set_snapshot(std::move(*snapshot_result));
+    }
+    else {
+        Log::app()->warn("failed to fetch routing table at startup: {}", snapshot_result.error().what());
+    }
 
     SbcEngine::PjsipConfig config;
+    config.bind_ip_ = settings.local_sip_address;
+    config.sip_port_ = settings.local_sip_port;
+    config.identity_user_ = settings.sip_identity_user;
+    config.pjsip_log_level_ = SbcEngine::resolve_pjsip_log_level(settings.pjsip_log_level);
 
     boost::asio::io_context ioc;
     SbcEngine::PjsipStack stack;
@@ -43,6 +73,7 @@ int main() {
     ctx.config_ = config;
     ctx.module_id_ = stack.module_id();
     ctx.call_manager_ = &call_manager;
+    ctx.routes_store_ = &routes_store;
 
     SbcEngine::MessageRouter router{&ctx};
     stack.set_router(&router);
@@ -55,8 +86,7 @@ int main() {
     auto work_guard = boost::asio::make_work_guard(ioc);
     std::thread asio_thread{[&ioc] { ioc.run(); }};
 
-    Log::app()
-        ->info("SBC running: SIP on {}:{}, routing to {}", config.bind_ip_, config.sip_port_, config.route_dest_uri_);
+    Log::app()->info("SBC running: SIP on {}:{}", config.bind_ip_, config.sip_port_);
 
     stack.run(); // blocks until stop()
 

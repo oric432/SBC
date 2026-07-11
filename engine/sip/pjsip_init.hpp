@@ -19,8 +19,12 @@ struct PjsipConfig {
     std::string bind_ip_ = "0.0.0.0"; // interface the SIP UDP transport binds to
     std::string local_ip_ = "127.0.0.1"; // address advertised in rewritten SDP (must be routable)
     uint16_t sip_port_ = kDefaultSipPort;
-    // Stage 1: every call routes to this fixed destination URI.
-    std::string route_dest_uri_ = "sip:callee@127.0.0.1:5080";
+    int pjsip_log_level_ = 0; // native PJSIP log verbosity (0 = disabled), see Settings::pjsip_log_level
+    std::string identity_user_ = "sbc"; // user part of our own Contact/From URI, see Settings::sip_identity_user
+
+    // "<sip:{identity_user_}@{local_ip_}:{sip_port_}>" — the SBC's own reachable
+    // address, used as Contact/From on legs it originates or answers.
+    [[nodiscard]] std::string own_contact_uri() const;
 };
 
 // RAII wrapper around the low-level PJSIP C stack.
