@@ -10,8 +10,11 @@
 namespace SbcEngine {
 
 Error::Result<Protocols::SipRouteSnapshot> fetch_routes_snapshot(const RoutesClientConfig& config) {
-    const std::string url =
-        std::format("http://{}:{}/api/b2bua/routes", config.control_plane_address_, config.control_plane_http_port_);
+    const std::string url = std::format(
+        "http://{}:{}{}",
+        config.control_plane_address_,
+        config.control_plane_http_port_,
+        ClientApiEndpoints::kRoutes);
 
     glz::http_client client;
     auto future = client.get_async(url);
@@ -23,8 +26,7 @@ Error::Result<Protocols::SipRouteSnapshot> fetch_routes_snapshot(const RoutesCli
 
     auto response = future.get();
     if (!response) {
-        return std::unexpected(
-            Error::make_error().with_context("routes fetch failed: " + response.error().message()));
+        return std::unexpected(Error::make_error().with_context("routes fetch failed: " + response.error().message()));
     }
     if (response->status_code != 200) {
         return std::unexpected(
@@ -32,8 +34,8 @@ Error::Result<Protocols::SipRouteSnapshot> fetch_routes_snapshot(const RoutesCli
     }
 
     Protocols::SipRouteSnapshot snapshot;
-    auto ec = glz::read_json(snapshot, response->response_body);
-    if (ec) {
+    auto errc = glz::read_json(snapshot, response->response_body);
+    if (errc) {
         return std::unexpected(Error::make_error().with_context("routes response JSON parse failed: " + url));
     }
     return snapshot;

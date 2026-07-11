@@ -8,6 +8,12 @@
 
 namespace SbcEngine {
 
+// API routes client endpoints.
+namespace ClientApiEndpoints {
+constexpr std::string_view kRoutes = "/api/b2bua/routes";
+}
+
+// API routes client configuration.
 struct RoutesClientConfig {
     std::string control_plane_address_;
     uint16_t control_plane_http_port_ = 0;
