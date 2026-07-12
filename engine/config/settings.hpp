@@ -33,7 +33,7 @@ struct Settings {
 // PJSIP log verbosity level (0-6, see pj_log_set_level).
 int resolve_pjsip_log_level(const std::string& level);
 
-Error::Result<Settings> load_settings(const std::string& path);
+Result<Settings> load_settings(const std::string& path);
 
 } // namespace SbcEngine
 

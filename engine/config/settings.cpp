@@ -25,12 +25,12 @@ int resolve_pjsip_log_level(const std::string& level) {
     return value;
 }
 
-Error::Result<Settings> load_settings(const std::string& path) {
+Result<Settings> load_settings(const std::string& path) {
     Settings settings;
     std::string buffer;
     auto errc = glz::read_file_toml(settings, path, buffer);
     if (errc) {
-        return std::unexpected(Error::make_error().with_context("failed to load settings from " + path));
+        return std::unexpected(Error("failed to load settings from {}", path));
     }
     return settings;
 }

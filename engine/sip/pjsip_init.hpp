@@ -44,7 +44,7 @@ public:
     PjsipStack& operator=(PjsipStack&&) = delete;
 
     // Bring up PJLib, the endpoint, the UDP transport and the SIP modules.
-    Error::VoidResult init(const PjsipConfig& config);
+    VoidResult init(const PjsipConfig& config);
 
     // Drive the SIP event loop until stop() is called (blocking).
     void run();
@@ -62,7 +62,7 @@ public:
     [[nodiscard]] MessageRouter* router() const { return router_; }
 
 private:
-    Error::VoidResult start_transport(const PjsipConfig& config);
+    VoidResult start_transport(const PjsipConfig& config);
 
     bool initialized_ = false;
     volatile bool running_ = false;

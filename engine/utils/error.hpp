@@ -1,119 +1,133 @@
 #pragma once
 
-#include <array>
-#include <cstddef>
+#include <system_error>
 #include <expected>
+#include <string_view>
+#include <string>
+#include <array>
 #include <format>
 #include <source_location>
-#include <string>
-#include <string_view>
-#include <vector>
+#include <type_traits>
+#include <spdlog/fmt/fmt.h>
 
-namespace Error {
+namespace SbcEngine {
 
-inline std::string_view trim(std::string_view str) {
-    while (!str.empty() && (str.front() == ' ' || str.front() == '\t' || str.front() == '\n' || str.front() == '\r')) {
-        str.remove_prefix(1);
-    }
-    while (!str.empty() && (str.back() == ' ' || str.back() == '\t' || str.back() == '\n' || str.back() == '\r')) {
-        str.remove_suffix(1);
-    }
+inline constexpr std::size_t kMAX_ERROR_SIZE = 128;
 
-    return str;
-}
-
-inline bool contains(std::string_view str, std::string_view needle) {
-    return str.find(needle) != std::string_view::npos;
-}
-
-inline std::string pretty_function(std::string_view fn_full) {
-    std::string_view str = trim(fn_full);
-
-    if (auto paren = str.find('('); paren != std::string_view::npos) {
-        str = trim(str.substr(0, paren));
-    }
-
-    constexpr std::array<std::string_view, 5> kCvs =
-        {"__cdecl", "__thiscall", "__stdcall", "__vectorcall", "__fastcall"};
-
-    for (auto ccs : kCvs) {
-        if (auto pres = str.rfind(ccs); pres != std::string_view::npos) {
-            auto after = pres + ccs.size();
-            if (after < str.size() && str[after] == ' ') {
-                after++;
-            }
-            str = trim(str.substr(after));
-            return std::string(str);
-        }
-    }
-
-    if (auto first_scope = str.find("::"); first_scope != std::string_view::npos) {
-        auto space_before = str.rfind(' ', first_scope);
-        if (space_before != std::string::npos) {
-            str = trim(str.substr(space_before + 1));
-        }
-        return std::string(str);
-    }
-
-    if (auto spres = str.rfind(' '); spres != std::string_view::npos) {
-        str = trim(str.substr(spres + 1));
-    }
-
-    return std::string(str);
-}
-
-inline std::string short_file_line(const std::source_location& loc) {
-    std::string_view file = loc.file_name();
-    if (auto slash = file.find_last_of("/\\"); slash != std::string_view::npos) {
-        file = file.substr(slash + 1);
-    }
-
-    return std::string(file) + ":" + std::to_string(loc.line());
-}
-
-class Error {
-public:
-    explicit Error(std::source_location location = std::source_location::current())
-        : location_(location) {}
-
-    [[nodiscard]] const std::source_location& location() const noexcept { return location_; }
-
-    [[nodiscard]] Error with_context(
-        std::string additional_context,
-        std::source_location location = std::source_location::current()) {
-        const std::string function = pretty_function(location.function_name());
-        const std::string where = short_file_line(location);
-
-        context_stack_.push_back(std::format("[{} @ {}] {}", function, where, additional_context));
-
-        return std::move(*this);
-    }
-
-    [[nodiscard]] std::string what() const {
-        std::string msg = "\n";
-        size_t depth = 0;
-
-        for (size_t i = context_stack_.size(); i-- > 0;) {
-            msg += std::string(depth * 2, ' ');
-            msg += context_stack_[i];
-            msg += "\n";
-            ++depth;
-        }
-
-        return msg;
-    }
-
+struct Error {
 private:
-    std::vector<std::string> context_stack_;
-    std::source_location location_;
+    std::error_code errc_;
+    std::array<char, kMAX_ERROR_SIZE> buffer_{};
+    std::source_location loc_;
+
+public:
+    
+    [[nodiscard]] std::error_code code() const noexcept { return errc_; }
+    [[nodiscard]] std::source_location location() const noexcept { return loc_; }
+
+    
+    void clear() noexcept {
+        errc_.clear();
+        buffer_[0] = '\0';
+    }
+
+    [[nodiscard]] std::string_view message() const noexcept {
+        return {buffer_.data()};
+    }
+
+    // Add context to error
+    template <typename... Args>
+    Error& enrich(std::format_string<Args...> fmt, Args&&... args) {
+        std::array<char, kMAX_ERROR_SIZE> temp{};
+
+        auto res1 = std::format_to_n(
+            temp.data(),
+            static_cast<std::ptrdiff_t>(kMAX_ERROR_SIZE - 1),
+            fmt,
+            std::forward<Args>(args)...);
+
+        std::size_t written = res1.size > (kMAX_ERROR_SIZE - 1) ? (kMAX_ERROR_SIZE - 1) : res1.size;
+        std::size_t remaining = (kMAX_ERROR_SIZE - 1) - written;
+
+        if (remaining > 0) {
+            auto res2 = std::format_to_n(
+                temp.data() + written,
+                static_cast<std::ptrdiff_t>(remaining),
+                " -> {}",
+                buffer_.data());
+            *res2.out = '\0';
+        } else {
+            *res1.out = '\0';
+        }
+
+        buffer_ = temp;
+        return *this;
+    }
+
+    // Wrapper to implicitly capture source location at the call site for the format string
+    template <typename... Args>
+    struct ErrorFormatString {
+        std::format_string<Args...> fmt_;
+        std::source_location loc_;
+        
+        template <std::size_t N>
+        consteval ErrorFormatString(const char (&str)[N], std::source_location loc = std::source_location::current()) 
+            : fmt_(str), loc_(loc) {}
+    };
+
+    // Pure string error (no error code)
+    template <typename... Args>
+    explicit Error(std::type_identity_t<ErrorFormatString<Args...>> fmt, Args&&... args)
+        : errc_{}, loc_(fmt.loc_) {
+        auto result = std::format_to_n(
+            buffer_.data(),
+            static_cast<std::ptrdiff_t>(kMAX_ERROR_SIZE - 1),
+            fmt.fmt_,
+            std::forward<Args>(args)...);
+        *result.out = '\0';
+    }
+
+    // Pure system error (only error code)
+    explicit Error(std::error_code errc, std::source_location loc = std::source_location::current())
+        : errc_(errc), loc_(loc) {}
+
+    // Both (system error + string context)
+    template <typename... Args>
+    Error(std::error_code errc, std::type_identity_t<ErrorFormatString<Args...>> fmt, Args&&... args)
+        : errc_(errc), loc_(fmt.loc_) {
+        auto result = std::format_to_n(
+            buffer_.data(),
+            static_cast<std::ptrdiff_t>(kMAX_ERROR_SIZE - 1),
+            fmt.fmt_,
+            std::forward<Args>(args)...);
+        *result.out = '\0';
+    }
 };
 
 template <typename T>
 using Result = std::expected<T, Error>;
 
-using VoidResult = std::expected<void, Error>;
+using VoidResult = Result<void>;
 
-inline Error make_error(std::source_location location = std::source_location::current()) {
-    return Error(location);
-}
-} // namespace Error
+} // namespace SbcEngine
+
+template <>
+struct fmt::formatter<SbcEngine::Error> {
+    static constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.begin(); }
+
+    static constexpr std::string_view basename(const char* path) noexcept {
+        std::string_view p(path);
+        auto pos = p.find_last_of("/\\");
+        return pos == std::string_view::npos ? p : p.substr(pos + 1);
+    }
+
+    template <typename FormatContext>
+    auto format(const SbcEngine::Error& err, FormatContext& ctx) const {
+        if (err.code()) {
+            return fmt::format_to(ctx.out(),"{} ({}) [{}:{}]", 
+                err.message(), err.code().message(), basename(err.location().file_name()), err.location().line());
+        }
+        return fmt::format_to(ctx.out(), "{} [{}:{}]", 
+            err.message(), basename(err.location().file_name()), err.location().line());
+    }
+};
