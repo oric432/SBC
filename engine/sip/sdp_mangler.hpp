@@ -32,4 +32,4 @@ void rewrite_connection_and_port(
 // Read the remote RTP endpoint (first media stream) the far side will listen on.
 RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 
-} // namespace SbcEngineEngine::Sdp
+} // namespace SbcEngine::Sdp

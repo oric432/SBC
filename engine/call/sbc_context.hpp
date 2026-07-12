@@ -21,4 +21,4 @@ struct SbcContext {
     int module_id_ = -1; // id of our PJSIP module, for inv->mod_data slot
 };
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine

@@ -46,4 +46,4 @@ void CallManager::purge_scheduled() {
     pending_remove_.clear();
 }
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine

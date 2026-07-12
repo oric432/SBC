@@ -134,7 +134,7 @@ private:
 
     struct StagingCsrcList {
         explicit StagingCsrcList(RtpPacket<B>& rtp_packet)
-            : rtp_packet_(rtp_packet){};
+            : rtp_packet_(rtp_packet) {};
 
         StagingCsrcList add_csrc(std::uint32_t ssrc) {
             if (!is_already_staged(ssrc) && rtp_packet_.staged_csrc_list_.size() < kMaxCsrcIds) {
@@ -179,7 +179,7 @@ public:
         , packet_size_(kFixedRTPSize) {}
 
     explicit RtpPacket(const B& buffer)
-        : buffer_(buffer){};
+        : buffer_(buffer) {};
 
     RtpPacket()
         requires(std::is_same_v<B, std::span<std::uint8_t>>)

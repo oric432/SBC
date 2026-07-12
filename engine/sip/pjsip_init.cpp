@@ -204,4 +204,4 @@ void PjsipStack::shutdown() {
     Log::sip()->info("PJSIP stack shut down");
 }
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine

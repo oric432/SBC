@@ -7,4 +7,4 @@ namespace SbcEngine {
 // Convenience alias for Boost.SML namespace
 namespace Sml = boost::sml;
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine

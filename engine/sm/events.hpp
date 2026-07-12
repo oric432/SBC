@@ -73,4 +73,4 @@ struct MessageReceived {};
 
 struct ResponseSent {};
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine

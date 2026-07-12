@@ -216,7 +216,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         if (route) {
             std::string user = extract_uri_user(route->uri);
             std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
-                                             : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
+                                            : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
             setup.process_event(RouteFound{dest});
         }
         else {
@@ -326,4 +326,4 @@ void MessageRouter::send_405_method_not_allowed(pjsip_rx_data* rx_data) {
     respond_stateless(rx_data, PJSIP_SC_METHOD_NOT_ALLOWED);
 }
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine
