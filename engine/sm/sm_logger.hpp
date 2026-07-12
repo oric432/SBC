@@ -29,7 +29,10 @@ public:
     template <class TSm, class TGuard, class TEvent>
     void log_guard(const TGuard& /*guard*/, const TEvent& /*event*/, bool result) {
         SIPI::Log::sm()->trace(
-            "{} guard on {} -> {}", tag_, short_name(Sml::aux::get_type_name<TEvent>()), result ? "pass" : "reject");
+            "{} guard on {} -> {}",
+            tag_,
+            short_name(Sml::aux::get_type_name<TEvent>()),
+            result ? "pass" : "reject");
     }
 
     template <class TSm, class TAction, class TEvent>
@@ -52,4 +55,4 @@ private:
     std::string tag_;
 };
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine

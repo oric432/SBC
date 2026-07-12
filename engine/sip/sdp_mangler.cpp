@@ -96,4 +96,4 @@ RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp) {
     return endpoint;
 }
 
-} // namespace SbcEngineEngine::Sdp
+} // namespace SbcEngine::Sdp

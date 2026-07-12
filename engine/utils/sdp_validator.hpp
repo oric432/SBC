@@ -12,4 +12,4 @@ struct SdpValidator {
     static bool is_valid_answer(const std::string& sdp) { return !sdp.empty() && sdp.starts_with("v=0"); }
 };
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine

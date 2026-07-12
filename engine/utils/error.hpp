@@ -21,19 +21,16 @@ private:
     std::source_location loc_;
 
 public:
-    
     [[nodiscard]] std::error_code code() const noexcept { return errc_; }
     [[nodiscard]] std::source_location location() const noexcept { return loc_; }
 
-    
+
     void clear() noexcept {
         errc_.clear();
         buffer_[0] = '\0';
     }
 
-    [[nodiscard]] std::string_view message() const noexcept {
-        return {buffer_.data()};
-    }
+    [[nodiscard]] std::string_view message() const noexcept { return {buffer_.data()}; }
 
     // Add context to error
     template <typename... Args>
@@ -56,7 +53,8 @@ public:
                 " -> {}",
                 buffer_.data());
             *res2.out = '\0';
-        } else {
+        }
+        else {
             *res1.out = '\0';
         }
 
@@ -69,16 +67,18 @@ public:
     struct ErrorFormatString {
         std::format_string<Args...> fmt_;
         std::source_location loc_;
-        
+
         template <std::size_t N>
-        consteval ErrorFormatString(const char (&str)[N], std::source_location loc = std::source_location::current()) 
-            : fmt_(str), loc_(loc) {}
+        consteval ErrorFormatString(const char (&str)[N], std::source_location loc = std::source_location::current())
+            : fmt_(str)
+            , loc_(loc) {}
     };
 
     // Pure string error (no error code)
     template <typename... Args>
     explicit Error(std::type_identity_t<ErrorFormatString<Args...>> fmt, Args&&... args)
-        : errc_{}, loc_(fmt.loc_) {
+        : errc_{}
+        , loc_(fmt.loc_) {
         auto result = std::format_to_n(
             buffer_.data(),
             static_cast<std::ptrdiff_t>(kMAX_ERROR_SIZE - 1),
@@ -89,12 +89,14 @@ public:
 
     // Pure system error (only error code)
     explicit Error(std::error_code errc, std::source_location loc = std::source_location::current())
-        : errc_(errc), loc_(loc) {}
+        : errc_(errc)
+        , loc_(loc) {}
 
     // Both (system error + string context)
     template <typename... Args>
     Error(std::error_code errc, std::type_identity_t<ErrorFormatString<Args...>> fmt, Args&&... args)
-        : errc_(errc), loc_(fmt.loc_) {
+        : errc_(errc)
+        , loc_(fmt.loc_) {
         auto result = std::format_to_n(
             buffer_.data(),
             static_cast<std::ptrdiff_t>(kMAX_ERROR_SIZE - 1),
@@ -124,10 +126,19 @@ struct fmt::formatter<SbcEngine::Error> {
     template <typename FormatContext>
     auto format(const SbcEngine::Error& err, FormatContext& ctx) const {
         if (err.code()) {
-            return fmt::format_to(ctx.out(),"{} ({}) [{}:{}]", 
-                err.message(), err.code().message(), basename(err.location().file_name()), err.location().line());
+            return fmt::format_to(
+                ctx.out(),
+                "{} ({}) [{}:{}]",
+                err.message(),
+                err.code().message(),
+                basename(err.location().file_name()),
+                err.location().line());
         }
-        return fmt::format_to(ctx.out(), "{} [{}:{}]", 
-            err.message(), basename(err.location().file_name()), err.location().line());
+        return fmt::format_to(
+            ctx.out(),
+            "{} [{}:{}]",
+            err.message(),
+            basename(err.location().file_name()),
+            err.location().line());
     }
 };

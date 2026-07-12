@@ -43,4 +43,4 @@ private:
     std::vector<std::string> pending_remove_;
 };
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine

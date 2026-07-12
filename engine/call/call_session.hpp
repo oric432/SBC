@@ -81,4 +81,4 @@ private:
     DialogMachine dialog_sm_;
 };
 
-} // namespace SbcEngineEngine
+} // namespace SbcEngine
