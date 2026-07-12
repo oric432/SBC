@@ -28,8 +28,8 @@ std::string pj_status_str(pj_status_t status) {
     return {buf.data()};
 }
 
-Error::Error pj_error(const std::string& what, pj_status_t status) {
-    return Error::make_error().with_context(what + ": " + pj_status_str(status));
+Error pj_error(const std::string& what, pj_status_t status) {
+    return Error("{}: {}", what, pj_status_str(status));
 }
 
 // Application module: receives out-of-dialog requests (initial INVITE, OPTIONS,
@@ -74,7 +74,7 @@ PjsipStack::~PjsipStack() {
     shutdown();
 }
 
-Error::VoidResult PjsipStack::init(const PjsipConfig& config) {
+VoidResult PjsipStack::init(const PjsipConfig& config) {
     // Route native PJSIP logging through spdlog before anything can log.
     // Settings::pjsip_log_level controls this (default "disabled" -> 0).
     pj_log_set_level(config.pjsip_log_level_);
@@ -147,7 +147,7 @@ Error::VoidResult PjsipStack::init(const PjsipConfig& config) {
     return {};
 }
 
-Error::VoidResult PjsipStack::start_transport(const PjsipConfig& config) {
+VoidResult PjsipStack::start_transport(const PjsipConfig& config) {
     pj_sockaddr_in addr;
     pj_bzero(&addr, sizeof(addr));
     addr.sin_family = pj_AF_INET();

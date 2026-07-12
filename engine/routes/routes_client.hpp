@@ -22,6 +22,6 @@ struct RoutesClientConfig {
 
 // Fetches the current SIP routing table snapshot from the control plane's
 // GET /api/b2bua/routes endpoint using glaze's built-in HTTP client.
-Error::Result<Protocols::SipRouteSnapshot> fetch_routes_snapshot(const RoutesClientConfig& config);
+Result<Protocols::SipRouteSnapshot> fetch_routes_snapshot(const RoutesClientConfig& config);
 
 } // namespace SbcEngine

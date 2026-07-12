@@ -32,7 +32,7 @@ int main() {
     auto settings_result = SbcEngine::load_settings("settings.toml");
     if (!settings_result) {
         Log::set_log_level("info");
-        Log::crash_error(settings_result.error().what());
+        Log::crash_error(settings_result.error().message());
     }
     SbcEngine::Settings settings = *settings_result;
     Log::set_log_level(settings.log_level);
@@ -49,7 +49,7 @@ int main() {
         routes_store.set_snapshot(std::move(*snapshot_result));
     }
     else {
-        Log::app()->warn("failed to fetch routing table at startup: {}", snapshot_result.error().what());
+        Log::app()->warn("failed to fetch routing table at startup: {}", snapshot_result.error());
     }
 
     SbcEngine::PjsipConfig config;
@@ -62,7 +62,7 @@ int main() {
     SbcEngine::PjsipStack stack;
 
     if (auto res = stack.init(config); !res) {
-        Log::crash_error(res.error().what());
+        Log::crash_error(res.error().message());
     }
 
     SbcEngine::CallManager call_manager;
