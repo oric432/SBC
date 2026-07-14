@@ -54,10 +54,13 @@ Guidance for coding agents (any LLM tool) working in the `engine` component of t
 
 8. **Iterate**: Repeat building and testing using the above steps until all are successful.
 
+### Post-Change Checklist
+After making any code changes, you MUST complete the following checklist before considering the task complete:
+- [ ] **Run Format**: Run `make format` or `./format.sh` (or apply `clang-format` directly) to ensure the code complies with the project's formatting standard.
+- [ ] **Run Static Analysis**: Run `clang-tidy` on the modified files to ensure no new warnings or errors are introduced.
+
 ### Coding Standards & Style
 - **C++ Standard**: The project uses **C++26**, as defined in the `CMakeLists.txt`. Ensure all newly written code leverages modern C++26 features appropriately and remains compliant with it.
-- **Formatting**: The project uses `clang-format`. Always write code that matches the current `.clang-format` rules. If in doubt or if code looks messy, adjust it so that it conforms strictly to the project's formatting standard. Note that there is a `format.sh` script and a `format` target in CMake (`make format`).
-- **Static Analysis**: The project uses `clang-tidy`. Ensure that any new code satisfies the `.clang-tidy` checks configured in the repository. Do not introduce new warnings or errors.
 - **Class/Struct Definitions**: Each **class** must be defined in its own single file (one class per file). **Structs**, however, are fine to declare multiple in the same file.
 - **Interface Naming**: All **interfaces** must start with the prefix `I` (e.g., `IRouter`, `IHandler`).
 - **Configuration Updates**: If you make any changes to the configuration settings in the code, ALWAYS make sure to update the corresponding example configuration file (e.g., `settings-example.toml`) to keep it in sync.
