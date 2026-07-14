@@ -3,7 +3,7 @@
 Guidance for coding agents (any LLM tool) working in the `engine` component of the SBC project.
 
 ## Paths
-- All code for this component resides inside the `SBC/engine/` directory. Treat this directory as the root for all engine-related changes.
+- All code for this component resides inside the `engine/` directory (relative to the workspace root). Treat this directory as the root for all engine-related changes.
 
 ## Workflow Tips
 
