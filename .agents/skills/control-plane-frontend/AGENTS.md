@@ -16,9 +16,6 @@ not touch the engine or Postgres directly.
 React 18, TypeScript, Vite 7, Tailwind + Radix/shadcn (`src/components/ui`), Redux Toolkit +
 RTK Query, react-hook-form + zod, react-router-dom, sonner (toasts).
 
-Apply the `vercel-react-best-practices` skill (`.agents/skills/vercel-react-best-practices/AGENTS.md`)
-when writing or reviewing code here.
-
 ## Project structure
 
 New features follow the same shape as `features/routes/`: an `api.ts` (RTK Query slice), a
@@ -44,11 +41,12 @@ Every backend endpoint returns an envelope (see `src/lib/api.ts`, mirrors backen
 
 ## Protocol / schema source of truth
 
-Route payload shapes come from the C++ engine (`engine/protocols/SipRoutes.hpp`), exported as
-JSON Schema by `tools/schema_generator.cpp` into `schemas/b2bua/*.json`. `features/routes/types.ts`
-hand-mirrors those types (see the comment at the top of that file) — there's no codegen, so if the
-engine struct changes, this file needs a matching manual update, along with the backend's
-`src/types/sipRoutes.ts` and Drizzle schema.
+Route payload shapes are defined by the JSON Schema files in `schemas/b2bua/*.json`
+(`sip_route_rule.json`, `sip_route_snapshot.json`, `sip_route_update.json`) — check those for field
+names, optionality, and int ranges. `features/routes/types.ts` hand-mirrors those schemas (see the
+comment at the top of that file) — there's no codegen, so if `schemas/b2bua/*.json` changes, this
+file needs a matching manual update, along with the backend's `src/types/sipRoutes.ts` and Drizzle
+schema.
 
 ## Conventions
 

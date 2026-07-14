@@ -15,9 +15,6 @@ the engine's config loader/route table is expected to read from, matching the sc
 
 Express 4, TypeScript (NodeNext modules), Drizzle ORM, `pg`, Zod validation, `http-status-codes`.
 
-Apply the `nodejs-best-practices` skill (`.agents/skills/nodejs-best-practices/SKILL.md`) when
-writing or reviewing code here.
-
 ## API response envelope
 
 Every endpoint returns one of these two shapes — always use `sendSuccess`/`sendError` from
@@ -55,11 +52,10 @@ from a controller and `errorHandlerMiddleware` turns them into the envelope auto
 
 ## Protocol / schema source of truth
 
-The route payload shape (`SipRouteRule`, `SipRouteSnapshot`) is defined in the C++ engine at
-`engine/protocols/SipRoutes.hpp` and exported as JSON Schema via `tools/schema_generator.cpp` into
+The route payload shape (`SipRouteRule`, `SipRouteSnapshot`) is defined by the JSON Schema files in
 `schemas/b2bua/*.json` (`sip_route_rule.json`, `sip_route_snapshot.json`, `sip_route_update.json`).
-`src/types/sipRoutes.ts` hand-mirrors those types — there is no codegen step, so if the engine
-struct changes, update `src/types/sipRoutes.ts` (and the Drizzle schema / frontend
+`src/types/sipRoutes.ts` hand-mirrors those schemas — there is no codegen step, so if
+`schemas/b2bua/*.json` changes, update `src/types/sipRoutes.ts` (and the Drizzle schema / frontend
 `features/routes/types.ts`) to match by hand. Check `schemas/b2bua/*.json` when in doubt about
 field names, optionality, or int ranges.
 

@@ -4,31 +4,26 @@ C++26 B2BUA/SBC core. Target: `SbcEngine` (see `CMakeLists.txt`). Owns both SIP 
 call, rewrites SDP, and anchors RTP through itself. High-level design and state-machine philosophy
 are in the root [`AGENTS.md`](../AGENTS.md); this file covers the engine's own layout.
 
-## Layout
+## Configuration
 
-```
-SbcEngine.cpp        entry point: loads settings, fetches route snapshot, boots PJSIP + asio, wires everything into MessageRouter
-call/                CallSession (owns a call's 2 PJSIP inv_sessions, 2 RtpSessions, SM instances) and CallManager (Call-ID -> CallSession map)
-router/              MessageRouter dispatches incoming SIP messages to the Setup/Dialog/Options state machines; *_actions.{hpp,cpp} are the SM action implementations
-sm/                  Boost.SML state machines (setup_sm, dialog_sm, options_sm) plus shared events/types
-sip/                 PjsipStack (RAII init/shutdown of the PJSIP endpoint) and sdp_mangler (SDP rewriting for RTP anchoring)
-rtp/                 RtpSession (asio-based relay, symmetric-RTP latching) and the RTP/RTCP packet types (RtpPacket, PayloadTypes, endianness)
-routes/              RoutesStore (thread-safe in-memory route table) and RoutesClient (fetches the snapshot from control-plane over HTTP via glaze)
-protocols/           SipRoutes.hpp — the route rule/snapshot schema shared with control-plane (source of truth for schemas/b2bua/*.json, see tools/schema_generator.cpp)
-config/              Settings loaded from settings.toml (glaze-reflected struct)
-utils/               assert/error/log helpers, sdp_validator
-```
+Before running, copy `settings-example.toml` to `settings.toml` (repo root — the binary reads
+`settings.toml` from its working directory) and fill in the placeholder `[IP_ADDRESS]` values.
+Startup aborts with `Log::crash_error` if the file is missing or fails to parse.
 
-## Call flow
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `local_sip_address` | `"[IP_ADDRESS]"` | IP the SIP transport binds to. Must be a real interface address, not `0.0.0.0`, if you want SDP-anchored RTP to reach this box from other hosts. |
+| `local_sip_port` | `5060` | Local SIP listening port. |
+| `sip_identity_user` | `"sbc"` | User part of this SBC's own Contact/From URI. |
+| `log_level` | `"info"` | App log verbosity (spdlog levels). |
+| `pjsip_log_level` | `"disabled"` | PJSIP's own log verbosity. `"disabled"` (or anything unrecognized) maps to `0`; otherwise it's parsed as a native PJSIP level `0`-`6` (see `pj_log_set_level`). |
+| `control_plane_address` | `"[IP_ADDRESS]"` | Host of the control-plane backend the engine fetches the SIP route table from at startup. |
+| `control_plane_http_port` | `3001` | control-plane backend's HTTP port. |
+| `connection_timeout` | `5` | Seconds to wait when fetching the route snapshot from control-plane. |
 
-`SbcEngine.cpp` loads `settings.toml`, fetches the routing snapshot from control-plane
-(`routes/routes_client.cpp`) into a `RoutesStore`, initializes PJSIP (`sip/pjsip_init.cpp`), and
-constructs a `MessageRouter` wired to a shared `SbcContext` (endpoint, io_context, config,
-`CallManager`, `RoutesStore`). Inbound SIP messages reach `MessageRouter`, which maps PJSIP
-inv-session state changes onto Setup/Dialog SM events (see root `AGENTS.md` for the transition
-tables) and delegates side effects to `real_setup_actions` / `real_dialog_actions` /
-`options_actions`. Each in-progress call is a `CallSession`, tracked by `CallManager` under its
-Call-ID.
+If the route-snapshot fetch fails at startup, the engine logs a warning and keeps running with an
+empty route table rather than crashing — routing will fail until control-plane is reachable and
+the engine is restarted (there's no background refresh yet).
 
 ## Build & test
 
@@ -36,20 +31,11 @@ From the repo root:
 
 ```bash
 cmake --preset debug && cmake --build --preset build-debug
-ctest --test-dir build          # Catch2 SM tests (tests/test_setup_sm.cpp, test_dialog_sm.cpp, test_options_sm.cpp)
+ctest --test-dir build
 ./build/sbc
 ```
 
-`tests/` covers the state machines via mocked actions (`mock_sbc_actions.hpp`). Everything else in
+`tests/` covers the state machines via mocked actions. Everything else in
 this directory (RTP packet parsing, `sdp_mangler`, `SdpValidator`, `PjsipStack`, `MessageRouter`)
 has no unit coverage yet — verify changes there against a live call (see root `AGENTS.md` for build
 commands) until that gap is closed.
-
-## Known gaps
-
-- `SdpValidator::is_valid_offer/answer` only check for a `v=0` prefix — not a real SDP grammar check.
-- `rtp/endianness.hpp` `read_big_endian<uint64_t>`/`write_big_endian<uint64_t>` have known bugs
-  (missing read branch, wrong write shifts) — don't rely on 64-bit big-endian round-tripping there.
-- `router/message_router.cpp` takes raw `pjsip_rx_data*` with no injectable seam, so it can't be
-  unit-tested in isolation without a refactor (e.g. an `IRxDataReader` interface).
-- Re-INVITE handling in the Dialog SM actions is stubbed.
