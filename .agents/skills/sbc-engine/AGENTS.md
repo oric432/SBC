@@ -7,19 +7,6 @@ Guidance for coding agents (any LLM tool) working in this repo.
 SIP SBC/B2BUA in C++26, low-level PJSIP C API + Boost.SML state machines for call orchestration.
 B2BUA: owns inbound + outbound SIP dialogs, rewrites SDP, anchors RTP through itself.
 
-## Build & Test
-
-```bash
-cmake --preset debug && cmake --build --preset build-debug   # clang/Ninja
-cmake --preset vs-debug && cmake --build --preset vs-build-debug  # MSVC
-cmake --build build --target format          # format (format.sh may fail to resolve preset in some envs)
-clang-tidy -p build/compile_commands.json engine/**/*.cpp
-ctest --test-dir build                        # Catch2 tests in tests/
-./build/sbc
-```
-
-Other presets: `release`, `relwithdebinfo` (and `vs-` equivalents).
-
 ## Conventions
 
 - Naming (enforced by `.clang-tidy`): types/classes `CamelCase`; functions/variables `lower_case`;

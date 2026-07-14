@@ -1,8 +1,8 @@
 # AGENTS.md — control-plane/backend
 
 Guidance for Claude Code when working in this directory. Read together with:
-- `/home/ori/Projects/SBC/AGENTS.md` — the overall SBC project (the C++ B2BUA engine this backend manages)
-- `/home/ori/Projects/SBC/control-plane/README.md` — full setup/dev doc for both backend and frontend
+- `SBC/AGENTS.md` — the overall SBC project (the C++ B2BUA engine this backend manages)
+- `SBC/control-plane/README.md` — full setup/dev doc for both backend and frontend
 
 ## What this is
 
@@ -17,53 +17,6 @@ Express 4, TypeScript (NodeNext modules), Drizzle ORM, `pg`, Zod validation, `ht
 
 Apply the `nodejs-best-practices` skill (`.agents/skills/nodejs-best-practices/SKILL.md`) when
 writing or reviewing code here.
-
-## How to run
-
-```bash
-npm install
-cp .env-example .env        # adjust DATABASE_URL if needed
-docker compose up -d        # start Postgres (port 5432)
-npm run db:migrate          # apply schema
-npm run db:seed             # seed default route table
-npm run dev                 # tsc build + node dist/app.js, http://localhost:3001
-```
-
-`npm run dev` and `npm start` both do a full `tsc` build then run `dist/app.js` — there is no
-watch/hot-reload; re-run after every change. `npm run lint` / `npm run format` before committing.
-
-The server starts even if Postgres is unreachable — it logs a warning and DB-backed endpoints
-return `503` until the DB comes up (see Error Handling below). Don't "fix" this by making startup
-fail on DB-down; that's intentional.
-
-## Build
-
-```bash
-npm run build     # tsc -p . -> dist/
-```
-
-No test runner configured yet (`npm test` is a stub). Verify changes via `tsc --noEmit` plus a
-live curl against the running server.
-
-## Project structure
-
-```
-src/
-├── app.ts                    # express app wiring, CORS, error middleware, startup DB check
-├── db/
-│   ├── client.ts              # pg Pool + drizzle instance, checkDbConnection()
-│   └── schema.ts               # drizzle table definitions (source of truth for DB shape)
-├── controllers/                # request handlers, one per resource
-├── routes/                     # express Routers, wire path -> controller
-├── middlewares/
-│   ├── errorHandlerMiddleware.ts   # last-resort handler, applies the response envelope
-│   └── validation.ts               # zod-based validateBody/Params/Query
-├── errors/                     # CustomAPIError subclasses (BadRequestError, NotFoundError, ...)
-├── types/                      # request/response payload types, mirrored from engine schemas
-└── utils/
-    ├── apiResponse.ts           # sendSuccess/sendError — the response envelope, use these, not res.json()
-    └── logger.ts
-```
 
 ## API response envelope
 

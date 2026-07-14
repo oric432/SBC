@@ -6,3 +6,4 @@ build/
 docs/
 .claude-flow/
 settings.toml
+skills-lock.json
