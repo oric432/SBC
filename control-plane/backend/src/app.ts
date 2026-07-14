@@ -1,10 +1,14 @@
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { StatusCodes } from 'http-status-codes';
 import { logger } from './utils/logger';
 import express from 'express';
+import 'express-async-errors';
 
+import { checkDbConnection } from './db/client';
 import errorHandlerMiddleware from './middlewares/errorHandlerMiddleware';
 import routesRouter from './routes/routesRouter';
+import { sendError } from './utils/apiResponse';
 
 // Load environment variables
 dotenv.config();
@@ -29,11 +33,25 @@ app.use(errorHandlerMiddleware);
 
 // 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  sendError(res, 'Route not found', StatusCodes.NOT_FOUND);
 });
 
 app.listen(PORT, () => {
   logger.success(`Server started on port ${PORT}`);
+
+  checkDbConnection().then((connected) => {
+    if (!connected) {
+      logger.warn(
+        'Database not reachable — DB-backed endpoints will return 503 until it is available',
+      );
+    } else {
+      logger.success('Database connection OK');
+    }
+  });
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', reason);
 });
 
 export default app;

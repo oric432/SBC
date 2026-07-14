@@ -11,6 +11,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useDeleteRouteMutation } from "@/features/routes/api";
+import { getApiErrorMessage } from "@/lib/api";
 
 interface DeleteRouteAlertProps {
     open: boolean;
@@ -26,8 +27,8 @@ export function DeleteRouteAlert({ open, onOpenChange, routeKey }: DeleteRouteAl
             await deleteRoute(routeKey).unwrap();
             toast.success(`Route "${routeKey}" deleted`);
             onOpenChange(false);
-        } catch {
-            toast.error("Failed to delete route");
+        } catch (error) {
+            toast.error(getApiErrorMessage(error));
         }
     };
 

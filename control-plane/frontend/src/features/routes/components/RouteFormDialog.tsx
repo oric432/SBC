@@ -17,6 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { useCreateRouteMutation, useUpdateRouteMutation } from "@/features/routes/api";
 import type { RouteRuleWithKey } from "@/features/routes/types";
+import { getApiErrorMessage } from "@/lib/api";
 
 const routeFormSchema = z.object({
     route_key: z.string().min(1, "Route key is required"),
@@ -63,8 +64,8 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                 toast.success(`Route "${payload.route_key}" created`);
             }
             onOpenChange(false);
-        } catch {
-            toast.error(isEdit ? "Failed to update route" : "Failed to create route");
+        } catch (error) {
+            toast.error(getApiErrorMessage(error));
         }
     };
 

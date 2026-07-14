@@ -5,6 +5,7 @@ import { db } from '../db/client';
 import { routeRules, routeTables } from '../db/schema';
 import { NotFoundError } from '../errors';
 import { SipRouteSnapshot } from '../types/sipRoutes';
+import { sendSuccess } from '../utils/apiResponse';
 
 const DEFAULT_TABLE_ID = 'default';
 
@@ -39,5 +40,5 @@ export const getRoutes = async (_req: Request, res: Response) => {
     ),
   };
 
-  res.status(200).json(snapshot);
+  sendSuccess(res, snapshot);
 };

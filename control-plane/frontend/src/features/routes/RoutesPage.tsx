@@ -8,9 +8,10 @@ import { DeleteRouteAlert } from "@/features/routes/components/DeleteRouteAlert"
 import { RouteFormDialog } from "@/features/routes/components/RouteFormDialog";
 import { RouteTable } from "@/features/routes/components/RouteTable";
 import type { RouteRuleWithKey } from "@/features/routes/types";
+import { getApiErrorMessage } from "@/lib/api";
 
 export function RoutesPage() {
-    const { data, isLoading, isError } = useGetRoutesQuery();
+    const { data, isLoading, isError, error } = useGetRoutesQuery();
 
     const [formOpen, setFormOpen] = useState(false);
     const [editingRoute, setEditingRoute] = useState<RouteRuleWithKey | undefined>(undefined);
@@ -51,7 +52,7 @@ export function RoutesPage() {
                 </div>
             ) : isError ? (
                 <div className="flex h-32 items-center justify-center rounded-md border border-dashed text-sm text-destructive">
-                    Failed to load routes.
+                    {getApiErrorMessage(error)}
                 </div>
             ) : (
                 <RouteTable routes={routes} onEdit={openEditDialog} onDelete={setDeletingRoute} />
