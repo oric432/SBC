@@ -4,34 +4,29 @@ Guidance for coding agents (any LLM tool) working in this repo.
 
 ## What this is
 
-SIP SBC/B2BUA in C++26, low-level PJSIP C API + Boost.SML state machines for call orchestration.
-B2BUA: owns inbound + outbound SIP dialogs, rewrites SDP, anchors RTP through itself.
+SBC (Session Border Controller) project: a SIP B2BUA plus a web control plane for managing its
+routing table. Two components:
 
-## Conventions
+| Component | Path | What it does |
+| --- | --- | --- |
+| Engine | `engine/` | C++26 B2BUA core (PJSIP + Boost.SML). Owns both SIP legs of every call, rewrites SDP, anchors RTP. See `engine/README.md`. |
+| Control-plane backend | `control-plane/backend/` | Express/TypeScript API, owns the SIP route table in Postgres. See its own `AGENTS.md`. |
+| Control-plane frontend | `control-plane/frontend/` | React/Vite SPA for managing routes through the backend. See its own `AGENTS.md`. |
 
-- Naming (enforced by `.clang-tidy`): types/classes `CamelCase`; functions/variables `lower_case`;
-  class members `lower_case_` (trailing underscore); constants/enum values `kCamelCase`.
-- Mark pure utility functions with no instance state `static`.
-- Keep Boost.SML transition tables high-level orchestration only — no SIP parsing or low-level
-  detail inside state machine actions; that belongs in separate utility functions.
-- CMake: built-in commands lowercase, custom functions descriptively named, prefer `target_*`
-  commands over property setters.
-- Format and lint before committing (see commands above).
-
-## Design Principles
-
-- SIP transaction correctness lives in PJSIP — don't reimplement it.
-- SBC orchestration logic lives in state machines (Boost.SML), not ad hoc control flow.
-- All SIP messages route through a central manager (`CallManager`) — no per-message ad hoc dispatch.
-- Clear ownership/lifecycle for `CallSession`, dialogs, and media streams.
-- No over-engineering — prefer straightforward code over abstract patterns.
-
-## Testing
-
-Catch2 + CTest, `tests/` (parallel to `engine/`). Test state machine transitions and orchestration
-behavior — PJSIP's own transaction handling doesn't need re-testing here.
+The engine fetches a snapshot of the route table from the control-plane backend over HTTP at
+startup; the backend is the source of truth for routing config, the engine is a read-only
+consumer. The route payload shape is defined in `schemas/b2bua/*.json` (generated from the C++
+engine's `engine/protocols/SipRoutes.hpp` via `tools/schema_generator.cpp`) and hand-mirrored by
+both the backend and frontend TypeScript types — check the schema files, not the C++ source, when
+working on either control-plane app.
 
 ## Known Limitations
 
-Not currently supported: PRACK (100rel), UPDATE, session timers, REFER, SIP forking, transcoding,
-ICE, SRTP, WebRTC.
+SIP features not currently supported by the engine: PRACK (100rel), UPDATE, session timers, REFER,
+SIP forking, transcoding, ICE, SRTP, WebRTC.
+
+## Component-specific guidance
+
+C++ code conventions, build/test commands, and design principles for `engine/` will be added here
+(or to a dedicated `engine/AGENTS.md`) later. Until then, see `engine/README.md` for layout and
+configuration.
