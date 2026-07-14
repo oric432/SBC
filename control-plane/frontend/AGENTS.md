@@ -1,9 +1,9 @@
-# CLAUDE.md — control-plane/frontend
+# AGENTS.md — control-plane/frontend
 
 Guidance for Claude Code when working in this directory. Read together with:
-- `/home/ori/Projects/SBC/CLAUDE.md` — the overall SBC project (the C++ B2BUA engine this UI manages)
+- `/home/ori/Projects/SBC/AGENTS.md` — the overall SBC project (the C++ B2BUA engine this UI manages)
 - `/home/ori/Projects/SBC/control-plane/README.md` — full setup/dev doc for both backend and frontend
-- `/home/ori/Projects/SBC/control-plane/backend/CLAUDE.md` — the API this app talks to
+- `/home/ori/Projects/SBC/control-plane/backend/AGENTS.md` — the API this app talks to
 
 ## What this is
 
