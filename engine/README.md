@@ -21,10 +21,6 @@ Startup aborts with `Log::crash_error` if the file is missing or fails to parse.
 | `control_plane_http_port` | `3001` | control-plane backend's HTTP port. |
 | `connection_timeout` | `5` | Seconds to wait when fetching the route snapshot from control-plane. |
 
-If the route-snapshot fetch fails at startup, the engine logs a warning and keeps running with an
-empty route table rather than crashing — routing will fail until control-plane is reachable and
-the engine is restarted (there's no background refresh yet).
-
 ## Build & test
 
 From the repo root:
