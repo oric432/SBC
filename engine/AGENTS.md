@@ -68,3 +68,14 @@ After making any code changes, you MUST complete the following checklist before 
     - Centralize type aliases in a `types.hpp` file within a subcomponent (e.g., `engine/sm/types.hpp`, `engine/call/types.hpp`) ONLY when the alias is used across multiple components or files. Otherwise, keep them local to where they are defined.
     - Type alias naming should use `CamelCase` as defined in the `.clang-tidy` configuration.
 - **Namespaces**: All newly defined types (classes, structs, type aliases) and functions MUST be placed inside the `SbcEngine` namespace. Do not pollute the global namespace.
+
+## Error Handling Guidelines
+
+When writing or modifying C++ code in the engine, adhere to the following error handling practices:
+
+- **Prefer Error Codes**: Always prefer using APIs that return error codes instead of throwing exceptions. If an existing API does not provide an error code interface (e.g., it throws), wrap it in an error-code-style return type.
+- **Use Project Standard**: Prefer the project-specific error types defined in `utils/error.hpp`.
+- **Extend `std::error_code`**: If the code can generate errors that should be handled programmatically, extend the custom `std::error_code` category if one exists.
+- **Consult the User for New Categories**: If a custom `std::error_code` category does not exist for the current domain and the code has many potential errors, ask the user before creating a new custom `std::error_code` category.
+- **Consult the User for New Codes**: Ask the user for permission before adding new error enum values to an existing `std::error_category`.
+- **Informative Unrecoverable Errors**: If errors are not recoverable but you want to provide more information, use `std::string_view` strictly for statically allocated string literals (e.g., as the error type in `std::expected<T, std::string_view>`). Do not use `std::string_view` for dynamically formatted strings to avoid dangling pointers.
