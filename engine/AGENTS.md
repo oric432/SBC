@@ -65,7 +65,9 @@ After making any code changes, you MUST complete the following checklist before 
 - **Interface Naming**: All **interfaces** must start with the prefix `I` (e.g., `IRouter`, `IHandler`).
 - **Configuration Updates**: If you make any changes to the configuration settings in the code, ALWAYS make sure to update the corresponding example configuration file (e.g., `settings-example.toml`) to keep it in sync.
 - **Type Aliases**:
-    - Centralize type aliases in a `types.hpp` file within a subcomponent (e.g., `engine/sm/types.hpp`, `engine/call/types.hpp`) ONLY when the alias is used across multiple components or files. Otherwise, keep them local to where they are defined.
+    - ONLY define type aliases if explicitly requested by the user. Do not proactively suggest or create them.
+    - If requested, ALWAYS ask the user before creating any new type alias files for submodules/subcomponents.
+    - Centralize type aliases in a file within a subcomponent ONLY when the alias is used across multiple components or files. Otherwise, keep them local to where they are defined.
     - Type alias naming should use `CamelCase` as defined in the `.clang-tidy` configuration.
 - **Namespaces**: All newly defined types (classes, structs, type aliases) and functions MUST be placed inside the `SbcEngine` namespace. Do not pollute the global namespace.
 

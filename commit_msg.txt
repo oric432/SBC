@@ -1,0 +1,7 @@
+docs: organize agent guidelines
+
+- Move AGENTS.md files out of skills directory to component roots
+- Update internal references across AGENTS.md files
+- Add explicit type alias rule to engine/AGENTS.md
+- Add database commands to backend/README.md
+- Change 'Claude Code' references to 'LLM'
