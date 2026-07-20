@@ -80,23 +80,11 @@ add_subdirectory(third_party)
 if(BUILD_ENGINE)
     # Main Executable (SbcEngine)
     add_executable(SbcEngine
-        src/SbcEngine.cpp
-        src/call/call_manager.cpp
-        src/call/call_session.cpp
-        src/config/settings.cpp
-        src/router/message_router.cpp
-        src/router/options_actions.cpp
-        src/router/real_dialog_actions.cpp
-        src/router/real_setup_actions.cpp
-        src/routes/routes_client.cpp
-        src/routes/routes_store.cpp
-        src/rtp/RtpSession.cpp
-        src/sip/pjsip_init.cpp
-        src/sip/sdp_mangler.cpp
+        src/core/SbcEngine.cpp
     )
 
     target_precompile_headers(SbcEngine PRIVATE
-        src/pch.hpp
+        src/core/pch.hpp
     )
 
     target_include_directories(SbcEngine PRIVATE
@@ -106,6 +94,10 @@ if(BUILD_ENGINE)
     target_link_libraries(SbcEngine PRIVATE
         project_warnings
         project_options
+        core
+        net
+        sip
+        protocols
         third_party::spdlog
         third_party::boost_asio
         third_party::boost_system

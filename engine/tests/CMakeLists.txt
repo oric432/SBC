@@ -8,7 +8,7 @@ add_executable(sbc_tests
 target_compile_definitions(sbc_tests PRIVATE __INCLUDE_MOCK_ACTIONS__)
 
 target_precompile_headers(sbc_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/pch.hpp
+    ${CMAKE_SOURCE_DIR}/src/sip/pch.hpp
 )
 
 target_include_directories(sbc_tests PRIVATE
