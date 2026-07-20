@@ -21,5 +21,4 @@ target_link_libraries(sbc_tests PRIVATE
     third_party::boost_sml
 )
 
-include(Catch)
-catch_discover_tests(sbc_tests)
+add_test(NAME sbc_tests COMMAND sbc_tests)

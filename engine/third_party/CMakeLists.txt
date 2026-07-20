@@ -7,10 +7,6 @@ if(BUILD_ENGINE OR BUILD_TESTS)
     include(${CMAKE_CURRENT_LIST_DIR}/boost/declare.cmake)
 endif()
 
-if(BUILD_TESTS)
-    include(${CMAKE_CURRENT_LIST_DIR}/catch2/declare.cmake)
-endif()
-
 if(BUILD_ENGINE)
     include(${CMAKE_CURRENT_LIST_DIR}/pjsip/declare.cmake)
 endif()
