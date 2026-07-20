@@ -76,6 +76,16 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             }
+        },
+        {
+            "name": "tools-only",
+            "inherits": "release",
+            "description": "Release build with tools only",
+            "cacheVariables": {
+                "BUILD_ENGINE": "OFF",
+                "BUILD_TESTS": "OFF",
+                "BUILD_TOOLS": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -102,6 +112,10 @@
         {
             "name": "build-relwithdebinfo",
             "configurePreset": "relwithdebinfo"
+        },
+        {
+            "name": "build-tools-only",
+            "configurePreset": "tools-only"
         }
     ],
     "testPresets": [

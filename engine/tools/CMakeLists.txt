@@ -1,7 +1,7 @@
 add_executable(schema_generator schema_generator.cpp)
 
 target_include_directories(schema_generator PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(schema_generator PRIVATE
