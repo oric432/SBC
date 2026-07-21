@@ -1,10 +1,5 @@
 import {NextFunction, Request, Response} from 'express';
-import {StatusCodes} from 'http-status-codes';
 import {z, ZodSchema} from 'zod';
-import {sendError} from '../utils/apiResponse';
-
-const zodDetails = (error: z.ZodError) =>
-  error.issues.map((err) => ({field: err.path.join('.'), message: err.message}));
 
 export const validateBody = (schema: ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -13,7 +8,11 @@ export const validateBody = (schema: ZodSchema) => {
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return sendError(res, 'Validation failed', StatusCodes.BAD_REQUEST, zodDetails(error));
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: error.issues.map(
+              (err: any) => ({field: err.path.join('.'), message: err.message}))
+        });
       }
       next(error);
     }
@@ -27,7 +26,11 @@ export const validateParams = (schema: ZodSchema) => {
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return sendError(res, 'Invalid parameters', StatusCodes.BAD_REQUEST, zodDetails(error));
+        return res.status(400).json({
+          error: 'Invalid parameters',
+          details: error.issues.map(
+              (err: any) => ({field: err.path.join('.'), message: err.message}))
+        });
       }
       next(error);
     }
@@ -41,12 +44,11 @@ export const validateQuery = (schema: ZodSchema) => {
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return sendError(
-          res,
-          'Invalid query parameters',
-          StatusCodes.BAD_REQUEST,
-          zodDetails(error),
-        );
+        return res.status(400).json({
+          error: 'Invalid query parameters',
+          details: error.issues.map(
+              (err: any) => ({field: err.path.join('.'), message: err.message}))
+        });
       }
       next(error);
     }

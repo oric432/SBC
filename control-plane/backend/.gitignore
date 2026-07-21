@@ -2,4 +2,6 @@ node_modules/
 dist/
 .env
 package-lock.json
-drizzle
+prisma/migrations/
+prisma/migrations.lock.toml
+prisma/*.db
