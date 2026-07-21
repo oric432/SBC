@@ -23,11 +23,16 @@ const BACKEND_UNREACHABLE_MESSAGE = "Can't reach the backend — make sure it's 
 export function getApiErrorMessage(error: unknown): string {
     if (error && typeof error === "object" && "status" in error) {
         const status = (error as { status: unknown }).status;
+        const data = "data" in error ? (error as { data: unknown }).data : undefined;
+        const hasJsonBody = typeof data === "object" && data !== null;
+
         // When the backend process isn't up, Vite's dev proxy (or a prod
-        // reverse proxy) responds with a non-JSON error page instead of our
-        // envelope — fetchBaseQuery can't parse that, so it reports
-        // FETCH_ERROR/PARSING_ERROR rather than a real backend status.
-        if (status === "FETCH_ERROR" || status === "PARSING_ERROR") {
+        // reverse proxy) either fails outright (FETCH_ERROR/PARSING_ERROR)
+        // or forwards its own bare, non-JSON error page with a numeric
+        // status (e.g. a plain-text 500). Our backend always replies with
+        // the { success, error } envelope, so a numeric status with no
+        // parsed JSON body means something other than our API answered.
+        if (status === "FETCH_ERROR" || status === "PARSING_ERROR" || (typeof status === "number" && !hasJsonBody)) {
             return BACKEND_UNREACHABLE_MESSAGE;
         }
     }
