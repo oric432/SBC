@@ -16,7 +16,7 @@ export interface ApiErrorBody {
 export type ApiResponse<T> = ApiSuccess<T> | ApiErrorBody;
 
 const FALLBACK_ERROR_MESSAGE = "Something went wrong, try again later";
-const BACKEND_UNREACHABLE_MESSAGE = "Can't reach the backend — make sure it's running";
+const BACKEND_UNREACHABLE_MESSAGE = "Unable to connect to control plane backend";
 
 // RTK Query's fetchBaseQuery puts the parsed JSON body on `error.data` and
 // the HTTP status on `error.status`. Pull the backend's message back out.
@@ -26,12 +26,6 @@ export function getApiErrorMessage(error: unknown): string {
         const data = "data" in error ? (error as { data: unknown }).data : undefined;
         const hasJsonBody = typeof data === "object" && data !== null;
 
-        // When the backend process isn't up, Vite's dev proxy (or a prod
-        // reverse proxy) either fails outright (FETCH_ERROR/PARSING_ERROR)
-        // or forwards its own bare, non-JSON error page with a numeric
-        // status (e.g. a plain-text 500). Our backend always replies with
-        // the { success, error } envelope, so a numeric status with no
-        // parsed JSON body means something other than our API answered.
         if (status === "FETCH_ERROR" || status === "PARSING_ERROR" || (typeof status === "number" && !hasJsonBody)) {
             return BACKEND_UNREACHABLE_MESSAGE;
         }
