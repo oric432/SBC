@@ -2,8 +2,8 @@ build/
 .cache/
 .vscode/
 .claude/
-CLAUDE.md
 .memsearch/
 docs/
 .claude-flow/
 settings.toml
+skills-lock.json

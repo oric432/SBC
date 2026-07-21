@@ -1,34 +1,118 @@
-add_executable(SbcEngine
-    SbcEngine.cpp
-    call/call_manager.cpp
-    call/call_session.cpp
-    config/settings.cpp
-    router/message_router.cpp
-    router/options_actions.cpp
-    router/real_dialog_actions.cpp
-    router/real_setup_actions.cpp
-    routes/routes_client.cpp
-    routes/routes_store.cpp
-    rtp/RtpSession.cpp
-    sip/pjsip_init.cpp
-    sip/sdp_mangler.cpp
+# ==============================================================================
+# 1. Project Initialization
+# ==============================================================================
+cmake_minimum_required(VERSION 3.23)
+project(sbc LANGUAGES C CXX)
+
+# ==============================================================================
+# 2. C++ Standard Settings
+# ==============================================================================
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ==============================================================================
+# 3. Global Target Options & Testing Setup
+# ==============================================================================
+option(BUILD_ENGINE "Build the main SbcEngine executable" ON)
+option(BUILD_TESTS "Build the test suite" ON)
+option(BUILD_TOOLS "Build helper tools" ON)
+
+if(BUILD_TESTS)
+    enable_testing()
+    include(CTest)
+endif()
+
+# ==============================================================================
+# 4. CMake Modules & Core Utilities
+# ==============================================================================
+# Add our custom cmake/ directory to the module path
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
+include(PreventInSourceBuilds)
+include(StandardProjectSettings)
+
+# ==============================================================================
+# 5. Global Configuration Options
+# ==============================================================================
+# Expose simple toggles to the user for sanitizers and warnings
+option(ENABLE_ASAN "Enable Address Sanitizer" OFF)
+option(ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
+option(ENABLE_TSAN "Enable Thread Sanitizer" OFF)
+option(ENABLE_LSAN "Enable Leak Sanitizer" OFF)
+option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+
+# ==============================================================================
+# 6. Project Interface Libraries (Settings Aggregators)
+# ==============================================================================
+# These INTERFACE libraries hold all warning and sanitizer flags.
+# Any target that links against them will automatically inherit these settings.
+add_library(project_warnings INTERFACE)
+add_library(project_options INTERFACE)
+
+# Configure warnings
+include(CompilerWarnings)
+myproject_set_project_warnings(project_warnings ${WARNINGS_AS_ERRORS} "" "" "" "")
+
+# Configure sanitizers
+include(Sanitizers)
+myproject_enable_sanitizers(project_options ${ENABLE_ASAN} ${ENABLE_LSAN} ${ENABLE_UBSAN} ${ENABLE_TSAN} FALSE)
+
+# Suppress annoying third-party system headers warnings
+target_compile_options(project_options INTERFACE
+    "$<$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>:-Wno-system-headers;-Wno-#warnings>"
+    $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-Wno-system-headers;-Wno-cpp>
 )
 
-target_precompile_headers(SbcEngine PRIVATE
-    pch.hpp
-)
+# ==============================================================================
+# 7. Code Formatting
+# ==============================================================================
+include(ClangFormat)
+add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
 
-target_include_directories(SbcEngine PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
+# ==============================================================================
+# 8. Subdirectories (Dependencies & Project Source)
+# ==============================================================================
+# Load third-party dependencies first so their targets are available
+add_subdirectory(third_party)
 
-target_link_libraries(SbcEngine PRIVATE
-    project_warnings
-    project_options
-    third_party::spdlog
-    third_party::boost_asio
-    third_party::boost_system
-    third_party::pjsip
-    third_party::boost_sml
-    third_party::glaze
-)
+# Main Executable (SbcEngine)
+if(BUILD_ENGINE)
+    # Main Executable (SbcEngine)
+    add_executable(SbcEngine
+        src/core/SbcEngine.cpp
+    )
+
+    target_precompile_headers(SbcEngine PRIVATE
+        src/core/pch.hpp
+    )
+
+    target_include_directories(SbcEngine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(SbcEngine PRIVATE
+        project_warnings
+        project_options
+        core
+        net
+        sip
+        protocols
+        third_party::spdlog
+        third_party::boost_asio
+        third_party::boost_system
+        third_party::pjsip
+        third_party::boost_sml
+        third_party::glaze
+    )
+endif()
+
+if(BUILD_TOOLS)
+    # Load helper tools (like the schema generator)
+    add_subdirectory(tools)
+endif()
+
+if(BUILD_TESTS)
+    # Load the test suite
+    add_subdirectory(tests)
+endif()
