@@ -16,7 +16,7 @@ export interface ApiErrorBody {
 export type ApiResponse<T> = ApiSuccess<T> | ApiErrorBody;
 
 const FALLBACK_ERROR_MESSAGE = "Something went wrong, try again later";
-const BACKEND_UNREACHABLE_MESSAGE = "Unable to connect to control plane backend";
+const BACKEND_UNREACHABLE_MESSAGE = "Failed to establish HTTP connection to control plane backend";
 
 // RTK Query's fetchBaseQuery puts the parsed JSON body on `error.data` and
 // the HTTP status on `error.status`. Pull the backend's message back out.
