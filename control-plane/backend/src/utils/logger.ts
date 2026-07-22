@@ -15,7 +15,15 @@ const normalizeErrors = winston.format((info) => {
   // copies it onto `info` but only merges the (empty, for AggregateError)
   // top-level `.message`/`.stack` — plain Errors are already handled correctly
   // by winston itself, so only touch the AggregateError case here.
-  const errors = (info as { errors?: unknown }).errors;
+  let errors = (info as { errors?: unknown }).errors;
+
+  // When an error is passed as a meta argument (e.g. logger.error('msg', err)),
+  // Winston stores it in Symbol.for('splat') and doesn't copy the `.errors` property.
+  const splat = (info as any)[Symbol.for('splat')];
+  if (!errors && Array.isArray(splat) && splat.length > 0 && splat[0] instanceof AggregateError) {
+    errors = splat[0].errors;
+  }
+
   if (Array.isArray(errors) && errors.length > 0) {
     const flattened = errors
       .map((e) => (e instanceof Error ? flattenError(e) : String(e)))
