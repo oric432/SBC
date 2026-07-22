@@ -19,6 +19,16 @@ npm run format
 npm start
 ```
 
+## Environment Variables
+
+Copy `.env-example` to `.env` and configure the following:
+
+- `DATABASE_URL`: PostgreSQL connection string.
+- `PORT`: Port the server runs on (defaults to `3001`).
+- `NODE_ENV`: Application environment (`development`, `production`).
+- `FRONTEND_URL`: Frontend server URL for CORS validation.
+- `LOG_LEVEL`: Log severity threshold (`error`, `warn`, `info`, `verbose`, `debug`). Stack traces are printed only for `verbose` and `debug` levels.
+
 ## Database (Postgres + Drizzle ORM)
 
 - `docker compose up -d` / `docker compose down` — start/stop local Postgres (creds in `docker-compose.yml`)

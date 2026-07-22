@@ -37,7 +37,7 @@ app.use('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  logger.success(`Server started on port ${PORT}`);
+  logger.info(`Server started on port ${PORT}`);
 
   checkDbConnection().then((connected) => {
     if (!connected) {
@@ -45,7 +45,7 @@ app.listen(PORT, () => {
         'Database not reachable — DB-backed endpoints will return 503 until it is available',
       );
     } else {
-      logger.success('Database connection OK');
+      logger.info('Database connection OK');
     }
   });
 });
