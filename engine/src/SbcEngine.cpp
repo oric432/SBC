@@ -35,13 +35,12 @@ int main() {
         Log::crash_error(settings_result.error().message());
     }
     SbcEngine::Settings settings = *settings_result;
-    Log::set_log_level(settings.log_level);
+    Log::set_log_level(settings.logging.level);
 
     SbcEngine::RoutesStore routes_store;
     SbcEngine::RoutesClientConfig routes_cfg{
-        .control_plane_address_ = settings.control_plane_address,
-        .control_plane_http_port_ = settings.control_plane_http_port,
-        .connection_timeout_seconds_ = settings.connection_timeout,
+        .http_url_ = settings.control_plane.http_url,
+        .http_timeout_seconds_ = settings.control_plane.http_timeout,
     };
     auto snapshot_result = SbcEngine::fetch_routes_snapshot(routes_cfg);
     if (snapshot_result) {
@@ -53,10 +52,10 @@ int main() {
     }
 
     SbcEngine::PjsipConfig config;
-    config.bind_ip_ = settings.local_sip_address;
-    config.sip_port_ = settings.local_sip_port;
-    config.identity_user_ = settings.sip_identity_user;
-    config.pjsip_log_level_ = SbcEngine::resolve_pjsip_log_level(settings.pjsip_log_level);
+    config.bind_ip_ = settings.sip.address;
+    config.sip_port_ = settings.sip.port;
+    config.identity_user_ = settings.sip.identity_user;
+    config.pjsip_log_level_ = SbcEngine::resolve_pjsip_log_level(settings.logging.pjsip_level);
 
     boost::asio::io_context ioc;
     SbcEngine::PjsipStack stack;

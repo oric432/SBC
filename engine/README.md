@@ -28,7 +28,7 @@ From the repo root:
 ```bash
 cmake --preset debug && cmake --build --preset build-debug
 ctest --test-dir build
-./build/sbc
+./build/SbcEngine
 ```
 
 `tests/` covers the state machines via mocked actions. Everything else in

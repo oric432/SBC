@@ -36,7 +36,7 @@ Guidance for coding agents (any LLM tool) working in the `engine` component of t
 
 4. **Build**: ALWAYS build relevant targets after making edits.
     - **Read the README**: ALWAYS check the project `README.md` (e.g., `engine/README.md`) before building to understand the build commands and how the project is configured.
-    - Build using standard CMake commands and available targets for this codebase.
+    - **Use CMake Presets**: You MUST build using CMake presets. Check the `CMakePresets.json` file to find the available configure and build presets, and select the appropriate one (do not use generic cmake build commands without a preset).
 
 5. **Fix compile errors**: ALWAYS follow these steps to fix compile errors.
     - ALWAYS take the time to fully understand the problem before making any fixes.
