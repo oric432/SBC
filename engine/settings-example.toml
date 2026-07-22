@@ -1,7 +1,12 @@
-local_sip_address = "[IP_ADDRESS]"
-local_sip_port = 5060
-log_level = "info"
-pjsip_log_level = "disabled"
-control_plane_address = "[IP_ADDRESS]"
-control_plane_http_port = 3001
-connection_timeout = 5
+[logging]
+level = "info"
+pjsip_level = "disabled"
+
+[sip]
+address = "127.0.0.1"
+port = 5060
+identity_user = "sbc"
+
+[control_plane]
+http_url = "http://127.0.0.1:3001"
+http_timeout = 5

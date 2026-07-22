@@ -13,20 +13,30 @@ namespace SbcEngine {
 
 namespace SettingsDefaults {
 constexpr uint16_t kLocalSipPort = 5060;
-constexpr uint16_t kControlPlaneHttpPort = 3001;
 constexpr int kConnectionTimeoutSeconds = 5;
 } // namespace SettingsDefaults
 
+struct LoggingSettings {
+    std::string level = "info";
+    std::string pjsip_level = "disabled";
+};
+
+struct SipSettings {
+    std::string address = "127.0.0.1";
+    uint16_t port = SettingsDefaults::kLocalSipPort;
+    std::string identity_user = "sbc"; // user part of our own Contact/From URI
+};
+
+struct ControlPlaneSettings {
+    std::string http_url = "http://127.0.0.1:3001";
+    int http_timeout = SettingsDefaults::kConnectionTimeoutSeconds;
+};
+
 // Runtime configuration loaded from settings.toml at startup.
 struct Settings {
-    std::string local_sip_address = "0.0.0.0";
-    uint16_t local_sip_port = SettingsDefaults::kLocalSipPort;
-    std::string sip_identity_user = "sbc"; // user part of our own Contact/From URI
-    std::string log_level = "info";
-    std::string pjsip_log_level = "disabled";
-    std::string control_plane_address = "127.0.0.1";
-    uint16_t control_plane_http_port = SettingsDefaults::kControlPlaneHttpPort;
-    int connection_timeout = SettingsDefaults::kConnectionTimeoutSeconds;
+    LoggingSettings logging;
+    SipSettings sip;
+    ControlPlaneSettings control_plane;
 };
 
 // Maps "disabled" (and anything unrecognized) to 0; otherwise parses a native

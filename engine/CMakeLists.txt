@@ -76,11 +76,16 @@ add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
 # Load third-party dependencies first so their targets are available
 add_subdirectory(third_party)
 
+add_subdirectory(src/core)
+add_subdirectory(src/net)
+add_subdirectory(src/sip)
+add_subdirectory(src/protocols)
+
 # Main Executable (SbcEngine)
 if(BUILD_ENGINE)
     # Main Executable (SbcEngine)
     add_executable(SbcEngine
-        src/core/SbcEngine.cpp
+        src/SbcEngine.cpp
     )
 
     target_precompile_headers(SbcEngine PRIVATE

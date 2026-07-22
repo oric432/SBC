@@ -15,9 +15,8 @@ constexpr std::string_view kRoutes = "/api/b2bua/routes";
 
 // API routes client configuration.
 struct RoutesClientConfig {
-    std::string control_plane_address_;
-    uint16_t control_plane_http_port_ = 0;
-    int connection_timeout_seconds_ = 5;
+    std::string http_url_;
+    int http_timeout_seconds_ = 5;
 };
 
 // Fetches the current SIP routing table snapshot from the control plane's
