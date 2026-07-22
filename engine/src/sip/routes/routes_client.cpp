@@ -12,10 +12,7 @@
 namespace SbcEngine {
 
 Result<Protocols::SipRouteSnapshot> fetch_routes_snapshot(const RoutesClientConfig& config) {
-    const std::string url = std::format(
-        "{}{}",
-        config.http_url_,
-        ClientApiEndpoints::kRoutes);
+    const std::string url = std::format("{}{}", config.http_url_, ClientApiEndpoints::kRoutes);
 
     glz::http_client client;
     auto future = client.get_async(url);
