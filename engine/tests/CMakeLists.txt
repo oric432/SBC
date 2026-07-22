@@ -13,6 +13,7 @@ target_precompile_headers(sbc_tests PRIVATE
 
 target_include_directories(sbc_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/sip
 )
 
 target_link_libraries(sbc_tests PRIVATE

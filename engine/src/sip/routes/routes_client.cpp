@@ -12,16 +12,12 @@
 namespace SbcEngine {
 
 Result<Protocols::SipRouteSnapshot> fetch_routes_snapshot(const RoutesClientConfig& config) {
-    const std::string url = std::format(
-        "http://{}:{}{}",
-        config.control_plane_address_,
-        config.control_plane_http_port_,
-        ClientApiEndpoints::kRoutes);
+    const std::string url = std::format("{}{}", config.http_url_, ClientApiEndpoints::kRoutes);
 
     glz::http_client client;
     auto future = client.get_async(url);
 
-    const auto timeout = std::chrono::seconds(config.connection_timeout_seconds_);
+    const auto timeout = std::chrono::seconds(config.http_timeout_seconds_);
     if (future.wait_for(timeout) == std::future_status::timeout) {
         return std::unexpected(Error("routes fetch timed out: {}", url));
     }
