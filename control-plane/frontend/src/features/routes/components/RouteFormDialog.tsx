@@ -89,7 +89,7 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                                 <FormItem>
                                     <FormLabel>Priority</FormLabel>
                                     <FormControl>
-                                        <Input {...field} type="number" min={1} placeholder="1" />
+                                        <Input {...field} type="number" min={1} placeholder="1" className="font-mono" />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -102,7 +102,7 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                                 <FormItem>
                                     <FormLabel>URI</FormLabel>
                                     <FormControl>
-                                        <Input {...field} placeholder="sip:callee@127.0.0.1:5080" />
+                                        <Input {...field} placeholder="sip:callee@127.0.0.1:5080" className="font-mono" />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -115,38 +115,40 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                                 <FormItem>
                                     <FormLabel>SIP address</FormLabel>
                                     <FormControl>
-                                        <Input {...field} placeholder="127.0.0.1" />
+                                        <Input {...field} placeholder="127.0.0.1" className="font-mono" />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )}
                         />
-                        <FormField
-                            control={form.control}
-                            name="port"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Port</FormLabel>
-                                    <FormControl>
-                                        <Input {...field} type="number" min={1} max={65535} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-                        <FormField
-                            control={form.control}
-                            name="codec"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Codec (optional)</FormLabel>
-                                    <FormControl>
-                                        <Input {...field} placeholder="PCMU" />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField
+                                control={form.control}
+                                name="port"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Port</FormLabel>
+                                        <FormControl>
+                                            <Input {...field} type="number" min={1} max={65535} className="font-mono" />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="codec"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Codec (optional)</FormLabel>
+                                        <FormControl>
+                                            <Input {...field} placeholder="PCMU" className="font-mono" />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                                 Cancel
