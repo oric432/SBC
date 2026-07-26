@@ -47,7 +47,10 @@ const errorHandlerMiddleware = (
   logger.error('Request failed', err);
 
   const status = err.statusCode || err.code || StatusCodes.INTERNAL_SERVER_ERROR;
-  const message = err.message || 'Something went wrong, try again later';
+  const message =
+    status < StatusCodes.INTERNAL_SERVER_ERROR && err.message
+      ? err.message
+      : 'Something went wrong, try again later';
 
   return sendError(res, message, status);
 };
