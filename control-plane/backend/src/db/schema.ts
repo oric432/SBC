@@ -12,11 +12,11 @@ export const routeRules = pgTable(
     tableId: text('table_id')
       .notNull()
       .references(() => routeTables.tableId, { onDelete: 'cascade' }),
-    routeKey: text('route_key').notNull(),
+    priority: integer('priority').notNull(),
     uri: text('uri').notNull(),
     sipAddress: text('sip_address').notNull(),
     port: integer('port').notNull(),
     codec: text('codec'),
   },
-  (table) => [unique().on(table.tableId, table.routeKey)],
+  (table) => [unique().on(table.tableId, table.priority)],
 );
