@@ -18,7 +18,7 @@ export function RoutesPage() {
     const [deletingRoute, setDeletingRoute] = useState<RouteRuleWithKey | undefined>(undefined);
 
     const routes: RouteRuleWithKey[] = data
-        ? Object.entries(data.routes).map(([route_key, rule]) => ({ route_key, ...rule }))
+        ? Object.entries(data.routes).map(([priority, rule]) => ({ priority: Number(priority), ...rule }))
         : [];
 
     const openCreateDialog = () => {
@@ -62,7 +62,7 @@ export function RoutesPage() {
             <DeleteRouteAlert
                 open={Boolean(deletingRoute)}
                 onOpenChange={(open) => !open && setDeletingRoute(undefined)}
-                routeKey={deletingRoute?.route_key ?? ""}
+                priority={deletingRoute?.priority ?? 0}
             />
         </div>
     );

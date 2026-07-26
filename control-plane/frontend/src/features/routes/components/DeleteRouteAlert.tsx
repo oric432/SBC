@@ -16,16 +16,16 @@ import { getApiErrorMessage } from "@/lib/api";
 interface DeleteRouteAlertProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    routeKey: string;
+    priority: number;
 }
 
-export function DeleteRouteAlert({ open, onOpenChange, routeKey }: DeleteRouteAlertProps) {
+export function DeleteRouteAlert({ open, onOpenChange, priority }: DeleteRouteAlertProps) {
     const [deleteRoute, { isLoading }] = useDeleteRouteMutation();
 
     const handleDelete = async () => {
         try {
-            await deleteRoute(routeKey).unwrap();
-            toast.success(`Route "${routeKey}" deleted`);
+            await deleteRoute(priority).unwrap();
+            toast.success(`Route with priority ${priority} deleted`);
             onOpenChange(false);
         } catch (error) {
             toast.error(getApiErrorMessage(error));
@@ -36,7 +36,7 @@ export function DeleteRouteAlert({ open, onOpenChange, routeKey }: DeleteRouteAl
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Delete route "{routeKey}"?</AlertDialogTitle>
+                    <AlertDialogTitle>Delete route with priority {priority}?</AlertDialogTitle>
                     <AlertDialogDescription>
                         This will permanently remove this route from the table. This action cannot be undone.
                     </AlertDialogDescription>

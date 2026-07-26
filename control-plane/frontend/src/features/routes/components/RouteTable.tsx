@@ -1,4 +1,5 @@
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,8 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { RouteRuleWithKey } from "@/features/routes/types";
 
+type SortDirection = "asc" | "desc";
+
 interface RouteTableProps {
     routes: RouteRuleWithKey[];
     onEdit: (route: RouteRuleWithKey) => void;
@@ -18,6 +21,18 @@ interface RouteTableProps {
 }
 
 export function RouteTable({ routes, onEdit, onDelete }: RouteTableProps) {
+    const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+    const sortedRoutes = useMemo(
+        () =>
+            [...routes].sort((a, b) =>
+                sortDirection === "asc" ? a.priority - b.priority : b.priority - a.priority,
+            ),
+        [routes, sortDirection],
+    );
+
+    const toggleSort = () => setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+
     if (routes.length === 0) {
         return (
             <div className="flex h-32 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
@@ -26,12 +41,25 @@ export function RouteTable({ routes, onEdit, onDelete }: RouteTableProps) {
         );
     }
 
+    const SortIcon = sortDirection === "asc" ? ArrowUp : ArrowDown;
+
     return (
         <div className="rounded-md border">
             <Table>
                 <TableHeader>
                     <TableRow>
-                        <TableHead>Route key</TableHead>
+                        <TableHead>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="-ml-3 h-8 px-3"
+                                onClick={toggleSort}
+                                aria-label={`Sort by priority ${sortDirection === "asc" ? "descending" : "ascending"}`}
+                            >
+                                Priority
+                                <SortIcon className="ml-2 h-4 w-4" />
+                            </Button>
+                        </TableHead>
                         <TableHead>URI</TableHead>
                         <TableHead>SIP address</TableHead>
                         <TableHead>Port</TableHead>
@@ -40,9 +68,9 @@ export function RouteTable({ routes, onEdit, onDelete }: RouteTableProps) {
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {routes.map((route) => (
-                        <TableRow key={route.route_key}>
-                            <TableCell className="font-medium">{route.route_key}</TableCell>
+                    {sortedRoutes.map((route) => (
+                        <TableRow key={route.priority}>
+                            <TableCell className="font-medium">{route.priority}</TableCell>
                             <TableCell>{route.uri}</TableCell>
                             <TableCell>{route.sip_address}</TableCell>
                             <TableCell>{route.port}</TableCell>

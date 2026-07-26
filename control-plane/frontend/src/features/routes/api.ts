@@ -19,7 +19,7 @@ export const routesApi = createApi({
             providesTags: (result) =>
                 result
                     ? [
-                          ...Object.keys(result.routes).map((routeKey) => ({ type: "Route" as const, id: routeKey })),
+                          ...Object.keys(result.routes).map((priority) => ({ type: "Route" as const, id: priority })),
                           { type: "Route" as const, id: "LIST" },
                       ]
                     : [{ type: "Route" as const, id: "LIST" }],
@@ -34,21 +34,27 @@ export const routesApi = createApi({
             invalidatesTags: [{ type: "Route", id: "LIST" }],
         }),
         updateRoute: builder.mutation<RouteRule, UpdateRoutePayload>({
-            query: ({ route_key, ...body }) => ({
-                url: `/routes/${route_key}`,
+            query: ({ currentPriority, ...body }) => ({
+                url: `/routes/${currentPriority}`,
                 method: "PUT",
                 body,
             }),
             transformResponse: unwrap<RouteRule>,
-            invalidatesTags: (_result, _error, { route_key }) => [{ type: "Route", id: route_key }],
+            invalidatesTags: (_result, _error, { currentPriority }) => [
+                { type: "Route", id: String(currentPriority) },
+                { type: "Route", id: "LIST" },
+            ],
         }),
-        deleteRoute: builder.mutation<void, string>({
-            query: (routeKey) => ({
-                url: `/routes/${routeKey}`,
+        deleteRoute: builder.mutation<void, number>({
+            query: (priority) => ({
+                url: `/routes/${priority}`,
                 method: "DELETE",
             }),
             transformResponse: unwrap<void>,
-            invalidatesTags: (_result, _error, routeKey) => [{ type: "Route", id: routeKey }],
+            invalidatesTags: (_result, _error, priority) => [
+                { type: "Route", id: String(priority) },
+                { type: "Route", id: "LIST" },
+            ],
         }),
     }),
 });
