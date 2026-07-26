@@ -1,14 +1,12 @@
-import dotenv from 'dotenv';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 
+import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import * as schema from './schema';
 
-dotenv.config();
-
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: env.databaseUrl,
 });
 
 // Idle clients emit 'error' async (e.g. DB restart); without this listener

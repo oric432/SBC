@@ -1,5 +1,7 @@
 import winston from 'winston';
 
+import { env } from '../config/env';
+
 const flattenError = (err: Error): string =>
   err instanceof AggregateError
     ? [err.message || err.name, ...err.errors.map((e) => flattenError(e))].filter(Boolean).join('; ')
@@ -38,14 +40,14 @@ const normalizeErrors = winston.format((info) => {
 });
 
 export const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
+  level: env.logLevel,
   format: winston.format.combine(
     winston.format.timestamp(),
     normalizeErrors(),
     winston.format.colorize(),
     winston.format.errors({ stack: true }),
     winston.format.printf(({ timestamp, level, message, stack }) => {
-      const isVerbose = ['verbose', 'debug'].includes(process.env.LOG_LEVEL || '');
+      const isVerbose = ['verbose', 'debug'].includes(env.logLevel);
       const details = isVerbose && stack ? `\n${stack}` : '';
       return `${timestamp} [${level}] ${message}${details}`;
     })
