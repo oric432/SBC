@@ -102,7 +102,7 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                                 <FormItem>
                                     <FormLabel>URI</FormLabel>
                                     <FormControl>
-                                        <Input {...field} placeholder="sip:callee@127.0.0.1:5080" className="font-mono" />
+                                        <Input {...field} placeholder="sip:callee@127.0.0.1" className="font-mono" />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
