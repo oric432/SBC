@@ -20,7 +20,7 @@ import type { RouteRuleWithKey } from "@/features/routes/types";
 import { getApiErrorMessage } from "@/lib/api";
 
 const routeFormSchema = z.object({
-    route_key: z.string().min(1, "Route key is required"),
+    priority: z.coerce.number().int().min(1, "Priority must be a positive integer"),
     uri: z.string().min(1, "URI is required"),
     sip_address: z.string().min(1, "SIP address is required"),
     port: z.coerce.number().int().min(1, "Port must be between 1-65535").max(65535, "Port must be between 1-65535"),
@@ -29,7 +29,7 @@ const routeFormSchema = z.object({
 
 type RouteFormValues = z.infer<typeof routeFormSchema>;
 
-const emptyValues: RouteFormValues = { route_key: "", uri: "", sip_address: "", port: 5060, codec: "" };
+const emptyValues: RouteFormValues = { priority: 1, uri: "", sip_address: "", port: 5060, codec: "" };
 
 interface RouteFormDialogProps {
     open: boolean;
@@ -56,12 +56,12 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
     const onSubmit = async (values: RouteFormValues) => {
         const payload = { ...values, codec: values.codec ? values.codec : null };
         try {
-            if (isEdit) {
-                await updateRoute(payload).unwrap();
-                toast.success(`Route "${payload.route_key}" updated`);
+            if (isEdit && route) {
+                await updateRoute({ ...payload, currentPriority: route.priority }).unwrap();
+                toast.success(`Route with priority ${payload.priority} updated`);
             } else {
                 await createRoute(payload).unwrap();
-                toast.success(`Route "${payload.route_key}" created`);
+                toast.success(`Route with priority ${payload.priority} created`);
             }
             onOpenChange(false);
         } catch (error) {
@@ -76,20 +76,20 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                     <DialogTitle>{isEdit ? "Edit route" : "Add route"}</DialogTitle>
                     <DialogDescription>
                         {isEdit
-                            ? "Update the destination for this route key."
-                            : "Define a new route key and its SIP destination."}
+                            ? "Update the destination and priority for this route."
+                            : "Define a new route's priority and SIP destination."}
                     </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                         <FormField
                             control={form.control}
-                            name="route_key"
+                            name="priority"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>Route key</FormLabel>
+                                    <FormLabel>Priority</FormLabel>
                                     <FormControl>
-                                        <Input {...field} disabled={isEdit} placeholder="callee" />
+                                        <Input {...field} type="number" min={1} placeholder="1" className="font-mono" />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -102,7 +102,7 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                                 <FormItem>
                                     <FormLabel>URI</FormLabel>
                                     <FormControl>
-                                        <Input {...field} placeholder="sip:callee@127.0.0.1:5080" />
+                                        <Input {...field} placeholder="sip:callee@127.0.0.1:5080" className="font-mono" />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -115,38 +115,40 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                                 <FormItem>
                                     <FormLabel>SIP address</FormLabel>
                                     <FormControl>
-                                        <Input {...field} placeholder="127.0.0.1" />
+                                        <Input {...field} placeholder="127.0.0.1" className="font-mono" />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )}
                         />
-                        <FormField
-                            control={form.control}
-                            name="port"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Port</FormLabel>
-                                    <FormControl>
-                                        <Input {...field} type="number" min={1} max={65535} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-                        <FormField
-                            control={form.control}
-                            name="codec"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Codec (optional)</FormLabel>
-                                    <FormControl>
-                                        <Input {...field} placeholder="PCMU" />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField
+                                control={form.control}
+                                name="port"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Port</FormLabel>
+                                        <FormControl>
+                                            <Input {...field} type="number" min={1} max={65535} className="font-mono" />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="codec"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Codec (optional)</FormLabel>
+                                        <FormControl>
+                                            <Input {...field} placeholder="PCMU" className="font-mono" />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                                 Cancel

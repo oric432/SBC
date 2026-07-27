@@ -1,3 +1,4 @@
+import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -16,16 +17,16 @@ import { getApiErrorMessage } from "@/lib/api";
 interface DeleteRouteAlertProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    routeKey: string;
+    priority: number;
 }
 
-export function DeleteRouteAlert({ open, onOpenChange, routeKey }: DeleteRouteAlertProps) {
+export function DeleteRouteAlert({ open, onOpenChange, priority }: DeleteRouteAlertProps) {
     const [deleteRoute, { isLoading }] = useDeleteRouteMutation();
 
     const handleDelete = async () => {
         try {
-            await deleteRoute(routeKey).unwrap();
-            toast.success(`Route "${routeKey}" deleted`);
+            await deleteRoute(priority).unwrap();
+            toast.success(`Route with priority ${priority} deleted`);
             onOpenChange(false);
         } catch (error) {
             toast.error(getApiErrorMessage(error));
@@ -36,7 +37,12 @@ export function DeleteRouteAlert({ open, onOpenChange, routeKey }: DeleteRouteAl
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Delete route "{routeKey}"?</AlertDialogTitle>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                        <AlertTriangle className="h-5 w-5" />
+                    </div>
+                    <AlertDialogTitle>
+                        Delete route with priority <span className="font-mono">{priority}</span>?
+                    </AlertDialogTitle>
                     <AlertDialogDescription>
                         This will permanently remove this route from the table. This action cannot be undone.
                     </AlertDialogDescription>

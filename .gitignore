@@ -7,3 +7,6 @@ docs/
 .claude-flow/
 settings.toml
 skills-lock.json
+agentdb.rvf
+agentdb.rvf.lock
+ruvector.db

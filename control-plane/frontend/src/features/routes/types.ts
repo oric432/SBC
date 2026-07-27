@@ -12,11 +12,12 @@ export interface RouteSnapshot {
 }
 
 export interface RouteRuleWithKey extends RouteRule {
-    route_key: string;
+    priority: number;
 }
 
 export type CreateRoutePayload = RouteRuleWithKey;
 
 export interface UpdateRoutePayload extends RouteRule {
-    route_key: string;
+    currentPriority: number;
+    priority: number;
 }

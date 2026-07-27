@@ -1,15 +1,28 @@
 import { Request, Response } from 'express';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { StatusCodes } from 'http-status-codes';
 
 import { db } from '../db/client';
 import { routeRules, routeTables } from '../db/schema';
 import { NotFoundError } from '../errors';
-import { SipRouteSnapshot } from '../types/sipRoutes';
+import { SipRouteRule, SipRouteSnapshot } from '../types/sipRoutes';
 import { sendSuccess } from '../utils/apiResponse';
 
 const DEFAULT_TABLE_ID = 'default';
 
-export const getRoutes = async (_req: Request, res: Response) => {
+const toRouteRule = (rule: {
+  uri: string;
+  sipAddress: string;
+  port: number;
+  codec: string | null;
+}): SipRouteRule => ({
+  uri: rule.uri,
+  sip_address: rule.sipAddress,
+  port: rule.port,
+  codec: rule.codec,
+});
+
+const getDefaultTable = async () => {
   const [table] = await db
     .select()
     .from(routeTables)
@@ -19,26 +32,82 @@ export const getRoutes = async (_req: Request, res: Response) => {
     throw new NotFoundError(`Route table '${DEFAULT_TABLE_ID}' not found`);
   }
 
+  return table;
+};
+
+export const getRoutes = async (_req: Request, res: Response) => {
+  const table = await getDefaultTable();
+
   const rules = await db
     .select()
     .from(routeRules)
-    .where(eq(routeRules.tableId, table.tableId));
+    .where(eq(routeRules.tableId, table.tableId))
+    .orderBy(routeRules.priority);
 
   const snapshot: SipRouteSnapshot = {
     table_id: table.tableId,
     version: table.version,
-    routes: Object.fromEntries(
-      rules.map((rule) => [
-        rule.routeKey,
-        {
-          uri: rule.uri,
-          sip_address: rule.sipAddress,
-          port: rule.port,
-          codec: rule.codec,
-        },
-      ]),
-    ),
+    routes: Object.fromEntries(rules.map((rule) => [rule.priority, toRouteRule(rule)])),
   };
 
   sendSuccess(res, snapshot);
+};
+
+export const createRoute = async (req: Request, res: Response) => {
+  const { priority, uri, sip_address, port, codec } = req.body;
+  const table = await getDefaultTable();
+
+  const [created] = await db
+    .insert(routeRules)
+    .values({
+      tableId: table.tableId,
+      priority,
+      uri,
+      sipAddress: sip_address,
+      port,
+      codec: codec ?? null,
+    })
+    .returning();
+
+  sendSuccess(res, toRouteRule(created), StatusCodes.CREATED);
+};
+
+export const updateRoute = async (req: Request, res: Response) => {
+  const currentPriority = Number(req.params.priority);
+  const { priority, uri, sip_address, port, codec } = req.body;
+  const table = await getDefaultTable();
+
+  const [updated] = await db
+    .update(routeRules)
+    .set({
+      priority,
+      uri,
+      sipAddress: sip_address,
+      port,
+      codec: codec ?? null,
+    })
+    .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, currentPriority)))
+    .returning();
+
+  if (!updated) {
+    throw new NotFoundError(`Route with priority ${currentPriority} not found`);
+  }
+
+  sendSuccess(res, toRouteRule(updated));
+};
+
+export const deleteRoute = async (req: Request, res: Response) => {
+  const priority = Number(req.params.priority);
+  const table = await getDefaultTable();
+
+  const [deleted] = await db
+    .delete(routeRules)
+    .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, priority)))
+    .returning();
+
+  if (!deleted) {
+    throw new NotFoundError(`Route with priority ${priority} not found`);
+  }
+
+  sendSuccess(res, undefined);
 };

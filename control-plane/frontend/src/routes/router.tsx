@@ -9,7 +9,7 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
             { index: true, element: <Navigate to="/routes" replace /> },
-            { path: "routes", element: <RoutesPage /> },
+            { path: "routes", element: <RoutesPage />, handle: { title: "Routes" } },
         ],
     },
 ]);

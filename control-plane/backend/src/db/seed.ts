@@ -13,7 +13,7 @@ async function seed() {
     .insert(routeRules)
     .values({
       tableId,
-      routeKey: '1',
+      priority: 1,
       uri: 'sip:callee@sbc.local',
       sipAddress: '127.0.0.1',
       port: 5080,
