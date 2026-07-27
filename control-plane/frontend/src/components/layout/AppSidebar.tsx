@@ -1,4 +1,4 @@
-import { Radio, Waypoints } from "lucide-react";
+import { History, Radio, Waypoints } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 import {
@@ -10,13 +10,20 @@ import {
     SidebarGroupLabel,
     SidebarHeader,
     SidebarMenu,
+    SidebarMenuBadge,
     SidebarMenuButton,
     SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useUnseenCallCount } from "@/features/call-history/unseen";
 
-const navItems = [{ title: "Routes", url: "/routes", icon: Waypoints }];
+const navItems = [
+    { title: "Routes", url: "/routes", icon: Waypoints },
+    { title: "Call History", url: "/call-history", icon: History },
+];
 
 export function AppSidebar() {
+    const unseenCallCount = useUnseenCallCount();
+
     return (
         <Sidebar>
             <SidebarHeader className="px-4 py-3.5">
@@ -50,6 +57,9 @@ export function AppSidebar() {
                                             <span>{item.title}</span>
                                         </NavLink>
                                     </SidebarMenuButton>
+                                    {item.url === "/call-history" && unseenCallCount > 0 && (
+                                        <SidebarMenuBadge>{unseenCallCount}</SidebarMenuBadge>
+                                    )}
                                 </SidebarMenuItem>
                             ))}
                         </SidebarMenu>
