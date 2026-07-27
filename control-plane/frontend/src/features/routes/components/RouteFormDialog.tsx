@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -53,9 +53,21 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
         defaultValues: emptyValues,
     });
 
+    // Read via a ref rather than a `data` dependency below, so a background
+    // refetch while the create dialog is open doesn't stomp on what the user
+    // already typed.
+    const dataRef = useRef(data);
+    dataRef.current = data;
+
     useEffect(() => {
         if (!open) return;
-        form.reset(route ? { ...route, codec: route.codec ?? "" } : emptyValues);
+        if (route) {
+            form.reset({ ...route, codec: route.codec ?? "" });
+        } else {
+            const priorities = dataRef.current ? Object.keys(dataRef.current.routes).map(Number) : [];
+            const nextPriority = priorities.length > 0 ? Math.max(...priorities) + 1 : 1;
+            form.reset({ ...emptyValues, priority: nextPriority });
+        }
         setPendingSwap(undefined);
         setCollidingRoute(undefined);
     }, [open, route, form]);
@@ -101,7 +113,12 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+            <DialogContent
+                onOpenAutoFocus={(event) => {
+                    event.preventDefault();
+                    form.setFocus("uri");
+                }}
+            >
                 <DialogHeader>
                     <DialogTitle>{isEdit ? "Edit route" : "Add route"}</DialogTitle>
                     <DialogDescription>
