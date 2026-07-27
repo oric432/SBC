@@ -75,8 +75,7 @@ void RealDialogActions::terminate_call() {
 }
 
 void RealDialogActions::cleanup() {
-    session_.rtp_caller().close();
-    session_.rtp_callee().close();
+    (void)session_.media_bridge()->close();
     session_.ctx()->call_manager_->schedule_remove(session_.call_id());
     Log::call()->info("[{}] dialog cleanup complete", session_.call_id());
 }

@@ -115,10 +115,23 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
     SbcContext* ctx = session_.ctx();
     const PjsipConfig& cfg = ctx->config_;
 
-    // 1. Both relay sockets are already bound (opened when the session was
-    // constructed); just cross-wire them.
-    session_.rtp_caller().set_peer(&session_.rtp_callee());
-    session_.rtp_callee().set_peer(&session_.rtp_caller());
+    // 1. Bind local sockets for RTP relay
+    auto caller_port = session_.media_bridge()->bind_leg_a();
+    if (!caller_port) {
+        Log::call()->error(
+            "[{}] failed to bind caller RTP port: {}",
+            session_.call_id(),
+            caller_port.error().message());
+        return;
+    }
+    auto callee_port = session_.media_bridge()->bind_leg_b();
+    if (!callee_port) {
+        Log::call()->error(
+            "[{}] failed to bind callee RTP port: {}",
+            session_.call_id(),
+            callee_port.error().message());
+        return;
+    }
 
     // 2. Parse the caller's offer; point the caller-facing socket at their RTP
     // address (symmetric-RTP latching will correct it if they are NATed).
@@ -129,11 +142,15 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
     }
     auto caller_rtp = Sdp::extract_rtp_endpoint(offer);
     if (!caller_rtp.ip_.empty()) {
-        session_.rtp_caller().set_remote_endpoint(caller_rtp.ip_, caller_rtp.port_);
+        session_.media_bridge()->set_remote_leg_a(caller_rtp.ip_, caller_rtp.port_);
     }
 
     // 3. Mangle the offer towards the callee: media anchored at our callee-facing socket.
-    Sdp::rewrite_connection_and_port(session_.pool(), offer, cfg.local_ip_, session_.rtp_callee().port());
+    Sdp::rewrite_connection_and_port(
+        session_.pool(),
+        offer,
+        cfg.local_ip_,
+        session_.media_bridge()->leg_b_port().value());
 
     // 4. Create the UAC dialog + invite session towards the destination.
     std::string local_uri_s = cfg.own_contact_uri();
@@ -195,13 +212,18 @@ void RealSetupActions::forward_200_ok(const std::string& sdp) {
     }
     auto callee_rtp = Sdp::extract_rtp_endpoint(answer);
     if (!callee_rtp.ip_.empty()) {
-        session_.rtp_callee().set_remote_endpoint(callee_rtp.ip_, callee_rtp.port_);
+        session_.media_bridge()->set_remote_leg_b(callee_rtp.ip_, callee_rtp.port_);
     }
 
     // Mangle the answer towards the caller: media anchored at our caller-facing socket.
-    Sdp::rewrite_connection_and_port(session_.pool(), answer, ctx->config_.local_ip_, session_.rtp_caller().port());
+    Sdp::rewrite_connection_and_port(
+        session_.pool(),
+        answer,
+        ctx->config_.local_ip_,
+        session_.media_bridge()->leg_a_port().value());
 
     send_subsequent_response(PJSIP_SC_OK, answer);
+    session_.media_bridge()->start_bridge_loop();
     Log::call()->info("[{}] 200 OK forwarded, RTP relay armed", session_.call_id());
 }
 
@@ -240,8 +262,7 @@ void RealSetupActions::terminate_call() {
 }
 
 void RealSetupActions::cleanup() {
-    session_.rtp_caller().close();
-    session_.rtp_callee().close();
+    (void)session_.media_bridge()->close();
     session_.ctx()->call_manager_->schedule_remove(session_.call_id());
     Log::call()->info("[{}] setup cleanup complete", session_.call_id());
 }
