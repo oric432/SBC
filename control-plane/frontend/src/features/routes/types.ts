@@ -21,3 +21,8 @@ export interface UpdateRoutePayload extends RouteRule {
     currentPriority: number;
     priority: number;
 }
+
+export interface SwapRoutePayload extends RouteRule {
+    currentPriority: number;
+    targetPriority: number;
+}
