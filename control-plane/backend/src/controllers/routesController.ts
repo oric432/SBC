@@ -4,7 +4,7 @@ import { StatusCodes } from 'http-status-codes';
 
 import { db } from '../db/client';
 import { routeRules, routeTables } from '../db/schema';
-import { NotFoundError } from '../errors';
+import { ConflictError, NotFoundError } from '../errors';
 import { SipRouteRule, SipRouteSnapshot } from '../types/sipRoutes';
 import { sendSuccess } from '../utils/apiResponse';
 
@@ -92,6 +92,56 @@ export const updateRoute = async (req: Request, res: Response) => {
   if (!updated) {
     throw new NotFoundError(`Route with priority ${currentPriority} not found`);
   }
+
+  sendSuccess(res, toRouteRule(updated));
+};
+
+export const swapRoute = async (req: Request, res: Response) => {
+  const currentPriority = Number(req.params.priority);
+  const { targetPriority, uri, sip_address, port, codec } = req.body;
+  const table = await getDefaultTable();
+
+  const updated = await db.transaction(async (tx) => {
+    const [sourceRow] = await tx
+      .select()
+      .from(routeRules)
+      .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, currentPriority)));
+
+    if (!sourceRow) {
+      throw new NotFoundError(`Route with priority ${currentPriority} not found`);
+    }
+
+    const [targetRow] = await tx
+      .select()
+      .from(routeRules)
+      .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, targetPriority)));
+
+    if (!targetRow) {
+      throw new ConflictError(`Route with priority ${targetPriority} no longer exists`);
+    }
+
+    // Route past the unique(tableId, priority) constraint: park the target
+    // row on a priority no live row can hold (negative), then move both
+    // rows into their final spots.
+    const tempPriority = -targetRow.id;
+    await tx.update(routeRules).set({ priority: tempPriority }).where(eq(routeRules.id, targetRow.id));
+
+    const [updatedSource] = await tx
+      .update(routeRules)
+      .set({
+        priority: targetPriority,
+        uri,
+        sipAddress: sip_address,
+        port,
+        codec: codec ?? null,
+      })
+      .where(eq(routeRules.id, sourceRow.id))
+      .returning();
+
+    await tx.update(routeRules).set({ priority: currentPriority }).where(eq(routeRules.id, targetRow.id));
+
+    return updatedSource;
+  });
 
   sendSuccess(res, toRouteRule(updated));
 };

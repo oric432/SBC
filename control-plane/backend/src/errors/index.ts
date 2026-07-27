@@ -3,6 +3,7 @@ import BadRequestError from './BadRequestError';
 import UnauthorizedError from './UnauthorizedError';
 import NotFoundError from './NotFoundError';
 import ServiceUnavailableError from './ServiceUnavailableError';
+import ConflictError from './ConflictError';
 
 export {
   CustomAPIError,
@@ -10,4 +11,5 @@ export {
   NotFoundError,
   UnauthorizedError,
   ServiceUnavailableError,
+  ConflictError,
 };
