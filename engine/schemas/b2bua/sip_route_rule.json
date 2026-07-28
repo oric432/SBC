@@ -1,0 +1,38 @@
+{
+   "type": "object",
+   "properties": {
+      "codec": {
+         "type": [
+            "string",
+            "null"
+         ],
+         "description": "Optional strict media codec requirement"
+      },
+      "port": {
+         "$ref": "#/$defs/int32_t",
+         "description": "Destination SIP signaling port"
+      },
+      "sip_address": {
+         "type": "string",
+         "description": "Destination SIP proxy or next-hop IP"
+      },
+      "uri": {
+         "type": "string",
+         "description": "The matching SIP URI"
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "int32_t": {
+         "type": "integer",
+         "minimum": -2147483648,
+         "maximum": 2147483647
+      }
+   },
+   "required": [
+      "uri",
+      "sip_address",
+      "port"
+   ],
+   "title": "SbcEngine::Protocols::SipRouteRule"
+}

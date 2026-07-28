@@ -8,6 +8,7 @@
 #include <glaze/glaze.hpp>
 #include <glaze/net/http_client.hpp>
 #include <system_error>
+#include "spdlog/spdlog.h"
 
 namespace SbcEngine {
 
@@ -30,12 +31,25 @@ Result<Protocols::SipRouteSnapshot> fetch_routes_snapshot(const RoutesClientConf
         return std::unexpected(Error("routes fetch bad status {}", response->status_code));
     }
 
-    Protocols::SipRouteSnapshot snapshot;
-    auto errc = glz::read_json(snapshot, response->response_body);
+    Protocols::ApiResponse<Protocols::SipRouteSnapshot> api_response;
+    auto errc = glz::read_json(api_response, response->response_body);
     if (errc) {
-        return std::unexpected(Error("routes response JSON parse failed for {}: {}", url, errc.custom_error_message));
+        return std::unexpected(Error(
+            "routes response JSON parse failed for {}: {}",
+            url,
+            glz::format_error(errc, response->response_body)));
     }
-    return snapshot;
+
+    if (!api_response.success) {
+        std::string err_msg = api_response.error ? api_response.error->message : "unknown error";
+        return std::unexpected(Error("routes API returned failure for {}: {}", url, err_msg));
+    }
+
+    if (!api_response.data) {
+        return std::unexpected(Error("routes API succeeded but returned no data for {}", url));
+    }
+
+    return *api_response.data;
 }
 
 } // namespace SbcEngine

@@ -1,6 +1,8 @@
 #include "MediaBridge.hpp"
 
+#include <boost/asio/error.hpp>
 #include <optional>
+#include <system_error>
 #include <utility>
 
 #ifndef RTPCPP_USE_BOOST_ASIO
@@ -10,42 +12,54 @@
 
 namespace SbcEngine {
 
+using namespace RtpCpp;
+
 struct MediaBridge::Impl {
     explicit Impl(const boost::asio::any_io_executor& executor)
-        : session_a_(RtpCpp::make_raw_rtp_session(executor))
-        , session_b_(RtpCpp::make_raw_rtp_session(executor)) {}
+        : session_a_(make_raw_rtp_session(executor))
+        , session_b_(make_raw_rtp_session(executor)) {}
 
-    RtpCpp::RtpSession<RtpCpp::BasicRawRtpSender> session_a_;
-    RtpCpp::RtpSession<RtpCpp::BasicRawRtpSender> session_b_;
+    RtpSession<BasicRawRtpSender> session_a_;
+    RtpSession<BasicRawRtpSender> session_b_;
 
     std::optional<boost::asio::ip::udp::endpoint> dest_a_;
     std::optional<boost::asio::ip::udp::endpoint> dest_b_;
 
     static void do_relay(
         std::shared_ptr<MediaBridge> self,
-        RtpCpp::RtpSession<RtpCpp::BasicRawRtpSender>& src,
-        RtpCpp::RtpSession<RtpCpp::BasicRawRtpSender>& dst,
+        RtpSession<BasicRawRtpSender>& src,
+        RtpSession<BasicRawRtpSender>& dst,
         boost::asio::ip::udp::endpoint& dst_ep) {
         src.receiver().async_receive_pkt([self = std::move(self), &src, &dst, &dst_ep](
-                                             const RtpCpp::RtpPacketView& pkt,
+                                             const RtpPacketView& pkt,
                                              [[maybe_unused]] const boost::asio::ip::udp::endpoint& src_ep,
                                              const std::error_code& err) mutable {
-            if (!err) {
-                // TODO: Implement Symmetric RTP latching using src_ep here
+            // TODO: Implement Symmetric RTP latching using src_ep here
+            if (err) {
+                std::error_code abort_err = boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
+                if (err == abort_err) {
+                    return;
+                }
 
-                dst.sender().async_send_pkt(
-                    pkt.packet(),
-                    dst_ep,
-                    [self, &src, &dst, &dst_ep](std::size_t /*bytes_sent*/, const std::error_code& send_err) mutable {
-                        if (send_err) {
-                            // TODO propagate error if sending fail
+                // TODO : handle errors that arrent operation aborted
+            }
+
+            dst.sender().async_send_pkt(
+                pkt.packet(),
+                dst_ep,
+                [self, &src, &dst, &dst_ep](std::size_t /*bytes_sent*/, const std::error_code& send_err) mutable {
+                    if (send_err) {
+                        std::error_code abort_err =
+                            boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
+
+                        if (send_err == abort_err) {
+                            return;
                         }
-                        Impl::do_relay(std::move(self), src, dst, dst_ep);
-                    });
-            }
-            else {
-                // TODO propagate error if receiving fail
-            }
+                        // TODO: handle errors that arrent operation aborted if sending fail
+                    }
+                    Impl::do_relay(std::move(self), src, dst, dst_ep);
+                });
+            // TODO propagate error if receiving fail
         });
     }
 };

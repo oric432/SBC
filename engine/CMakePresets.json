@@ -86,6 +86,17 @@
                 "BUILD_TESTS": "OFF",
                 "BUILD_TOOLS": "ON"
             }
+        },
+        {
+            "name": "schema-gen-only",
+            "inherits": "release",
+            "description": "Release build with only the schema generator",
+            "cacheVariables": {
+                "BUILD_ENGINE": "OFF",
+                "BUILD_TESTS": "OFF",
+                "BUILD_TOOLS": "ON",
+                "BUILD_SCHEMA_GENERATOR": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -116,6 +127,10 @@
         {
             "name": "build-tools-only",
             "configurePreset": "tools-only"
+        },
+        {
+            "name": "build-schema-gen",
+            "configurePreset": "schema-gen-only"
         }
     ],
     "testPresets": [

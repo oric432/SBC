@@ -1,0 +1,19 @@
+{
+   "type": "object",
+   "properties": {
+      "detail": {
+         "type": "string",
+         "description": "Detailed error message"
+      },
+      "message": {
+         "type": "string",
+         "description": "Error message description"
+      }
+   },
+   "additionalProperties": false,
+   "required": [
+      "message",
+      "detail"
+   ],
+   "title": "SbcEngine::Protocols::ApiError"
+}

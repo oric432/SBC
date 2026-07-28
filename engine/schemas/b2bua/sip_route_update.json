@@ -1,0 +1,76 @@
+{
+   "type": "object",
+   "properties": {
+      "deleted_routes": {
+         "anyOf": [
+            {
+               "type": "array",
+               "items": {
+                  "$ref": "#/$defs/int32_t"
+               }
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "Target priority numbers to be purged from the routing matrix"
+      },
+      "expected_version": {
+         "$ref": "#/$defs/int32_t",
+         "description": "State guard version. Transaction fails if engine state differs."
+      },
+      "upserted_routes": {
+         "anyOf": [
+            {
+               "type": "object",
+               "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                     "codec": {
+                        "type": [
+                           "string",
+                           "null"
+                        ],
+                        "description": "Optional strict media codec requirement"
+                     },
+                     "port": {
+                        "$ref": "#/$defs/int32_t",
+                        "description": "Destination SIP signaling port"
+                     },
+                     "sip_address": {
+                        "type": "string",
+                        "description": "Destination SIP proxy or next-hop IP"
+                     },
+                     "uri": {
+                        "type": "string",
+                        "description": "The matching SIP URI"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "uri",
+                     "sip_address",
+                     "port"
+                  ]
+               }
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "Deltas containing route modifications or new priority assignments"
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "int32_t": {
+         "type": "integer",
+         "minimum": -2147483648,
+         "maximum": 2147483647
+      }
+   },
+   "required": [
+      "expected_version"
+   ],
+   "title": "SbcEngine::Protocols::SipRouteUpdate"
+}

@@ -1,0 +1,6 @@
+{
+  "local_ip": "127.0.0.1",
+  "sbc_port": "5060",
+  "callee_port": "5061",
+  "caller_port": "5062"
+}

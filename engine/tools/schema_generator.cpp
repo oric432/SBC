@@ -37,6 +37,8 @@ int main() {
         export_schema<SipRouteRule>(output_directory / "sip_route_rule.json");
         export_schema<SipRouteSnapshot>(output_directory / "sip_route_snapshot.json");
         export_schema<SipRouteUpdate>(output_directory / "sip_route_update.json");
+        export_schema<ApiError>(output_directory / "api_error.json");
+        export_schema<ApiResponse<glz::raw_json>>(output_directory / "api_response.json");
 
 
     } catch (const std::exception& err) {
