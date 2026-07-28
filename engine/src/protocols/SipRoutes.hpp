@@ -4,10 +4,13 @@
 #include <flat_map>
 #include <string>
 #include <glaze/glaze.hpp>
+#include "Api.hpp"
 
 // NOLINTBEGIN(readability-identifier-naming)
 
 namespace SbcEngine::Protocols {
+
+
 
 struct SipRouteRule {
     std::string uri;
@@ -35,7 +38,6 @@ struct SipRouteSnapshot {
         glz::schema routes{.description = "Map of SIP routes keyed by evaluation priority number"};
     };
 };
-
 
 struct SipRouteUpdate {
     int expected_version{};

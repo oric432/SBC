@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/asio.hpp>
+
 #include <queue>
 #include <string>
 
@@ -9,7 +11,7 @@
 #include "sip/call/sbc_context.hpp"
 #include "sip/router/real_dialog_actions.hpp"
 #include "sip/router/real_setup_actions.hpp"
-#include "net/rtp/RtpSession.hpp"
+#include "net/rtp/MediaBridge.hpp"
 #include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/setup_sm.hpp"
 #include "sip/sm/sm_logger.hpp"
@@ -44,8 +46,7 @@ public:
     void set_inv_caller(pjsip_inv_session* inv) { inv_caller_ = inv; }
     void set_inv_callee(pjsip_inv_session* inv) { inv_callee_ = inv; }
 
-    RtpSession& rtp_caller() { return rtp_caller_; }
-    RtpSession& rtp_callee() { return rtp_callee_; }
+    std::shared_ptr<MediaBridge> media_bridge() { return media_bridge_; }
 
     [[nodiscard]] const std::string& caller_offer_sdp() const { return caller_offer_sdp_; }
     void set_caller_offer_sdp(std::string sdp) { caller_offer_sdp_ = std::move(sdp); }
@@ -64,8 +65,7 @@ private:
     pjsip_inv_session* inv_caller_ = nullptr;
     pjsip_inv_session* inv_callee_ = nullptr;
 
-    RtpSession rtp_caller_;
-    RtpSession rtp_callee_;
+    std::shared_ptr<MediaBridge> media_bridge_;
 
     std::string caller_offer_sdp_;
     pjsip_rx_data* current_rdata_ = nullptr;

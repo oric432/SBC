@@ -1,6 +1,9 @@
 add_library(net STATIC
-    rtp/RtpSession.cpp
+    rtp/RtpCpp.cpp
+    rtp/MediaBridge.cpp
 )
+target_compile_definitions(net PRIVATE RTPCPP_USE_BOOST_ASIO)
+
 target_include_directories(net PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(net PUBLIC
     project_warnings
@@ -9,3 +12,7 @@ target_link_libraries(net PUBLIC
     third_party::spdlog
 )
 target_precompile_headers(net PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
+
+if(BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

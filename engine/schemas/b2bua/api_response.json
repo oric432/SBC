@@ -1,0 +1,63 @@
+{
+   "type": "object",
+   "properties": {
+      "data": {
+         "anyOf": [
+            {
+               "$ref": "#/$defs/raw_json"
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "Optional response payload"
+      },
+      "error": {
+         "anyOf": [
+            {
+               "type": "object",
+               "properties": {
+                  "detail": {
+                     "type": "string",
+                     "description": "Detailed error message"
+                  },
+                  "message": {
+                     "type": "string",
+                     "description": "Error message description"
+                  }
+               },
+               "additionalProperties": false,
+               "required": [
+                  "message",
+                  "detail"
+               ]
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "Optional error details if the request failed"
+      },
+      "success": {
+         "type": "boolean",
+         "description": "Indicates if the API request was successful"
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "raw_json": {
+         "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+         ]
+      }
+   },
+   "required": [
+      "success"
+   ],
+   "title": "SbcEngine::Protocols::ApiResponse<glz::basic_raw_json<>>"
+}

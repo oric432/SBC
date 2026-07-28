@@ -15,9 +15,3 @@
 #include <cstdlib>
 #include <source_location>
 #include <expected>
-
-// Third-party libraries
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/logger.h>
-#include <spdlog/common.h>
