@@ -1,5 +1,5 @@
 import { ArrowLeftRight, ArrowRight } from "lucide-react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { toast } from "sonner";
 
 import {
@@ -78,7 +78,12 @@ function RouteSwapCard({
 export function SwapPriorityAlert({ pendingSwap, collidingRoute, onOpenChange, onSwapped }: SwapPriorityAlertProps) {
     const [swapRoute, { isLoading }] = useSwapRouteMutation();
 
-    const handleSwap = async () => {
+    const handleSwap = async (event: MouseEvent<HTMLButtonElement>) => {
+        // AlertDialogAction closes the dialog on click by default (it's a
+        // Radix Close under the hood). Prevent that so the dialog stays open
+        // for the duration of the mutation and only closes once we know the
+        // outcome.
+        event.preventDefault();
         if (!pendingSwap) return;
         try {
             await swapRoute(pendingSwap).unwrap();
@@ -91,7 +96,13 @@ export function SwapPriorityAlert({ pendingSwap, collidingRoute, onOpenChange, o
     };
 
     return (
-        <AlertDialog open={Boolean(pendingSwap)} onOpenChange={onOpenChange}>
+        <AlertDialog
+            open={Boolean(pendingSwap)}
+            onOpenChange={(nextOpen) => {
+                if (isLoading) return;
+                onOpenChange(nextOpen);
+            }}
+        >
             <AlertDialogContent className="sm:max-w-xl">
                 <AlertDialogHeader>
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -134,7 +145,7 @@ export function SwapPriorityAlert({ pendingSwap, collidingRoute, onOpenChange, o
                 )}
 
                 <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
                     <AlertDialogAction onClick={handleSwap} disabled={isLoading}>
                         Swap priorities
                     </AlertDialogAction>

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, or } from 'drizzle-orm';
 import { StatusCodes } from 'http-status-codes';
 
 import { db } from '../db/client';
@@ -102,19 +102,27 @@ export const swapRoute = async (req: Request, res: Response) => {
   const table = await getDefaultTable();
 
   const updated = await db.transaction(async (tx) => {
-    const [sourceRow] = await tx
+    // Lock both rows in one query, ordered by id ascending, so concurrent
+    // swaps always acquire row locks in the same canonical order and can't
+    // deadlock against each other.
+    const rows = await tx
       .select()
       .from(routeRules)
-      .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, currentPriority)));
+      .where(
+        and(
+          eq(routeRules.tableId, table.tableId),
+          or(eq(routeRules.priority, currentPriority), eq(routeRules.priority, targetPriority)),
+        ),
+      )
+      .orderBy(asc(routeRules.id))
+      .for('update');
+
+    const sourceRow = rows.find((row) => row.priority === currentPriority);
+    const targetRow = rows.find((row) => row.priority === targetPriority);
 
     if (!sourceRow) {
       throw new NotFoundError(`Route with priority ${currentPriority} not found`);
     }
-
-    const [targetRow] = await tx
-      .select()
-      .from(routeRules)
-      .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, targetPriority)));
 
     if (!targetRow) {
       throw new ConflictError(`Route with priority ${targetPriority} no longer exists`);
