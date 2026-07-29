@@ -38,7 +38,7 @@ const STATUS_CYCLE: CallStatus[] = [
     "Success",
     "Failed",
     "Success",
-    "Invalid Route",
+    "No Route Available",
     "Success",
     "Blocked",
     "Success",
@@ -47,7 +47,7 @@ const STATUS_CYCLE: CallStatus[] = [
 
 const FAILURE_REASONS: Record<Exclude<CallStatus, "Success">, string> = {
     Failed: "Callee did not answer within timeout",
-    "Invalid Route": "No matching route found for callee prefix",
+    "No Route Available": "No matching route found for callee prefix",
     Blocked: "Caller number matched the block list",
 };
 
