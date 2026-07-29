@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { useCreateRouteMutation, useUpdateRouteMutation } from "@/features/routes/api";
-import type { RouteRuleWithKey } from "@/features/routes/types";
+import { useCreateRouteMutation, useGetRoutesQuery, useUpdateRouteMutation } from "@/features/routes/api";
+import { SwapPriorityAlert } from "@/features/routes/components/SwapPriorityAlert";
+import type { RouteRuleWithKey, SwapRoutePayload } from "@/features/routes/types";
 import { getApiErrorMessage } from "@/lib/api";
 
 const routeFormSchema = z.object({
@@ -39,22 +40,50 @@ interface RouteFormDialogProps {
 
 export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogProps) {
     const isEdit = Boolean(route);
+    const { data } = useGetRoutesQuery();
     const [createRoute, { isLoading: isCreating }] = useCreateRouteMutation();
     const [updateRoute, { isLoading: isUpdating }] = useUpdateRouteMutation();
     const isSubmitting = isCreating || isUpdating;
+
+    const [pendingSwap, setPendingSwap] = useState<SwapRoutePayload | undefined>(undefined);
+    const [collidingRoute, setCollidingRoute] = useState<RouteRuleWithKey | undefined>(undefined);
 
     const form = useForm<RouteFormValues>({
         resolver: zodResolver(routeFormSchema),
         defaultValues: emptyValues,
     });
 
+    // Read via a ref rather than a `data` dependency below, so a background
+    // refetch while the create dialog is open doesn't stomp on what the user
+    // already typed.
+    const dataRef = useRef(data);
+    dataRef.current = data;
+
     useEffect(() => {
         if (!open) return;
-        form.reset(route ? { ...route, codec: route.codec ?? "" } : emptyValues);
+        if (route) {
+            form.reset({ ...route, codec: route.codec ?? "" });
+        } else {
+            const priorities = dataRef.current ? Object.keys(dataRef.current.routes).map(Number) : [];
+            const nextPriority = priorities.length > 0 ? Math.max(...priorities) + 1 : 1;
+            form.reset({ ...emptyValues, priority: nextPriority });
+        }
+        setPendingSwap(undefined);
+        setCollidingRoute(undefined);
     }, [open, route, form]);
 
     const onSubmit = async (values: RouteFormValues) => {
         const payload = { ...values, codec: values.codec ? values.codec : null };
+
+        if (isEdit && route && payload.priority !== route.priority) {
+            const collision = data?.routes[String(payload.priority)];
+            if (collision) {
+                setCollidingRoute({ priority: payload.priority, ...collision });
+                setPendingSwap({ currentPriority: route.priority, targetPriority: payload.priority, ...payload });
+                return;
+            }
+        }
+
         try {
             if (isEdit && route) {
                 await updateRoute({ ...payload, currentPriority: route.priority }).unwrap();
@@ -69,9 +98,27 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
         }
     };
 
+    const closeSwapAlert = (open: boolean) => {
+        if (!open) {
+            setPendingSwap(undefined);
+            setCollidingRoute(undefined);
+        }
+    };
+
+    const handleSwapped = () => {
+        setPendingSwap(undefined);
+        setCollidingRoute(undefined);
+        onOpenChange(false);
+    };
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+            <DialogContent
+                onOpenAutoFocus={(event) => {
+                    event.preventDefault();
+                    form.setFocus("uri");
+                }}
+            >
                 <DialogHeader>
                     <DialogTitle>{isEdit ? "Edit route" : "Add route"}</DialogTitle>
                     <DialogDescription>
@@ -102,7 +149,7 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                                 <FormItem>
                                     <FormLabel>URI</FormLabel>
                                     <FormControl>
-                                        <Input {...field} placeholder="sip:callee@127.0.0.1:5080" className="font-mono" />
+                                        <Input {...field} placeholder="sip:callee@127.0.0.1" className="font-mono" />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -160,6 +207,12 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                     </form>
                 </Form>
             </DialogContent>
+            <SwapPriorityAlert
+                pendingSwap={pendingSwap}
+                collidingRoute={collidingRoute}
+                onOpenChange={closeSwapAlert}
+                onSwapped={handleSwapped}
+            />
         </Dialog>
     );
 }

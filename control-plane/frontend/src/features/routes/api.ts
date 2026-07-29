@@ -1,6 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type { ApiResponse } from "@/lib/api";
-import type { CreateRoutePayload, RouteRule, RouteSnapshot, UpdateRoutePayload } from "./types";
+import type { CreateRoutePayload, RouteRule, RouteSnapshot, SwapRoutePayload, UpdateRoutePayload } from "./types";
 
 // 2xx responses are always { success: true, data }; fetchBaseQuery routes
 // non-2xx responses to transformErrorResponse instead, so this only ever
@@ -45,6 +45,15 @@ export const routesApi = createApi({
                 { type: "Route", id: "LIST" },
             ],
         }),
+        swapRoute: builder.mutation<RouteRule, SwapRoutePayload>({
+            query: ({ currentPriority, targetPriority, uri, sip_address, port, codec }) => ({
+                url: `/routes/${currentPriority}/swap`,
+                method: "PATCH",
+                body: { targetPriority, uri, sip_address, port, codec },
+            }),
+            transformResponse: unwrap<RouteRule>,
+            invalidatesTags: [{ type: "Route", id: "LIST" }],
+        }),
         deleteRoute: builder.mutation<void, number>({
             query: (priority) => ({
                 url: `/routes/${priority}`,
@@ -59,4 +68,10 @@ export const routesApi = createApi({
     }),
 });
 
-export const { useGetRoutesQuery, useCreateRouteMutation, useUpdateRouteMutation, useDeleteRouteMutation } = routesApi;
+export const {
+    useGetRoutesQuery,
+    useCreateRouteMutation,
+    useUpdateRouteMutation,
+    useSwapRouteMutation,
+    useDeleteRouteMutation,
+} = routesApi;

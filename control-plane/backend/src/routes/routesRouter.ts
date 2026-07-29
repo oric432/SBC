@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { createRoute, deleteRoute, getRoutes, updateRoute } from '../controllers/routesController';
+import { createRoute, deleteRoute, getRoutes, swapRoute, updateRoute } from '../controllers/routesController';
 import { validateBody, validateParams } from '../middlewares/validation';
-import { priorityParamSchema, routeBodySchema } from '../schemas/routesSchemas';
+import { priorityParamSchema, routeBodySchema, swapRouteBodySchema } from '../schemas/routesSchemas';
 
 const router = Router();
 
@@ -12,6 +12,12 @@ router.put(
   validateParams(priorityParamSchema),
   validateBody(routeBodySchema),
   updateRoute,
+);
+router.patch(
+  '/:priority/swap',
+  validateParams(priorityParamSchema),
+  validateBody(swapRouteBodySchema),
+  swapRoute,
 );
 router.delete('/:priority', validateParams(priorityParamSchema), deleteRoute);
 

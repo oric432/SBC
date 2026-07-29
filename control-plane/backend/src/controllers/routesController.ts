@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, or } from 'drizzle-orm';
 import { StatusCodes } from 'http-status-codes';
 
 import { db } from '../db/client';
 import { routeRules, routeTables } from '../db/schema';
-import { NotFoundError } from '../errors';
+import { ConflictError, NotFoundError } from '../errors';
 import { SipRouteRule, SipRouteSnapshot } from '../types/sipRoutes';
 import { sendSuccess } from '../utils/apiResponse';
 
@@ -92,6 +92,64 @@ export const updateRoute = async (req: Request, res: Response) => {
   if (!updated) {
     throw new NotFoundError(`Route with priority ${currentPriority} not found`);
   }
+
+  sendSuccess(res, toRouteRule(updated));
+};
+
+export const swapRoute = async (req: Request, res: Response) => {
+  const currentPriority = Number(req.params.priority);
+  const { targetPriority, uri, sip_address, port, codec } = req.body;
+  const table = await getDefaultTable();
+
+  const updated = await db.transaction(async (tx) => {
+    // Lock both rows in one query, ordered by id ascending, so concurrent
+    // swaps always acquire row locks in the same canonical order and can't
+    // deadlock against each other.
+    const rows = await tx
+      .select()
+      .from(routeRules)
+      .where(
+        and(
+          eq(routeRules.tableId, table.tableId),
+          or(eq(routeRules.priority, currentPriority), eq(routeRules.priority, targetPriority)),
+        ),
+      )
+      .orderBy(asc(routeRules.id))
+      .for('update');
+
+    const sourceRow = rows.find((row) => row.priority === currentPriority);
+    const targetRow = rows.find((row) => row.priority === targetPriority);
+
+    if (!sourceRow) {
+      throw new NotFoundError(`Route with priority ${currentPriority} not found`);
+    }
+
+    if (!targetRow) {
+      throw new ConflictError(`Route with priority ${targetPriority} no longer exists`);
+    }
+
+    // Route past the unique(tableId, priority) constraint: park the target
+    // row on a priority no live row can hold (negative), then move both
+    // rows into their final spots.
+    const tempPriority = -targetRow.id;
+    await tx.update(routeRules).set({ priority: tempPriority }).where(eq(routeRules.id, targetRow.id));
+
+    const [updatedSource] = await tx
+      .update(routeRules)
+      .set({
+        priority: targetPriority,
+        uri,
+        sipAddress: sip_address,
+        port,
+        codec: codec ?? null,
+      })
+      .where(eq(routeRules.id, sourceRow.id))
+      .returning();
+
+    await tx.update(routeRules).set({ priority: currentPriority }).where(eq(routeRules.id, targetRow.id));
+
+    return updatedSource;
+  });
 
   sendSuccess(res, toRouteRule(updated));
 };
