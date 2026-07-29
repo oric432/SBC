@@ -1,6 +1,6 @@
-export type CallStatus = "Success" | "Failed" | "Invalid Route" | "Blocked";
+export type CallStatus = "Success" | "Failed" | "No Route Available" | "Blocked";
 
-export const CALL_STATUSES: CallStatus[] = ["Success", "Failed", "Invalid Route", "Blocked"];
+export const CALL_STATUSES: CallStatus[] = ["Success", "Failed", "No Route Available", "Blocked"];
 
 export type Codec = "G.711 (PCMU)" | "G.711 (PCMA)" | "G.729" | "Opus" | "G.722";
 
