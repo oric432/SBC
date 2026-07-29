@@ -5,6 +5,9 @@ import { logger } from '../utils/logger';
 import { sendError } from '../utils/apiResponse';
 import { CustomError } from '../utils/interfaces';
 
+const isClientError = (statusCode?: number): boolean =>
+  typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500;
+
 const NETWORK_UNREACHABLE_ERRNOS = new Set(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT']);
 
 // Postgres SQLSTATE codes are <2-char class><3-char specific case>, e.g.
@@ -29,16 +32,25 @@ const errorHandlerMiddleware = (
 ) => {
   const cause = dbErrorCause(err);
 
-  // Expected/mapped cases: morgan already logs method/path/status for every
-  // request, so the status code alone is enough context here -- no need to
-  // duplicate it with an error-level log line.
+  // Expected/mapped cases -- known client- or infra-caused, not a bug --
+  // so warn with just the message, no stack trace.
   if (cause?.code && NETWORK_UNREACHABLE_ERRNOS.has(cause.code)) {
+    logger.warn('Database unavailable, try again later');
     return sendError(res, 'Database unavailable, try again later', StatusCodes.SERVICE_UNAVAILABLE);
   }
 
   const mapped = cause?.code && SQLSTATE_CLASS_RESPONSE[cause.code.slice(0, 2)];
   if (mapped) {
+    logger.warn(mapped.message);
     return sendError(res, mapped.message, mapped.status);
+  }
+
+  // Known client-caused error (404/409/etc, thrown directly by controllers) --
+  // not a bug, so warn with just the message instead of a full error+stack.
+  if (isClientError(err.statusCode)) {
+    logger.warn(err.message);
+    const status = err.statusCode as number;
+    return sendError(res, err.message, status);
   }
 
   // Unexpected/unmapped error -- an actual bug, not a known client-caused
