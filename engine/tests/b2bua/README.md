@@ -10,7 +10,7 @@ Edit `config.json` to change the test IPs and ports:
 - `callee_port`: Port the Callee listens on.
 - `caller_port`: Port the Caller uses.
 
-RTP (using `g711a.pcap`) is sent and echoed automatically by both scripts.
+RTP (using `g711a.pcap`) is continuously streamed independently by both Caller and Callee at realistic G.711 packet pacing (~30ms per packet).
 
 ## How to Run
 

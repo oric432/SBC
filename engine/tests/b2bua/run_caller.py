@@ -17,7 +17,8 @@ with open("tests/b2bua/config.json", "r") as f:
 local_ip = config.get("local_ip", "127.0.0.1")
 sbc_port = str(config.get("sbc_port", "5060"))
 caller_port = str(config.get("caller_port", "5062"))
-caller_args = ["sipp", "-sf", "tests/b2bua/caller.xml", f"{local_ip}:{sbc_port}", "-i", local_ip, "-p", caller_port, "-m", "1"]
+caller_media_port = str(config.get("caller_media_port", "6002"))
+caller_args = ["sipp", "-sf", "tests/b2bua/caller.xml", f"{local_ip}:{sbc_port}", "-i", local_ip, "-p", caller_port, "-mp", caller_media_port, "-m", "1"]
 
 print(f"Running SIPp Caller (sending to {sbc_port})...")
 print(f"--> Local SIP URI: sip:sipp@{local_ip}:{caller_port}")

@@ -45,11 +45,13 @@
     ]]>
   </send>
 
-  <!-- Play pcap audio and pause indefinitely to keep the call established for debugging -->
+  <!-- Play pcap audio continuously in a loop during the call -->
+  <label id="pcap_loop"/>
   <nop>
     <action>
       <exec play_pcap_audio="tests/b2bua/g711a.pcap"/>
     </action>
   </nop>
-  <pause milliseconds="2147483647"/>
+  <pause milliseconds="7080"/>
+  <nop next="pcap_loop"/>
 </scenario>
