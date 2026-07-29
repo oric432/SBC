@@ -7,6 +7,7 @@ import { routeRules, routeTables } from '../db/schema';
 import { ConflictError, NotFoundError } from '../errors';
 import { SipRouteRule, SipRouteSnapshot } from '../types/sipRoutes';
 import { sendSuccess } from '../utils/apiResponse';
+import { logger } from '../utils/logger';
 
 const DEFAULT_TABLE_ID = 'default';
 
@@ -69,6 +70,8 @@ export const createRoute = async (req: Request, res: Response) => {
     })
     .returning();
 
+  logger.info(`Route created: priority=${created.priority} uri=${created.uri}`);
+
   sendSuccess(res, toRouteRule(created), StatusCodes.CREATED);
 };
 
@@ -92,6 +95,10 @@ export const updateRoute = async (req: Request, res: Response) => {
   if (!updated) {
     throw new NotFoundError(`Route with priority ${currentPriority} not found`);
   }
+
+  const priorityLabel =
+    updated.priority !== currentPriority ? `${currentPriority}->${updated.priority}` : `${updated.priority}`;
+  logger.info(`Route updated: priority=${priorityLabel} uri=${updated.uri}`);
 
   sendSuccess(res, toRouteRule(updated));
 };
@@ -151,6 +158,8 @@ export const swapRoute = async (req: Request, res: Response) => {
     return updatedSource;
   });
 
+  logger.info(`Route priorities swapped: ${currentPriority}<->${targetPriority}`);
+
   sendSuccess(res, toRouteRule(updated));
 };
 
@@ -166,6 +175,8 @@ export const deleteRoute = async (req: Request, res: Response) => {
   if (!deleted) {
     throw new NotFoundError(`Route with priority ${priority} not found`);
   }
+
+  logger.info(`Route deleted: priority=${deleted.priority} uri=${deleted.uri}`);
 
   sendSuccess(res, undefined);
 };
