@@ -15,7 +15,7 @@ namespace Sml = boost::sml;
 // tag_ names the machine instance (setup/dialog/options + owning call) so
 // interleaved logs from concurrent calls stay attributable.
 //
-// Levels: state transitions = info, events = debug, guards/actions = trace.
+// Levels: state transitions/events = debug, guards/actions = trace.
 class SmLogger {
 public:
     SmLogger(std::string_view machine, std::string_view call_id)
@@ -42,7 +42,7 @@ public:
 
     template <class TSm, class TSrcState, class TDstState>
     void log_state_change(const TSrcState& src, const TDstState& dst) {
-        SIPI::Log::sm()->info("{} {} -> {}", tag_, short_name(src.c_str()), short_name(dst.c_str()));
+        SIPI::Log::sm()->debug("{} {} -> {}", tag_, short_name(src.c_str()), short_name(dst.c_str()));
     }
 
 private:
