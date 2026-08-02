@@ -7,12 +7,6 @@
 #include "core/utils/error.hpp"
 
 namespace SbcEngine {
-
-// API routes client endpoints.
-namespace ClientApiEndpoints {
-constexpr std::string_view kRoutes = "/api/b2bua/routes";
-}
-
 // API routes client configuration.
 struct RoutesClientConfig {
     std::string http_url_;
