@@ -42,7 +42,7 @@ public:
 
     template <class TSm, class TSrcState, class TDstState>
     void log_state_change(const TSrcState& src, const TDstState& dst) {
-        SIPI::Log::sm()->debug("{} {} -> {}", tag_, short_name(src.c_str()), short_name(dst.c_str()));
+        SIPI::Log::sm()->trace("{} {} -> {}", tag_, short_name(src.c_str()), short_name(dst.c_str()));
     }
 
 private:
