@@ -201,6 +201,8 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx_->module_id_] = session;
 
+    Log::call()->info("[{}] INVITE received, request-uri {}", call_id, extract_request_uri(rx_data));
+
     std::string sdp = extract_sdp(rx_data);
     session->set_caller_offer_sdp(sdp);
     session->set_current_rdata(rx_data);
