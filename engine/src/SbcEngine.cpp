@@ -89,7 +89,8 @@ int main() {
 
     stack.run(); // blocks until stop()
 
-    // clean established calls incase of SIGINT
+    // Explicit call, not ~CallManager(): a destructor silently sending SIP
+    // messages is a surprising side effect, not just a resource cleanup.
     call_manager.terminate_established_calls();
 
     work_guard.reset();
