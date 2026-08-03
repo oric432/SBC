@@ -182,6 +182,9 @@ void PjsipStack::run() {
 
 void PjsipStack::stop() {
     running_ = false;
+
+    // Not thread-safe. Only OK because today's only caller is the signal
+    // handler, same thread as run().
     router_ = nullptr;
 }
 
