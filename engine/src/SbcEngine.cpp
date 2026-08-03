@@ -89,6 +89,9 @@ int main() {
 
     stack.run(); // blocks until stop()
 
+    // clean established calls incase of SIGINT
+    call_manager.terminate_established_calls();
+
     work_guard.reset();
     ioc.stop();
     asio_thread.join();

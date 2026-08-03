@@ -2,6 +2,8 @@
 
 #include "sip/call/call_session.hpp"
 #include "sip/call/sbc_context.hpp"
+#include "sip/sm/dialog_sm.hpp"
+#include "sip/sm/events.hpp"
 
 namespace SbcEngine {
 
@@ -44,6 +46,16 @@ void CallManager::purge_scheduled() {
         sessions_.erase(call_id);
     }
     pending_remove_.clear();
+}
+
+void CallManager::terminate_established_calls() {
+    for (auto& [call_id, session] : sessions_) {
+        auto& dialog = session->dialog_sm();
+        if (dialog.is(Sml::state<Active>) || dialog.is(Sml::state<Reinviting>) ||
+            dialog.is(Sml::state<WaitingForReinviteAck>)) {
+            dialog.process_event(CallError{});
+        }
+    }
 }
 
 } // namespace SbcEngine
