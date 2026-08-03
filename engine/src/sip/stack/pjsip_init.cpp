@@ -182,6 +182,7 @@ void PjsipStack::run() {
 
 void PjsipStack::stop() {
     running_ = false;
+    router_ = nullptr;
 }
 
 void PjsipStack::shutdown() {
