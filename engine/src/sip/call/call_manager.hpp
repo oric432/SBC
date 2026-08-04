@@ -38,6 +38,12 @@ public:
     void schedule_remove(const std::string& call_id);
     void purge_scheduled();
 
+    // Sends a BYE to both legs of every call whose dialog is confirmed and
+    // still up (Active/Reinviting/WaitingForReinviteAck), so peers aren't left
+    // hanging when the process shuts down. Calls still mid-setup (no answer
+    // yet) are left alone here.
+    void terminate_established_calls();
+
 private:
     std::unordered_map<std::string, std::unique_ptr<CallSession>> sessions_;
     std::vector<std::string> pending_remove_;
