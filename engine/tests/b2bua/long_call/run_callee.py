@@ -8,7 +8,7 @@ import json
 
 # Change to the root of the project so paths work correctly
 script_dir = os.path.dirname(os.path.abspath(__file__))
-engine_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+engine_dir = os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
 os.chdir(engine_dir)
 
 with open("tests/b2bua/config.json", "r") as f:
@@ -17,7 +17,7 @@ with open("tests/b2bua/config.json", "r") as f:
 local_ip = config.get("local_ip", "127.0.0.1")
 callee_port = str(config.get("callee_port", "5061"))
 callee_media_port = str(config.get("callee_media_port", "6004"))
-callee_args = ["sipp", "-sf", "tests/b2bua/callee.xml", "-i", local_ip, "-p", callee_port, "-mp", callee_media_port, "-m", "1"]
+callee_args = ["sipp", "-sf", "tests/b2bua/long_call/callee.xml", "-i", local_ip, "-p", callee_port, "-mp", callee_media_port, "-m", "1"]
 
 print(f"Starting SIPp Callee (listening on {callee_port})...")
 print(f"--> Local SIP URI: sip:sipp@{local_ip}:{callee_port}")
