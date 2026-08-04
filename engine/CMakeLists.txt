@@ -89,6 +89,7 @@ if(BUILD_ENGINE)
     # Main Executable (SbcEngine)
     add_executable(SbcEngine
         src/SbcEngine.cpp
+        src/sbc_app.cpp
     )
 
     target_precompile_headers(SbcEngine PRIVATE
