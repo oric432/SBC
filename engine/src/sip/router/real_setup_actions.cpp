@@ -228,20 +228,23 @@ void RealSetupActions::forward_200_ok(const std::string& sdp) {
 }
 
 void RealSetupActions::forward_rejection(int status_code) {
+    Log::call()->info("[{}] call rejected by callee ({})", session_.call_id(), status_code);
     send_subsequent_response(status_code);
 }
 
 void RealSetupActions::send_cancel() {
+    Log::call()->info("[{}] call cancelled by caller", session_.call_id());
     end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED, "send_cancel");
 }
 
 void RealSetupActions::forward_final_response() {
     // PJSIP already answers the caller's CANCEL and terminates the caller-side
     // INVITE with 487 internally; nothing to forward manually.
-    Log::call()->debug("[{}] invite terminated after cancel", session_.call_id());
+    Log::call()->info("[{}] invite terminated after cancel", session_.call_id());
 }
 
 void RealSetupActions::send_ack_then_bye_to_callee() {
+    Log::call()->info("[{}] callee answer SDP invalid, rejecting call", session_.call_id());
     // ACK for the callee's 200 OK is sent automatically by the invite session;
     // ending the session now issues the BYE.
     end_session(session_.inv_callee(), PJSIP_SC_OK, "send_ack_then_bye_to_callee");
