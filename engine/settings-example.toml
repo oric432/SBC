@@ -10,3 +10,4 @@ identity_user = "sbc"
 [control_plane]
 http_url = "http://127.0.0.1:3001"
 http_timeout = 5
+http_retry_interval = 5

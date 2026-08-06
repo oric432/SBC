@@ -1,3 +1,4 @@
+#include <chrono>
 #include <csignal>
 #include <thread>
 
@@ -38,18 +39,16 @@ int main() {
     Log::set_log_level(settings.logging.level);
 
     SbcEngine::RoutesStore routes_store;
-    SbcEngine::RoutesClientConfig routes_cfg{
+
+    SbcEngine::RoutesClient client{{
         .http_url_ = settings.control_plane.http_url,
-        .http_timeout_seconds_ = settings.control_plane.http_timeout,
-    };
-    auto snapshot_result = SbcEngine::fetch_routes_snapshot(routes_cfg);
-    if (snapshot_result) {
-        Log::app()->info("loaded routing table '{}' version {}", snapshot_result->table_id, snapshot_result->version);
-        routes_store.set_snapshot(std::move(*snapshot_result));
-    }
-    else {
-        Log::app()->warn("failed to fetch routing table at startup: {}", snapshot_result.error());
-    }
+        .http_timeout_ = std::chrono::seconds{settings.control_plane.http_timeout},
+        .retry_interval_ = std::chrono::seconds{settings.control_plane.http_retry_interval}
+    }};
+
+    auto fetch_result = client.fetch_snapshot_with_retry();
+    Log::app()->info("loaded routing table '{}' version {} after {} attempts", fetch_result.snapshot_.table_id, fetch_result.snapshot_.version, fetch_result.attempts_);
+    routes_store.set_snapshot(std::move(fetch_result.snapshot_));
 
     SbcEngine::PjsipConfig config;
     config.bind_ip_ = settings.sip.address;

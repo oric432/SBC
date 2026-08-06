@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -14,6 +15,7 @@ namespace SbcEngine {
 namespace SettingsDefaults {
 constexpr uint16_t kLocalSipPort = 5060;
 constexpr int kConnectionTimeoutSeconds = 5;
+constexpr int kRetryInterval = 5;
 } // namespace SettingsDefaults
 
 struct LoggingSettings {
@@ -29,7 +31,8 @@ struct SipSettings {
 
 struct ControlPlaneSettings {
     std::string http_url = "http://127.0.0.1:3001";
-    int http_timeout = SettingsDefaults::kConnectionTimeoutSeconds;
+    std::chrono::seconds http_timeout{SettingsDefaults::kConnectionTimeoutSeconds};
+    std::chrono::seconds http_retry_interval{SettingsDefaults::kRetryInterval};
 };
 
 // Runtime configuration loaded from settings.toml at startup.
