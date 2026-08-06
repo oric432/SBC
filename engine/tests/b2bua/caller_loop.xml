@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1" ?>
 <!DOCTYPE scenario SYSTEM "sipp.dtd">
-<scenario name="Basic SIPp UAC - hangs up after 10s">
+<scenario name="Basic SIPp UAC">
   <send retrans="500">
     <![CDATA[
       INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
@@ -27,7 +27,7 @@
 
   <recv response="100" optional="true"></recv>
   <recv response="180" optional="true"></recv>
-
+  
   <recv response="200" rtd="true"></recv>
 
   <send>
@@ -45,23 +45,13 @@
     ]]>
   </send>
 
-  <!-- Hold the call up for 10s (no infinite loop) so the dialog and its
-       CallSession actually exist for a while, then tear it down ourselves. -->
-  <pause milliseconds="10000"/>
-
-  <send retrans="500">
-    <![CDATA[
-      BYE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
-      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
-      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
-      To: sut <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
-      Call-ID: [call_id]
-      CSeq: 2 BYE
-      Contact: sip:sipp@[local_ip]:[local_port]
-      Max-Forwards: 70
-      Content-Length: 0
-    ]]>
-  </send>
-
-  <recv response="200" crlf="true"></recv>
+  <!-- Play pcap audio continuously in a loop during the call -->
+  <label id="pcap_loop"/>
+  <nop>
+    <action>
+      <exec play_pcap_audio="tests/b2bua/g711a.pcap"/>
+    </action>
+  </nop>
+  <pause milliseconds="7080"/>
+  <nop next="pcap_loop"/>
 </scenario>

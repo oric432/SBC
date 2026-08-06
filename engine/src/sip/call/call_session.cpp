@@ -1,5 +1,9 @@
 #include "call_session.hpp"
 
+#include "core/utils/log.hpp"
+
+using namespace SIPI;
+
 namespace SbcEngine {
 
 namespace {
@@ -20,6 +24,8 @@ CallSession::CallSession(std::string call_id, SbcContext* ctx)
     , dialog_sm_(dialog_actions_, dialog_sm_logger_) {}
 
 CallSession::~CallSession() {
+    Log::call()->trace("[{}] CallSession destroyed, releasing pool (mod_data[{}] freed)",
+                        call_id_, ctx_->module_id_);
     if (pool_ != nullptr) {
         pjsip_endpt_release_pool(ctx_->endpt_, pool_);
         pool_ = nullptr;
