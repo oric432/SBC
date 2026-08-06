@@ -15,9 +15,9 @@ namespace SbcEngine {
 namespace SettingsDefaults {
 constexpr uint16_t kLocalSipPort = 5060;
 constexpr int kConnectionTimeoutSeconds = 5;
+constexpr int kRetryInterval = 5;
 // Matches PJSIP's own default (PJSIP_TD_TIMEOUT) so an unset key changes nothing.
 constexpr int kInviteTimeoutMs = 32000;
-constexpr int kRetryInterval = 5;
 } // namespace SettingsDefaults
 
 struct LoggingSettings {
