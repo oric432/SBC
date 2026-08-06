@@ -2,19 +2,6 @@
 
 Integration tests for the SBC's B2BUA functionality using SIPp.
 
-## Layout
-
-```
-tests/b2bua/
-├── config.json        # shared IPs/ports
-├── g711a.pcap         # shared RTP payload
-├── run_caller.py       # caller runner, --loop selects the scenario
-├── run_callee.py       # callee runner, --loop selects the scenario
-├── caller.xml          # default: hold ~10s, send BYE, exit on its own
-├── callee.xml          # default: wait for the caller's BYE, exit on its own
-├── caller_loop.xml      # --loop: hold indefinitely (Ctrl+C to hang up)
-└── callee_loop.xml      # --loop: hold indefinitely (Ctrl+C to hang up)
-```
 
 ## Configuration
 
