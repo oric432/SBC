@@ -26,14 +26,16 @@ From the repo root:
 
 ```bash
 # Configure and build (debug preset automatically enables clang-tidy)
+cd engine
 cmake --preset debug
 cmake --build --preset build-debug
+cd ..
 
 # Run unit tests
-ctest --test-dir build
+ctest --test-dir engine/build
 
 # Run the SBC engine
-./build/SbcEngine
+./engine/build/SbcEngine
 ```
 
 ## Code Quality (Formatting & Linting)
@@ -42,9 +44,9 @@ This project strictly enforces code formatting and static analysis:
 
 1. **Formatting**: Run the CMake `format` target to automatically format all source files using `clang-format`.
    ```bash
-   cmake --build build --target format
+   cmake --build engine/build --target format
    ```
-2. **Linting (`clang-tidy`)**: Static analysis is deeply integrated into the CMake build. It is automatically enabled when you configure using the `debug` or `relwithdebinfo` presets (which set `ENABLE_CLANG_TIDY=true`). Any clang-tidy warnings will appear as standard compiler warnings/errors during `cmake --build`.
+2. **Linting (`clang-tidy`)**: Static analysis is deeply integrated into the CMake build. It is automatically enabled when you configure using the `debug` or `relwithdebinfo` presets (which set `ENABLE_CLANG_TIDY=true`). Any clang-tidy warnings will appear as standard compiler warnings/errors during `cmake --build engine/build`.
 
 `tests/` covers the state machines via mocked actions. Everything else in
 this directory (RTP packet parsing, `sdp_mangler`, `SdpValidator`, `PjsipStack`, `MessageRouter`)
