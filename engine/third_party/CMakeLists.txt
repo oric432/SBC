@@ -1,6 +1,9 @@
 include(FetchContent)
 set(FETCHCONTENT_QUIET FALSE)
 
+# Include utilities
+include(${CMAKE_CURRENT_LIST_DIR}/Utils.cmake)
+
 # 1. Include all dependency declarations (defines where to download them)
 if(BUILD_ENGINE OR BUILD_TESTS)
     include(${CMAKE_CURRENT_LIST_DIR}/spdlog/declare.cmake)

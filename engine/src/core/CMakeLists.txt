@@ -3,7 +3,6 @@ add_library(core STATIC
 )
 target_include_directories(core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(core PUBLIC
-    project_warnings
     project_options
     third_party::spdlog
     third_party::glaze
