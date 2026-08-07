@@ -58,15 +58,14 @@ FetchContent_Declare(
 ```
 
 ### Step 3: Configure Target (`configure.cmake`)
-Create `third_party/<new_dependency>/configure.cmake` to call `FetchContent_MakeAvailable` and define the `third_party::` wrapper target pointing to the official target:
-```cmake
-# 1. Bring in the package
-FetchContent_MakeAvailable(<new_dependency>)
+Create `third_party/<new_dependency>/configure.cmake`. Instead of raw CMake commands, use our helper macros provided in `Utils.cmake` to build the dependency without its tests, and expose it cleanly as a `SYSTEM` target (which suppresses third-party compiler warnings):
 
-# 2. Expose the wrapper target in the third_party:: namespace
-add_library(tp_<new_dependency> INTERFACE)
-add_library(third_party::<new_dependency> ALIAS tp_<new_dependency>)
-target_link_libraries(tp_<new_dependency> INTERFACE <official_library_target_name>)
+```cmake
+# 1. Build the dependency (automatically disables tests/examples during fetch)
+sbc_build_dependency(<new_dependency>)
+
+# 2. Expose the official target under the third_party:: namespace as a SYSTEM library
+sbc_expose_third_party(third_party::<new_dependency> <official_library_target_name>)
 ```
 
 ### Step 4: Register in Orchestrator
