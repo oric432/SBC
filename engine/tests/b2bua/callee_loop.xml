@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1" ?>
 <!DOCTYPE scenario SYSTEM "sipp.dtd">
-<scenario name="Basic SIPp UAS - waits for caller BYE">
+<scenario name="Basic SIPp UAS">
   <recv request="INVITE" crlf="true"></recv>
 
   <send>
@@ -39,20 +39,14 @@
   </send>
 
   <recv request="ACK" rtd="true" crlf="true"></recv>
-
-  <!-- No pcap loop here: just wait for the SBC to forward the caller's BYE
-       (fired ~10s in on the caller side) instead of looping forever. -->
-  <recv request="BYE" crlf="true"></recv>
-
-  <send>
-    <![CDATA[
-      SIP/2.0 200 OK
-      [last_Via:]
-      [last_From:]
-      [last_To:]
-      [last_Call-ID:]
-      [last_CSeq:]
-      Content-Length: 0
-    ]]>
-  </send>
+  
+  <!-- Play pcap audio continuously in a loop during the call -->
+  <label id="pcap_loop"/>
+  <nop>
+    <action>
+      <exec play_pcap_audio="tests/b2bua/g711a.pcap"/>
+    </action>
+  </nop>
+  <pause milliseconds="7080"/>
+  <nop next="pcap_loop"/>
 </scenario>

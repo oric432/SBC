@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import subprocess
 import time
 import sys
@@ -11,28 +12,46 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 engine_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
 os.chdir(engine_dir)
 
+parser = argparse.ArgumentParser(description="SIPp callee for B2BUA tests")
+parser.add_argument(
+    "--loop", action="store_true",
+    help="Hold the call up indefinitely (Ctrl+C to hang up), instead of the "
+         "default: wait for the caller's BYE and exit on its own.",
+)
+args = parser.parse_args()
+
 with open("tests/b2bua/config.json", "r") as f:
     config = json.load(f)
 
 local_ip = config.get("local_ip", "127.0.0.1")
 callee_port = str(config.get("callee_port", "5061"))
-callee_args = ["sipp", "-sf", "tests/b2bua/callee.xml", "-i", local_ip, "-p", callee_port, "-m", "1", "-rtp_echo"]
+callee_media_port = str(config.get("callee_media_port", "6004"))
+scenario = "tests/b2bua/callee_loop.xml" if args.loop else "tests/b2bua/callee.xml"
+callee_args = ["sipp", "-sf", scenario, "-i", local_ip, "-p", callee_port, "-mp", callee_media_port, "-m", "1"]
 
 print(f"Starting SIPp Callee (listening on {callee_port})...")
 print(f"--> Local SIP URI: sip:sipp@{local_ip}:{callee_port}")
 print(f"--> Target SIP URI for routes: sip:service@{local_ip}:{callee_port}")
-print("\n*** SIPp is now running in the foreground. ***")
-print("*** Press Ctrl+C to exit and clean up... ***\n")
 
-callee_process = subprocess.Popen(callee_args)
+if args.loop:
+    print("\n*** SIPp is now running in the foreground. ***")
+    print("*** Press Ctrl+C to exit and clean up... ***\n")
 
-try:
-    # Wait indefinitely until user hits Ctrl+C
-    while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    print("\nCtrl+C detected! Cleaning up SIPp process...")
-    callee_process.send_signal(signal.SIGINT)
-    callee_process.wait()
-    print("Cleanup complete.")
-    sys.exit(0)
+    callee_process = subprocess.Popen(callee_args)
+    try:
+        # Wait indefinitely until user hits Ctrl+C
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nCtrl+C detected! Cleaning up SIPp process...")
+        callee_process.send_signal(signal.SIGINT)
+        callee_process.wait()
+        print("Cleanup complete.")
+        sys.exit(0)
+else:
+    print("*** Waits for the caller's BYE, then exits on its own. ***")
+    try:
+        result = subprocess.run(callee_args)
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        sys.exit(1)
