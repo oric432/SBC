@@ -2,7 +2,7 @@ set(BOOST_INCLUDE_LIBRARIES asio system CACHE STRING "" FORCE)
 set(BOOST_ENABLE_CMAKE ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(Boost)
+sbc_build_dependency(Boost)
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
   foreach(_boost_target Boost::headers Boost::asio Boost::system)
@@ -17,10 +17,5 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
   endforeach()
 endif()
 
-add_library(tp_boost_asio INTERFACE)
-add_library(third_party::boost_asio ALIAS tp_boost_asio)
-target_link_libraries(tp_boost_asio INTERFACE Boost::asio)
-
-add_library(tp_boost_system INTERFACE)
-add_library(third_party::boost_system ALIAS tp_boost_system)
-target_link_libraries(tp_boost_system INTERFACE Boost::system)
+sbc_expose_third_party(third_party::boost_asio Boost::asio)
+sbc_expose_third_party(third_party::boost_system Boost::system)

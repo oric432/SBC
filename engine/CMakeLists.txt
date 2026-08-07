@@ -42,7 +42,7 @@ option(ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
 option(ENABLE_TSAN "Enable Thread Sanitizer" OFF)
 option(ENABLE_LSAN "Enable Leak Sanitizer" OFF)
 option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
-
+option(ENABLE_CLANG_TIDY "Enable clang tidy during build" OFF)
 # ==============================================================================
 # 6. Project Interface Libraries (Settings Aggregators)
 # ==============================================================================
@@ -54,6 +54,10 @@ add_library(project_options INTERFACE)
 # Configure warnings
 include(CompilerWarnings)
 myproject_set_project_warnings(project_warnings ${WARNINGS_AS_ERRORS} "" "" "" "")
+
+
+# Enable Clang-tidy for full static analysis
+include(ClangTidy)
 
 # Configure sanitizers
 include(Sanitizers)
@@ -113,6 +117,7 @@ if(BUILD_ENGINE)
         third_party::boost_sml
         third_party::glaze
     )
+    enable_clang_tidy_for_target(SbcEngine ${ENABLE_CLANG_TIDY})
 endif()
 
 if(BUILD_TOOLS)

@@ -10,4 +10,5 @@ if(BUILD_SCHEMA_GENERATOR)
         project_warnings
         third_party::glaze
     )
+    enable_clang_tidy_for_target(schema_generator ${ENABLE_CLANG_TIDY})
 endif()

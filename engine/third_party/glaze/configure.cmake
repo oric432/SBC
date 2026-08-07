@@ -1,5 +1,3 @@
-FetchContent_MakeAvailable(glaze)
+sbc_build_dependency(glaze)
 
-add_library(tp_glaze INTERFACE)
-add_library(third_party::glaze ALIAS tp_glaze)
-target_link_libraries(tp_glaze INTERFACE glaze::glaze)
+sbc_expose_third_party(third_party::glaze glaze::glaze)

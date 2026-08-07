@@ -58,7 +58,8 @@
             "inherits": "default",
             "description": "Debug build with full symbols and no optimization",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "ENABLE_CLANG_TIDY": true
             }
         },
         {
@@ -74,7 +75,8 @@
             "inherits": "default",
             "description": "Optimized build with debug information",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "ENABLE_CLANG_TIDY": true
             }
         },
         {

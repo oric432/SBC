@@ -9,3 +9,4 @@ target_link_libraries(core PUBLIC
     third_party::glaze
 )
 target_precompile_headers(core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
+enable_clang_tidy_for_target(core ${ENABLE_CLANG_TIDY})

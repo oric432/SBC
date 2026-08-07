@@ -24,3 +24,4 @@ target_link_libraries(sip PUBLIC
     third_party::glaze
 )
 target_precompile_headers(sip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
+enable_clang_tidy_for_target(sip ${ENABLE_CLANG_TIDY})

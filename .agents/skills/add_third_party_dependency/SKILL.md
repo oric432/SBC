@@ -25,17 +25,17 @@ FetchContent_Declare(
 
 ## 3. Configure and Expose the Target (`configure.cmake`)
 Create `third_party/<dep_name>/configure.cmake`. This file should:
-1. Call `FetchContent_MakeAvailable(<dep_name>)`
-2. Create an `ALIAS` or `INTERFACE` target that exposes the library under the unified `third_party::` namespace.
+1. Call `sbc_build_dependency(<dep_name>)` (from `third_party/Utils.cmake`) to fetch the target while strictly disabling its internal test suites.
+2. Use the `sbc_expose_third_party(ALIAS_NAME ORIGINAL_TARGET)` macro (from `third_party/Utils.cmake`) to automatically create an `INTERFACE` wrapper, expose it under the unified `third_party::` namespace, and elevate its headers to `SYSTEM` level. This systematically silences compiler and `clang-tidy` warnings originating from third-party code.
 
 Example (`third_party/fmt/configure.cmake`):
 ```cmake
 # Fetch and build
-FetchContent_MakeAvailable(fmt)
+sbc_build_dependency(fmt)
 
-# Expose under unified namespace
+# Expose under unified namespace and elevate includes to SYSTEM
 if(TARGET fmt::fmt)
-    add_library(third_party::fmt ALIAS fmt::fmt)
+    sbc_expose_third_party(third_party::fmt fmt::fmt)
 endif()
 ```
 

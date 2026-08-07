@@ -14,3 +14,4 @@ target_link_libraries(net_tests PRIVATE
 )
 
 add_test(NAME net_tests COMMAND net_tests)
+
