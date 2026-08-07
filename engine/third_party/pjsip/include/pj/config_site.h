@@ -8,6 +8,7 @@
 // Equivalent to --disable-ssl
 #undef PJ_HAS_SSL_SOCK
 #define PJ_HAS_SSL_SOCK 0
+#define PJ_SSL_SOCK_IMP_OFF 0
 
 // Equivalent to --disable-sound
 #undef PJMEDIA_HAS_AUDIODEV
