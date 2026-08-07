@@ -1,86 +1,57 @@
-# ==============================================================================
-# 1. Project Initialization
-# ==============================================================================
 cmake_minimum_required(VERSION 3.23)
 project(sbc LANGUAGES C CXX)
 
-# ==============================================================================
-# 2. C++ Standard Settings
-# ==============================================================================
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ==============================================================================
-# 3. Global Target Options & Testing Setup
-# ==============================================================================
+# Build Options
 option(BUILD_ENGINE "Build the main SbcEngine executable" ON)
 option(BUILD_TESTS "Build the test suite" ON)
 option(BUILD_TOOLS "Build helper tools" ON)
 option(BUILD_SCHEMA_GENERATOR "Build the schema generator tool" ON)
 
-if(BUILD_TESTS)
-    enable_testing()
-    include(CTest)
-endif()
-
-# ==============================================================================
-# 4. CMake Modules & Core Utilities
-# ==============================================================================
-# Add our custom cmake/ directory to the module path
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
-
-include(PreventInSourceBuilds)
-include(StandardProjectSettings)
-
-# ==============================================================================
-# 5. Global Configuration Options
-# ==============================================================================
-# Expose simple toggles to the user for sanitizers and warnings
+# Quality Options
 option(ENABLE_ASAN "Enable Address Sanitizer" OFF)
 option(ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
 option(ENABLE_TSAN "Enable Thread Sanitizer" OFF)
 option(ENABLE_LSAN "Enable Leak Sanitizer" OFF)
 option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(ENABLE_CLANG_TIDY "Enable clang tidy during build" OFF)
-# ==============================================================================
-# 6. Project Interface Libraries (Settings Aggregators)
-# ==============================================================================
-# These INTERFACE libraries hold all warning and sanitizer flags.
-# Any target that links against them will automatically inherit these settings.
-add_library(project_warnings INTERFACE)
-add_library(project_options INTERFACE)
 
-# Configure warnings
+if(BUILD_TESTS)
+    enable_testing()
+    include(CTest)
+endif()
+
+# CMake Modules
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(PreventInSourceBuilds)
+include(StandardProjectSettings)
 include(CompilerWarnings)
-myproject_set_project_warnings(project_warnings ${WARNINGS_AS_ERRORS} "" "" "" "")
-
-
-# Enable Clang-tidy for full static analysis
 include(ClangTidy)
-
-# Configure sanitizers
 include(Sanitizers)
+include(ClangFormat)
+
+add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
+
+# Project Options Aggregator
+add_library(project_options INTERFACE)
+myproject_set_project_warnings(project_options ${WARNINGS_AS_ERRORS} "" "" "" "")
 myproject_enable_sanitizers(project_options ${ENABLE_ASAN} ${ENABLE_LSAN} ${ENABLE_UBSAN} ${ENABLE_TSAN} FALSE)
 
-# Suppress annoying third-party system headers warnings
 target_compile_options(project_options INTERFACE
     "$<$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>:-Wno-system-headers;-Wno-#warnings>"
     $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-Wno-system-headers;-Wno-cpp>
 )
 
-# ==============================================================================
-# 7. Code Formatting
-# ==============================================================================
-include(ClangFormat)
-add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
-
-# ==============================================================================
-# 8. Subdirectories (Dependencies & Project Source)
-# ==============================================================================
-# Load third-party dependencies first so their targets are available
+# Dependencies
 add_subdirectory(third_party)
 
+# Enable clang-tidy globally after third_party so external deps are not linted
+enable_clang_tidy_globally(${ENABLE_CLANG_TIDY})
+
+# Internal Source
 if(BUILD_ENGINE OR BUILD_TESTS)
     add_subdirectory(src/core)
     add_subdirectory(src/net)
@@ -88,23 +59,12 @@ if(BUILD_ENGINE OR BUILD_TESTS)
     add_subdirectory(src/protocols)
 endif()
 
-# Main Executable (SbcEngine)
 if(BUILD_ENGINE)
-    # Main Executable (SbcEngine)
-    add_executable(SbcEngine
-        src/SbcEngine.cpp
-    )
-
-    target_precompile_headers(SbcEngine PRIVATE
-        src/core/pch.hpp
-    )
-
-    target_include_directories(SbcEngine PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-
+    add_executable(SbcEngine src/SbcEngine.cpp)
+    target_precompile_headers(SbcEngine PRIVATE src/core/pch.hpp)
+    target_include_directories(SbcEngine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    
     target_link_libraries(SbcEngine PRIVATE
-        project_warnings
         project_options
         core
         net
@@ -117,15 +77,12 @@ if(BUILD_ENGINE)
         third_party::boost_sml
         third_party::glaze
     )
-    enable_clang_tidy_for_target(SbcEngine ${ENABLE_CLANG_TIDY})
 endif()
 
 if(BUILD_TOOLS)
-    # Load helper tools (like the schema generator)
     add_subdirectory(tools)
 endif()
 
 if(BUILD_TESTS)
-    # Load the test suite
     add_subdirectory(tests)
 endif()

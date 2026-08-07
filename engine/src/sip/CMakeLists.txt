@@ -12,7 +12,6 @@ add_library(sip STATIC
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(sip PUBLIC
-    project_warnings
     project_options
     core
     net
@@ -24,4 +23,3 @@ target_link_libraries(sip PUBLIC
     third_party::glaze
 )
 target_precompile_headers(sip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
-enable_clang_tidy_for_target(sip ${ENABLE_CLANG_TIDY})
