@@ -23,3 +23,4 @@ target_link_libraries(sbc_tests PRIVATE
 )
 
 add_test(NAME sbc_tests COMMAND sbc_tests)
+

@@ -1,14 +1,13 @@
 # engine
 
-C++26 B2BUA/SBC core. Target: `SbcEngine` (see `CMakeLists.txt`). Owns both SIP legs of every
-call, rewrites SDP, and anchors RTP through itself. High-level design and state-machine philosophy
+C++26 SBC.
+High-level design and state-machine philosophy
 are in the root [`AGENTS.md`](../AGENTS.md); this file covers the engine's own layout.
 
 ## Configuration
 
 Before running, copy `settings-example.toml` to `settings.toml` (repo root — the binary reads
 `settings.toml` from its working directory) and fill in the placeholder `[IP_ADDRESS]` values.
-Startup aborts with `Log::crash_error` if the file is missing or fails to parse.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -26,10 +25,28 @@ Startup aborts with `Log::crash_error` if the file is missing or fails to parse.
 From the repo root:
 
 ```bash
-cmake --preset debug && cmake --build --preset build-debug
-ctest --test-dir build
-./build/SbcEngine
+# Configure and build (debug preset automatically enables clang-tidy)
+cd engine
+cmake --preset debug
+cmake --build --preset build-debug
+cd ..
+
+# Run unit tests
+ctest --test-dir engine/build
+
+# Run the SBC engine
+./engine/build/SbcEngine
 ```
+
+## Code Quality (Formatting & Linting)
+
+This project strictly enforces code formatting and static analysis:
+
+1. **Formatting**: Run the CMake `format` target to automatically format all source files using `clang-format`.
+   ```bash
+   cmake --build engine/build --target format
+   ```
+2. **Linting (`clang-tidy`)**: Static analysis is deeply integrated into the CMake build. It is automatically enabled when you configure using the `debug` or `relwithdebinfo` presets (which set `ENABLE_CLANG_TIDY=true`). Any clang-tidy warnings will appear as standard compiler warnings/errors during `cmake --build engine/build`.
 
 `tests/` covers the state machines via mocked actions. Everything else in
 this directory (RTP packet parsing, `sdp_mangler`, `SdpValidator`, `PjsipStack`, `MessageRouter`)

@@ -12,7 +12,6 @@ add_library(sip STATIC
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(sip PUBLIC
-    project_warnings
     project_options
     core
     net
