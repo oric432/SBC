@@ -76,6 +76,8 @@ Schema lives in `backend/src/db/schema.ts`; generated migrations land in `backen
 | `PORT` | `3001` | API server port |
 | `NODE_ENV` | `development` | Node environment |
 | `FRONTEND_URL` | `http://localhost:5173` | Allowed CORS origin |
+| `SBC_SIP_ADDRESS` | `127.0.0.1` | SBC engine's own SIP address (`engine/settings.toml` `[sip] address`) — routes targeting this address+port are rejected as self-loops |
+| `SBC_SIP_PORT` | `5060` | SBC engine's own SIP port (`engine/settings.toml` `[sip] port`) |
 
 ## Frontend Notes
 

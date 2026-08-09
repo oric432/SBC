@@ -8,6 +8,7 @@ import { ConflictError, NotFoundError } from '../errors';
 import { SipRouteRule, SipRouteSnapshot } from '../types/sipRoutes';
 import { sendSuccess } from '../utils/apiResponse';
 import { logger } from '../utils/logger';
+import { assertNotRoutingLoop } from '../utils/routeLoopGuard';
 
 const DEFAULT_TABLE_ID = 'default';
 
@@ -56,6 +57,7 @@ export const getRoutes = async (_req: Request, res: Response) => {
 
 export const createRoute = async (req: Request, res: Response) => {
   const { priority, uri, sip_address, port, codec } = req.body;
+  assertNotRoutingLoop(sip_address, port);
   const table = await getDefaultTable();
 
   const [created] = await db
@@ -78,6 +80,7 @@ export const createRoute = async (req: Request, res: Response) => {
 export const updateRoute = async (req: Request, res: Response) => {
   const currentPriority = Number(req.params.priority);
   const { priority, uri, sip_address, port, codec } = req.body;
+  assertNotRoutingLoop(sip_address, port);
   const table = await getDefaultTable();
 
   const [updated] = await db
@@ -106,6 +109,7 @@ export const updateRoute = async (req: Request, res: Response) => {
 export const swapRoute = async (req: Request, res: Response) => {
   const currentPriority = Number(req.params.priority);
   const { targetPriority, uri, sip_address, port, codec } = req.body;
+  assertNotRoutingLoop(sip_address, port);
   const table = await getDefaultTable();
 
   const updated = await db.transaction(async (tx) => {
