@@ -1,0 +1,25 @@
+# List available engine commands
+default:
+    @just --list
+
+# Install dependencies and perform initial setup
+setup:
+    @echo "Engine has no explicit setup step (CMake is handled during build)"
+
+# Configure and build the C++ engine in debug mode
+build-dev:
+    cmake --preset debug
+    cmake --build --preset build-debug
+
+# Configure and build the C++ engine in release mode
+build-release:
+    cmake --preset release
+    cmake --build --preset build-release
+
+# Run the engine in debug mode
+run-dev:
+    cd build && ./SbcEngine
+
+# Run the engine in release mode
+run-release:
+    cd build && ./SbcEngine
