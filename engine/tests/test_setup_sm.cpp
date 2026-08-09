@@ -112,6 +112,22 @@ TEST_CASE("SetupSm route failed", "[setup_sm]") {
     REQUIRE(actions.was_called("send_route_failure_response"));
 }
 
+// Test: Routing resolves to this engine's own listening address
+// Verifies: Setup SM rejects self-routing loops instead of dialing itself
+// (github issue #39 — an unbounded loop would otherwise exhaust ports)
+TEST_CASE("SetupSm loop detected", "[setup_sm]") {
+    MockSetupActions actions;
+    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+
+    machine.process_event(InviteReceived{"v=0\r\n"});
+    REQUIRE(machine.is(Sml::state<Routing>));
+
+    actions.reset();
+    machine.process_event(LoopDetected{});
+    REQUIRE(machine.is(Sml::state<Failed>));
+    REQUIRE(actions.was_called("send_loop_detected_response"));
+}
+
 // Test: Caller cancels call before receiving answer
 // Verifies: Setup SM properly handles call cancellation mid-setup
 TEST_CASE("SetupSm cancel before answer", "[setup_sm]") {
