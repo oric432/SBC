@@ -72,6 +72,7 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     switch (inv->state) {
     case PJSIP_INV_STATE_EARLY:
         // 180 from the callee → forward ringing to the caller.
+        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_EARLY", session->call_id());
         if (is_callee_leg) {
             setup.process_event(RingingReceived{});
         }
@@ -79,6 +80,7 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
 
     case PJSIP_INV_STATE_CONNECTING:
         // 200 OK from the callee (ACK auto-sent by PJSIP) → forward answer.
+        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_CONNECTING", session->call_id());
         if (is_callee_leg) {
             setup.process_event(CallAccepted{extract_sdp(rdata)});
         }
@@ -86,12 +88,15 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
 
     case PJSIP_INV_STATE_CONFIRMED:
         // ACK from the caller → dialog established.
+        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_CONFIRMED", session->call_id());
         if (!is_callee_leg) {
             setup.process_event(AckReceived{});
         }
         break;
 
     case PJSIP_INV_STATE_DISCONNECTED:
+        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_DISCONNECTED", session->call_id());
+
         if (setup.is(Sml::state<Done>)) {
             handle_dialog_disconnect(session, inv);
         }
@@ -195,7 +200,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // Contact — the caller's ACK (its Request-URI = our Contact) then targets
     // an address that doesn't exist and silently vanishes.
     std::string contact_s = ctx_->config_.own_contact_uri();
-    pj_str_t contact = pj_str(contact_s.data());
+    const pj_str_t contact = pj_str(contact_s.data());
 
     pjsip_dialog* dlg = nullptr;
     status = pjsip_dlg_create_uas_and_inc_lock(pjsip_ua_instance(), rx_data, &contact, &dlg);
@@ -223,7 +228,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     Log::call()->info("[{}] INVITE received, request-uri {}", call_id, request_uri);
     session->set_request_uri(request_uri);
 
-    std::string sdp = extract_sdp(rx_data);
+    const std::string sdp = extract_sdp(rx_data);
     session->set_caller_offer_sdp(sdp);
     session->set_current_rdata(rx_data);
 
@@ -252,8 +257,10 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         }
         else if (route) {
             std::string user = extract_uri_user(route->uri);
-            std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
+            const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
                                             : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
+
+            Log::sip()->info("Found route for request uri {}, route uri : {}:{}",request_uri, route->sip_address, route->port);
             setup.process_event(RouteFound{dest});
         }
         else {
@@ -328,12 +335,12 @@ std::string MessageRouter::extract_request_uri(pjsip_rx_data* rx_data) {
         return {};
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C API
-    pjsip_uri* uri = rx_data->msg_info.msg->line.req.uri;
+    const pjsip_uri* uri = rx_data->msg_info.msg->line.req.uri;
     if (uri == nullptr) {
         return {};
     }
     std::array<char, PJSIP_MAX_URL_SIZE> buf{};
-    int len = pjsip_uri_print(PJSIP_URI_IN_REQ_URI, uri, buf.data(), buf.size());
+    const int len = pjsip_uri_print(PJSIP_URI_IN_REQ_URI, uri, buf.data(), buf.size());
     if (len < 0) {
         return {};
     }
@@ -341,7 +348,7 @@ std::string MessageRouter::extract_request_uri(pjsip_rx_data* rx_data) {
 }
 
 CallSession* MessageRouter::find_call_session(pjsip_rx_data* rx_data) {
-    std::string call_id = extract_call_id(rx_data);
+    const std::string call_id = extract_call_id(rx_data);
     if (call_id.empty()) {
         return nullptr;
     }
