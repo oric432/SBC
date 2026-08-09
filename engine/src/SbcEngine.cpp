@@ -71,9 +71,8 @@ int main() {
     ctx.config_ = config;
     ctx.module_id_ = stack.module_id();
     ctx.call_manager_ = &call_manager;
-    ctx.routes_store_ = &routes_store;
 
-    SbcEngine::MessageRouter router{&ctx};
+    SbcEngine::MessageRouter router{&ctx, &routes_store};
     stack.set_router(&router);
 
     g_stack = &stack;

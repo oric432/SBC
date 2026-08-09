@@ -214,7 +214,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // moment the SM asks for it, and drive the SM's decision directly.
     if (setup.is(Sml::state<Routing>)) {
         std::string request_uri = extract_request_uri(rx_data);
-        auto route = ctx_->routes_store_ != nullptr ? ctx_->routes_store_->find_route(request_uri) : std::nullopt;
+        auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
         if (route) {
             std::string user = extract_uri_user(route->uri);
             std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
