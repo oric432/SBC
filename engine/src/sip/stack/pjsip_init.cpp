@@ -105,6 +105,11 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
         return std::unexpected(pj_error("pjsip_tsx_layer_init_module failed", status));
     }
 
+    // t1/t2/t4 left at PJSIP defaults (0 = unchanged); td is the INVITE
+    // transaction's completion timeout — this is what fires cause 408 when a
+    // callee never answers.
+    pjsip_tsx_set_timers(0, 0, 0, static_cast<unsigned>(config.invite_timeout_ms_));
+
     status = pjsip_ua_init_module(endpt_, nullptr);
     if (status != PJ_SUCCESS) {
         return std::unexpected(pj_error("pjsip_ua_init_module failed", status));
