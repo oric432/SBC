@@ -111,6 +111,10 @@ void RealSetupActions::send_route_failure_response() {
     send_subsequent_response(PJSIP_SC_TEMPORARILY_UNAVAILABLE);
 }
 
+void RealSetupActions::send_loop_detected_response() {
+    send_subsequent_response(PJSIP_SC_LOOP_DETECTED);
+}
+
 void RealSetupActions::create_outbound_leg(const std::string& destination) {
     SbcContext* ctx = session_.ctx();
     const PjsipConfig& cfg = ctx->config_;
@@ -192,6 +196,30 @@ void RealSetupActions::send_outbound_invite() {
         Log::sip()->error("[{}] pjsip_inv_invite failed ({})", session_.call_id(), status);
         return;
     }
+
+    // pjsip_inv_invite() does not carry over or insert a Max-Forwards header on
+    // the new leg's request, so left alone every hop this B2BUA originates
+    // would reset to no limit — a self-routing loop would spin forever, never
+    // getting rejected, exhausting sockets/ports. Stamp inbound-1 (or the
+    // RFC 3261 default of 70-1 if the inbound request had no header of its
+    // own) so the hop count still bounds the loop.
+    pj_uint32_t inbound_max_fwd = PJSIP_MAX_FORWARDS_VALUE;
+    pjsip_rx_data* rdata = session_.current_rdata();
+    if (rdata != nullptr && rdata->msg_info.max_fwd != nullptr) {
+        inbound_max_fwd = rdata->msg_info.max_fwd->ivalue;
+    }
+    pj_uint32_t outbound_max_fwd = inbound_max_fwd > 0 ? inbound_max_fwd - 1 : 0;
+
+    auto* max_fwd_hdr = static_cast<pjsip_max_fwd_hdr*>(pjsip_msg_find_hdr(tdata->msg, PJSIP_H_MAX_FORWARDS, nullptr));
+    if (max_fwd_hdr != nullptr) {
+        max_fwd_hdr->ivalue = outbound_max_fwd;
+    }
+    else {
+        pjsip_max_fwd_hdr* new_hdr = pjsip_max_fwd_hdr_create(tdata->pool, outbound_max_fwd);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
+        pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(new_hdr));
+    }
+
     send_inv_msg(inv, tdata, "send_outbound_invite");
 }
 

@@ -24,6 +24,7 @@ public:
 
     void start_routing() override;
     void send_route_failure_response() override;
+    void send_loop_detected_response() override;
 
     void create_outbound_leg(const std::string& destination) override;
     void send_outbound_invite() override;

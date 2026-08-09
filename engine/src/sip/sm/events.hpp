@@ -24,6 +24,8 @@ struct RouteFound {
 
 struct RouteFailed {};
 
+struct LoopDetected {};
+
 struct InviteSent {};
 
 struct RingingReceived {};
