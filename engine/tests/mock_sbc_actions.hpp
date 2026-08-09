@@ -27,6 +27,8 @@ public:
 
     void send_route_failure_response() override { calls_.emplace_back("send_route_failure_response"); }
 
+    void send_loop_detected_response() override { calls_.emplace_back("send_loop_detected_response"); }
+
     void create_outbound_leg(const std::string& destination) override {
         calls_.push_back("create_outbound_leg:" + destination);
     }

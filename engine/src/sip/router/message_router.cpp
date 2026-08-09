@@ -173,6 +173,19 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         return;
     }
 
+    // A missing Max-Forwards header defaults to unlimited (RFC 3261 §16.6.3
+    // treats it as absent-means-70 for proxies); only an explicit exhausted
+    // header must be rejected here. This is what stops a routing loop (e.g.
+    // this engine routing an INVITE back to itself) from spinning forever and
+    // exhausting sockets/ports: each hop's outbound leg carries a decremented
+    // value (see RealSetupActions::send_outbound_invite) and eventually lands
+    // back here at zero.
+    if (rx_data->msg_info.max_fwd != nullptr && rx_data->msg_info.max_fwd->ivalue == 0) {
+        Log::sip()->warn("[{}] Max-Forwards exhausted, rejecting to break routing loop", call_id);
+        respond_stateless(rx_data, PJSIP_SC_TOO_MANY_HOPS);
+        return;
+    }
+
     // Explicit contact, or PJSIP falls back to echoing the request's To-URI as
     // Contact — the caller's ACK (its Request-URI = our Contact) then targets
     // an address that doesn't exist and silently vanishes.
@@ -215,7 +228,23 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     if (setup.is(Sml::state<Routing>)) {
         std::string request_uri = extract_request_uri(rx_data);
         auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
-        if (route) {
+        if (route && route->sip_address == ctx_->config_.local_ip_ &&
+            route->port == static_cast<int>(ctx_->config_.sip_port_)) {
+            // The routing table points this request straight back at this
+            // engine's own listening address. Max-Forwards decrementing alone
+            // is a fallback net (it still bounds a loop that hops through
+            // other elements first) — for the direct self-loop from the
+            // issue report, catch it here immediately rather than spending 70
+            // round trips' worth of sessions and RTP ports first.
+            Log::sip()->warn(
+                "[{}] route for {} points back at this SBC ({}:{}), loop detected",
+                call_id,
+                request_uri,
+                route->sip_address,
+                route->port);
+            setup.process_event(LoopDetected{});
+        }
+        else if (route) {
             std::string user = extract_uri_user(route->uri);
             std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
                                             : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);

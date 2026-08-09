@@ -48,6 +48,8 @@ struct SetupSm {
 
         auto handle_route_failed = [](Context& actions) { actions.send_route_failure_response(); };
 
+        auto handle_loop_detected = [](Context& actions) { actions.send_loop_detected_response(); };
+
         auto handle_route_found = [](Context& actions, const RouteFound& evt) {
             actions.create_outbound_leg(evt.destination_);
             actions.send_outbound_invite();
@@ -88,6 +90,7 @@ struct SetupSm {
              // Routing state
              Sml::state<Routing>           + (Sml::event<RouteFound>                              / handle_route_found)         = Sml::state<Calling>,
              Sml::state<Routing>           + (Sml::event<RouteFailed>                             / handle_route_failed)        = Sml::state<Failed>,
+             Sml::state<Routing>           + (Sml::event<LoopDetected>                            / handle_loop_detected)       = Sml::state<Failed>,
 
              // Calling state
              Sml::state<Calling>           +  Sml::event<InviteSent>                                                            = Sml::state<WaitingForAnswer>,
