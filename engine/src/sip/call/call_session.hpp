@@ -59,9 +59,7 @@ public:
     [[nodiscard]] const std::string& outbound_destination() const { return outbound_destination_; }
     void set_outbound_destination(std::string dest) { outbound_destination_ = std::move(dest); }
 
-    // rx_data of the request currently being processed. Only valid while the
-    // router is synchronously running SM events for that request; the router
-    // sets it before process_event and clears it after.
+    // rx_data of the request currently being processed.
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
     void set_current_rdata(pjsip_rx_data* rdata) { current_rdata_ = rdata; }
 
