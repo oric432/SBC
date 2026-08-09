@@ -14,6 +14,8 @@ namespace SbcEngine {
 namespace SettingsDefaults {
 constexpr uint16_t kLocalSipPort = 5060;
 constexpr int kConnectionTimeoutSeconds = 5;
+// Matches PJSIP's own default (PJSIP_TD_TIMEOUT) so an unset key changes nothing.
+constexpr int kInviteTimeoutMs = 32000;
 } // namespace SettingsDefaults
 
 struct LoggingSettings {
@@ -25,6 +27,9 @@ struct SipSettings {
     std::string address = "127.0.0.1";
     uint16_t port = SettingsDefaults::kLocalSipPort;
     std::string identity_user = "sbc"; // user part of our own Contact/From URI
+    // How long to wait for a final response to an outbound INVITE before
+    // treating it as timed out (PJSIP transaction Timer B/D), in milliseconds.
+    int invite_timeout_ms = SettingsDefaults::kInviteTimeoutMs;
 };
 
 struct ControlPlaneSettings {

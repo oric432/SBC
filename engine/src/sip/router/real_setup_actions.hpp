@@ -32,6 +32,7 @@ public:
     void forward_180_ringing() override;
     void forward_200_ok(const std::string& sdp) override;
     void forward_rejection(int status_code) override;
+    void forward_timeout() override;
 
     void send_cancel() override;
     void forward_final_response() override;

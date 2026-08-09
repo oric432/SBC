@@ -13,6 +13,7 @@ namespace SbcEngine {
 class MessageRouter;
 
 constexpr uint16_t kDefaultSipPort = 5060;
+constexpr int kDefaultInviteTimeoutMs = 32000; // matches PJSIP's own default (PJSIP_TD_TIMEOUT)
 
 // Runtime configuration for the PJSIP stack.
 struct PjsipConfig {
@@ -21,6 +22,9 @@ struct PjsipConfig {
     uint16_t sip_port_ = kDefaultSipPort;
     int pjsip_log_level_ = 0; // native PJSIP log verbosity (0 = disabled), see Settings::pjsip_log_level
     std::string identity_user_ = "sbc"; // user part of our own Contact/From URI, see Settings::sip_identity_user
+    // How long to wait for a final response to an outbound INVITE before PJSIP
+    // times out the transaction (surfaces as cause 408), see Settings::invite_timeout_ms.
+    int invite_timeout_ms_ = kDefaultInviteTimeoutMs;
 
     // "<sip:{identity_user_}@{local_ip_}:{sip_port_}>" — the SBC's own reachable
     // address, used as Contact/From on legs it originates or answers.
