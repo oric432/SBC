@@ -2,6 +2,7 @@
 
 #include <boost/asio.hpp>
 
+#include "core/settings.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/sbc_context.hpp"
 #include "sip/router/message_router.hpp"
@@ -37,6 +38,16 @@ public:
     void run();
 
 private:
+    // Loads settings.toml and sets the log level. Crashes the process on failure.
+    Settings init_settings();
+    void init_routes(const Settings& settings);
+    // Builds PjsipConfig from settings and brings up the PJSIP stack.
+    // Crashes the process on failure.
+    PjsipConfig init_pjsip(const Settings& settings);
+    // Wires ctx_'s pointers and connects the stack to the router.
+    void init_context(const PjsipConfig& config);
+    void init_signal_handlers();
+
     // std::signal only accepts a plain function pointer (no captures), so the
     // handler is a static member reaching back into the one running instance.
     static void handle_signal(int signum);
