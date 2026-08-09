@@ -46,6 +46,7 @@ public:
     // Routing operations
     virtual void start_routing() = 0;
     virtual void send_route_failure_response() = 0;
+    virtual void send_loop_detected_response() = 0;
 
     // Outbound leg management
     virtual void create_outbound_leg(const std::string& destination) = 0;
