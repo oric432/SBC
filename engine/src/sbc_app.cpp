@@ -25,6 +25,14 @@ void SbcApp::handle_signal(int /*signum*/) {
 void SbcApp::init() {
     Log::init_logging();
 
+    Settings settings = init_settings();
+    init_routes(settings);
+    PjsipConfig config = init_pjsip(settings);
+    init_context(config);
+    init_signal_handlers();
+}
+
+Settings SbcApp::init_settings() {
     auto settings_result = load_settings("settings.toml");
     if (!settings_result) {
         Log::set_log_level("info");
@@ -32,7 +40,10 @@ void SbcApp::init() {
     }
     Settings settings = *settings_result;
     Log::set_log_level(settings.logging.level);
+    return settings;
+}
 
+void SbcApp::init_routes(const Settings& settings) {
     RoutesClientConfig routes_cfg{
         .http_url_ = settings.control_plane.http_url,
         .http_timeout_seconds_ = settings.control_plane.http_timeout,
@@ -45,7 +56,9 @@ void SbcApp::init() {
     else {
         Log::app()->warn("failed to fetch routing table at startup: {}", snapshot_result.error());
     }
+}
 
+PjsipConfig SbcApp::init_pjsip(const Settings& settings) {
     PjsipConfig config;
     config.bind_ip_ = settings.sip.address;
     config.sip_port_ = settings.sip.port;
@@ -56,6 +69,10 @@ void SbcApp::init() {
         Log::crash_error(res.error().message());
     }
 
+    return config;
+}
+
+void SbcApp::init_context(const PjsipConfig& config) {
     ctx_.endpt_ = stack_.endpt();
     ctx_.ioc_ = &ioc_;
     ctx_.config_ = config;
@@ -64,7 +81,9 @@ void SbcApp::init() {
     ctx_.routes_store_ = &routes_store_;
 
     stack_.set_router(&router_);
+}
 
+void SbcApp::init_signal_handlers() {
     instance_ = this;
     (void)std::signal(SIGINT, &SbcApp::handle_signal);
     (void)std::signal(SIGTERM, &SbcApp::handle_signal);
