@@ -38,6 +38,8 @@ struct CallRejected {
     int status_code_ = kStatusCodeCallRejected;
 };
 
+struct CallTimeout {};
+
 struct CancelReceived {};
 
 struct InviteTerminated {};

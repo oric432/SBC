@@ -120,6 +120,11 @@ void MessageRouter::handle_setup_disconnect(CallSession* session, pjsip_inv_sess
             // Our CANCEL took effect; caller side is finished by PJSIP.
             setup.process_event(InviteTerminated{});
         }
+        else if (cause == PJSIP_SC_REQUEST_TIMEOUT) {
+            // No final response from the callee (or it genuinely sent its own
+            // 408) — PJSIP can't tell the two apart, so both surface here.
+            setup.process_event(CallTimeout{});
+        }
         else if (cause >= kMinFinalErrorCode) {
             // Callee rejected → forward the final error to the caller.
             setup.process_event(CallRejected{cause});
@@ -130,7 +135,7 @@ void MessageRouter::handle_setup_disconnect(CallSession* session, pjsip_inv_sess
         setup.process_event(CancelReceived{});
     }
 
-    if (setup.is(Sml::state<Failed>) || setup.is(Sml::state<Cancelled>)) {
+    if (setup.is(Sml::state<Failed>) || setup.is(Sml::state<Cancelled>) || setup.is(Sml::state<TimedOut>)) {
         setup.process_event(Cleanup{});
     }
 }
@@ -214,7 +219,9 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx_->module_id_] = session;
 
-    Log::call()->info("[{}] INVITE received, request-uri {}", call_id, extract_request_uri(rx_data));
+    std::string request_uri = extract_request_uri(rx_data);
+    Log::call()->info("[{}] INVITE received, request-uri {}", call_id, request_uri);
+    session->set_request_uri(request_uri);
 
     std::string sdp = extract_sdp(rx_data);
     session->set_caller_offer_sdp(sdp);
@@ -226,7 +233,6 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // Routing is synchronous: look the request URI up in the routes table the
     // moment the SM asks for it, and drive the SM's decision directly.
     if (setup.is(Sml::state<Routing>)) {
-        std::string request_uri = extract_request_uri(rx_data);
         auto route = ctx_->routes_store_ != nullptr ? ctx_->routes_store_->find_route(request_uri) : std::nullopt;
         if (route && route->sip_address == ctx_->config_.local_ip_ &&
             route->port == static_cast<int>(ctx_->config_.sip_port_)) {

@@ -21,6 +21,7 @@ struct WaitingForAck {};
 struct Established {};
 struct Cancelled {};
 struct Failed {};
+struct TimedOut {};
 struct Done {};
 
 template <typename Context>
@@ -70,6 +71,8 @@ struct SetupSm {
             actions.forward_rejection(evt.status_code_);
         };
 
+        auto handle_timeout = [](Context& actions) { actions.forward_timeout(); };
+
         auto handle_cancel = [](Context& actions) { actions.send_cancel(); };
 
         auto handle_invite_terminated = [](Context& actions) { actions.forward_final_response(); };
@@ -100,12 +103,14 @@ struct SetupSm {
              Sml::state<WaitingForAnswer>  + (Sml::event<CallAccepted>       [is_sdp_valid]       / handle_accept_valid)        = Sml::state<WaitingForAck>,
              Sml::state<WaitingForAnswer>  + (Sml::event<CallAccepted>       [is_sdp_invalid]     / handle_accept_invalid)      = Sml::state<Failed>,
              Sml::state<WaitingForAnswer>  + (Sml::event<CallRejected>                            / handle_rejection)           = Sml::state<Failed>,
+             Sml::state<WaitingForAnswer>  + (Sml::event<CallTimeout>                             / handle_timeout)             = Sml::state<TimedOut>,
              Sml::state<WaitingForAnswer>  + (Sml::event<CancelReceived>                          / handle_cancel)              = Sml::state<Cancelling>,
 
              // Ringing state
              Sml::state<Ringing>           + (Sml::event<CallAccepted>       [is_sdp_valid]       / handle_accept_valid)        = Sml::state<WaitingForAck>,
              Sml::state<Ringing>           + (Sml::event<CallAccepted>       [is_sdp_invalid]     / handle_accept_invalid)      = Sml::state<Failed>,
              Sml::state<Ringing>           + (Sml::event<CallRejected>                            / handle_rejection)           = Sml::state<Failed>,
+             Sml::state<Ringing>           + (Sml::event<CallTimeout>                             / handle_timeout)             = Sml::state<TimedOut>,
              Sml::state<Ringing>           + (Sml::event<CancelReceived>                          / handle_cancel)              = Sml::state<Cancelling>,
 
              // Cancelling state
@@ -117,7 +122,8 @@ struct SetupSm {
 
              // Cleanup transitions to Done
              Sml::state<Cancelled>         + (Sml::event<Cleanup>                                 / handle_cleanup)             = Sml::state<Done>,
-             Sml::state<Failed>            + (Sml::event<Cleanup>                                 / handle_cleanup)             = Sml::state<Done>
+             Sml::state<Failed>            + (Sml::event<Cleanup>                                 / handle_cleanup)             = Sml::state<Done>,
+             Sml::state<TimedOut>          + (Sml::event<Cleanup>                                 / handle_cleanup)             = Sml::state<Done>
         );
         // clang-format on
     }

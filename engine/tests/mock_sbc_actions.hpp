@@ -45,6 +45,8 @@ public:
         calls_.emplace_back("forward_rejection:" + std::to_string(status_code));
     }
 
+    void forward_timeout() override { calls_.emplace_back("forward_timeout"); }
+
     void send_cancel() override { calls_.emplace_back("send_cancel"); }
 
     void forward_final_response() override { calls_.emplace_back("forward_final_response"); }

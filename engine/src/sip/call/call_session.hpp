@@ -51,6 +51,14 @@ public:
     [[nodiscard]] const std::string& caller_offer_sdp() const { return caller_offer_sdp_; }
     void set_caller_offer_sdp(std::string sdp) { caller_offer_sdp_ = std::move(sdp); }
 
+    // Original inbound Request-URI and the resolved outbound destination —
+    // kept around so a callee-side timeout/rejection can be logged with both
+    // the target the caller asked for and the route we sent it to.
+    [[nodiscard]] const std::string& request_uri() const { return request_uri_; }
+    void set_request_uri(std::string uri) { request_uri_ = std::move(uri); }
+    [[nodiscard]] const std::string& outbound_destination() const { return outbound_destination_; }
+    void set_outbound_destination(std::string dest) { outbound_destination_ = std::move(dest); }
+
     // rx_data of the request currently being processed. Only valid while the
     // router is synchronously running SM events for that request; the router
     // sets it before process_event and clears it after.
@@ -69,6 +77,9 @@ private:
 
     std::string caller_offer_sdp_;
     pjsip_rx_data* current_rdata_ = nullptr;
+
+    std::string request_uri_;
+    std::string outbound_destination_;
 
     RealSetupActions setup_actions_;
     RealDialogActions dialog_actions_;

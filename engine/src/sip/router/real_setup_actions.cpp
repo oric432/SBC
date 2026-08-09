@@ -181,6 +181,7 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx->module_id_] = &session_;
     session_.set_inv_callee(inv);
+    session_.set_outbound_destination(destination);
     Log::call()->info("[{}] outbound leg created towards {}", session_.call_id(), destination);
 }
 
@@ -256,12 +257,21 @@ void RealSetupActions::forward_200_ok(const std::string& sdp) {
 }
 
 void RealSetupActions::forward_rejection(int status_code) {
-    Log::call()->info("[{}] call rejected by callee ({})", session_.call_id(), status_code);
+    Log::call()->warn("[{}] call rejected by callee ({})", session_.call_id(), status_code);
     send_subsequent_response(status_code);
 }
 
+void RealSetupActions::forward_timeout() {
+    Log::call()->warn(
+        "[{}] call timeout, target-uri {}, route {}",
+        session_.call_id(),
+        session_.request_uri(),
+        session_.outbound_destination());
+    send_subsequent_response(PJSIP_SC_REQUEST_TIMEOUT);
+}
+
 void RealSetupActions::send_cancel() {
-    Log::call()->info("[{}] call cancelled by caller", session_.call_id());
+    Log::call()->warn("[{}] call cancelled by caller", session_.call_id());
     end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED, "send_cancel");
 }
 

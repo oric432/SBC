@@ -56,6 +56,7 @@ public:
     virtual void forward_180_ringing() = 0;
     virtual void forward_200_ok(const std::string& sdp) = 0;
     virtual void forward_rejection(int status_code) = 0;
+    virtual void forward_timeout() = 0;
 
     // Cancel flow
     virtual void send_cancel() = 0;
