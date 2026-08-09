@@ -104,7 +104,7 @@ void RealSetupActions::send_429_too_many_requests() {
 void RealSetupActions::start_routing() {
     // Stage 1: routing is a fixed destination; the router fires RouteFound
     // synchronously after this event completes.
-    Log::call()->debug("[{}] routing started", session_.call_id());
+    Log::call()->trace("[{}] routing started", session_.call_id());
 }
 
 void RealSetupActions::send_route_failure_response() {
@@ -116,7 +116,7 @@ void RealSetupActions::send_loop_detected_response() {
 }
 
 void RealSetupActions::create_outbound_leg(const std::string& destination) {
-    SbcContext* ctx = session_.ctx();
+    const SbcContext* ctx = session_.ctx();
     const PjsipConfig& cfg = ctx->config_;
 
     // 1. Bind local sockets for RTP relay
@@ -160,8 +160,8 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
     std::string local_uri_s = cfg.own_contact_uri();
     std::string dest_s = destination;
 
-    pj_str_t local_uri = pj_str(local_uri_s.data());
-    pj_str_t remote_uri = pj_str(dest_s.data());
+    const pj_str_t local_uri = pj_str(local_uri_s.data());
+    const pj_str_t remote_uri = pj_str(dest_s.data());
 
     pjsip_dialog* dlg = nullptr;
     pj_status_t status =
@@ -181,6 +181,7 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx->module_id_] = &session_;
     session_.set_inv_callee(inv);
+    session_.set_outbound_destination(destination);
     Log::call()->info("[{}] outbound leg created towards {}", session_.call_id(), destination);
 }
 
@@ -204,11 +205,11 @@ void RealSetupActions::send_outbound_invite() {
     // RFC 3261 default of 70-1 if the inbound request had no header of its
     // own) so the hop count still bounds the loop.
     pj_uint32_t inbound_max_fwd = PJSIP_MAX_FORWARDS_VALUE;
-    pjsip_rx_data* rdata = session_.current_rdata();
+    const pjsip_rx_data* rdata = session_.current_rdata();
     if (rdata != nullptr && rdata->msg_info.max_fwd != nullptr) {
         inbound_max_fwd = rdata->msg_info.max_fwd->ivalue;
     }
-    pj_uint32_t outbound_max_fwd = inbound_max_fwd > 0 ? inbound_max_fwd - 1 : 0;
+    const pj_uint32_t outbound_max_fwd = inbound_max_fwd > 0 ? inbound_max_fwd - 1 : 0;
 
     auto* max_fwd_hdr = static_cast<pjsip_max_fwd_hdr*>(pjsip_msg_find_hdr(tdata->msg, PJSIP_H_MAX_FORWARDS, nullptr));
     if (max_fwd_hdr != nullptr) {
@@ -228,7 +229,7 @@ void RealSetupActions::forward_180_ringing() {
 }
 
 void RealSetupActions::forward_200_ok(const std::string& sdp) {
-    SbcContext* ctx = session_.ctx();
+    const SbcContext* ctx = session_.ctx();
 
     // Parse the callee's answer; point the callee-facing socket at their RTP address.
     pjmedia_sdp_session* answer = Sdp::parse(session_.pool(), sdp);
@@ -256,12 +257,21 @@ void RealSetupActions::forward_200_ok(const std::string& sdp) {
 }
 
 void RealSetupActions::forward_rejection(int status_code) {
-    Log::call()->info("[{}] call rejected by callee ({})", session_.call_id(), status_code);
+    Log::call()->warn("[{}] call rejected by callee ({})", session_.call_id(), status_code);
     send_subsequent_response(status_code);
 }
 
+void RealSetupActions::forward_timeout() {
+    Log::call()->warn(
+        "[{}] call timeout, target-uri {}, route {}",
+        session_.call_id(),
+        session_.request_uri(),
+        session_.outbound_destination());
+    send_subsequent_response(PJSIP_SC_REQUEST_TIMEOUT);
+}
+
 void RealSetupActions::send_cancel() {
-    Log::call()->info("[{}] call cancelled by caller", session_.call_id());
+    Log::call()->warn("[{}] call cancelled by caller", session_.call_id());
     end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED, "send_cancel");
 }
 
@@ -293,7 +303,11 @@ void RealSetupActions::terminate_call() {
 }
 
 void RealSetupActions::cleanup() {
-    (void)session_.media_bridge()->close();
+    auto err = session_.media_bridge()->close();
+    if (!err.has_value()) {
+        Log::call()->error("[{}] failed to close session media bridge : {}", session_.call_id(), err.error().message());
+    }
+
     session_.ctx()->call_manager_->schedule_remove(session_.call_id());
     Log::call()->info("[{}] setup cleanup complete", session_.call_id());
 }

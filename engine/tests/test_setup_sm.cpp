@@ -196,6 +196,30 @@ TEST_CASE("SetupSm call rejected", "[setup_sm]") {
     REQUIRE(actions.was_called("forward_rejection:480"));
 }
 
+// Test: Callee never answers the INVITE (PJSIP surfaces this as cause 408)
+// Verifies: Setup SM distinguishes timeout from an explicit rejection
+TEST_CASE("SetupSm call timeout", "[setup_sm]") {
+    MockSetupActions actions;
+    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+
+    // Establish call up to InviteSent (waiting for response from callee)
+    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(RouteFound{"sip:callee@example.com"});
+    machine.process_event(InviteSent{});
+
+    // No final response from callee within the transaction timeout
+    // Expected: Transition to TimedOut, forward timeout to caller
+    actions.reset();
+    machine.process_event(CallTimeout{});
+    REQUIRE(machine.is(Sml::state<TimedOut>));
+    REQUIRE(actions.was_called("forward_timeout"));
+
+    actions.reset();
+    machine.process_event(Cleanup{});
+    REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("cleanup"));
+}
+
 // Test: ACK timeout while waiting for ACK from caller
 // Verifies: Setup SM terminates call if caller doesn't ACK 200 OK in time
 TEST_CASE("SetupSm ACK timeout", "[setup_sm]") {

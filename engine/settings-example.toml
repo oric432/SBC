@@ -6,6 +6,9 @@ pjsip_level = "disabled"
 address = "127.0.0.1"
 port = 5060
 identity_user = "sbc"
+# How long to wait for the callee to answer an outbound INVITE before giving
+# up and reporting a timeout to the caller (PJSIP default: 32000).
+invite_timeout_ms = 32000
 
 [control_plane]
 http_url = "http://127.0.0.1:3001"

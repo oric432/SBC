@@ -46,7 +46,7 @@ pj_bool_t on_rx_request(pjsip_rx_data* rdata) {
 // Invite-session state changes: hand the new state (plus the message that
 // caused it, when there is one) to the router for SM event mapping.
 void on_inv_state_changed(pjsip_inv_session* inv, pjsip_event* event) {
-    Log::sip()->debug("inv state changed: {}", pjsip_inv_state_name(inv->state));
+    Log::sip()->trace("pjsip inv state changed: {}", pjsip_inv_state_name(inv->state));
     if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
         return;
     }
@@ -105,6 +105,11 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
         return std::unexpected(pj_error("pjsip_tsx_layer_init_module failed", status));
     }
 
+    // t1/t2/t4 left at PJSIP defaults (0 = unchanged); td is the INVITE
+    // transaction's completion timeout — this is what fires cause 408 when a
+    // callee never answers.
+    pjsip_tsx_set_timers(0, 0, 0, static_cast<unsigned>(config.invite_timeout_ms_));
+
     status = pjsip_ua_init_module(endpt_, nullptr);
     if (status != PJ_SUCCESS) {
         return std::unexpected(pj_error("pjsip_ua_init_module failed", status));
@@ -155,14 +160,14 @@ VoidResult PjsipStack::start_transport(const PjsipConfig& config) {
 
     if (config.bind_ip_ != "0.0.0.0") {
         std::string bind = config.bind_ip_;
-        pj_str_t bind_addr = pj_str(bind.data());
-        pj_status_t addr_status = pj_sockaddr_in_set_str_addr(&addr, &bind_addr);
+        const pj_str_t bind_addr = pj_str(bind.data());
+        const pj_status_t addr_status = pj_sockaddr_in_set_str_addr(&addr, &bind_addr);
         if (addr_status != PJ_SUCCESS) {
             return std::unexpected(pj_error("invalid bind_ip", addr_status));
         }
     }
 
-    pj_status_t status = pjsip_udp_transport_start(endpt_, &addr, nullptr, 1, nullptr);
+    const pj_status_t status = pjsip_udp_transport_start(endpt_, &addr, nullptr, 1, nullptr);
     if (status != PJ_SUCCESS) {
         return std::unexpected(pj_error("pjsip_udp_transport_start failed", status));
     }
@@ -175,7 +180,7 @@ void PjsipStack::run() {
     }
     running_ = true;
     while (running_) {
-        pj_time_val timeout = {0, kEventPollMs};
+        const pj_time_val timeout = {.sec = 0, .msec = kEventPollMs};
         pjsip_endpt_handle_events(endpt_, &timeout);
     }
 }
