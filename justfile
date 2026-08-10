@@ -29,8 +29,12 @@ build-release-all:
 
 # Run all components concurrently in dev mode (with a 3s delay for the engine)
 run-dev-all:
-    just backend run-dev & just frontend run-dev & (sleep 6 && just engine run-dev) & wait
+    just backend run-dev & just frontend run-dev & (sleep 10 && just engine run-dev) & wait
 
 # Run all components concurrently in release mode (with a 3s delay for the engine)
 run-release-all:
     just backend run-release & just frontend run-release & (sleep 6 && just engine run-release) & wait
+
+# Run tests for all components
+test-all:
+    just engine test

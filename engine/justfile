@@ -23,3 +23,31 @@ run-dev:
 # Run the engine in release mode
 run-release:
     cd build && ./SbcEngine
+
+# Run standard C++ tests
+test:
+    ctest --preset test-debug
+
+# Run B2BUA SIPp tests (assumes engine is already running)
+test-b2bua:
+    #!/usr/bin/env bash
+    set -e
+    
+    # Start callee in background
+    python3 tests/b2bua/run_callee.py &
+    CALLEE_PID=$!
+    
+    # Give it a second to bind
+    sleep 1
+    
+    # Run caller in foreground
+    python3 tests/b2bua/run_caller.py
+    
+    # Wait for callee to finish
+    wait $CALLEE_PID
+
+# Generate schemas using the schema generator tool
+generate-schemas:
+    cmake --preset schema-gen-only
+    cmake --build --preset build-schema-gen
+    cd build && ./tools/schema_generator

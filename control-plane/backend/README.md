@@ -1,5 +1,16 @@
 # Control Plane Backend
 
+## Quick Start with Just
+
+To see all available commands, simply run:
+```bash
+just
+```
+To quickly start the development server:
+```bash
+just run-dev
+```
+
 ## Setup
 
 ```bash
