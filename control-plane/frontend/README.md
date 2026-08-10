@@ -22,6 +22,17 @@ control-plane/
 └── frontend/    # React + Vite SPA
 ```
 
+## Quick Start with Just
+
+To see all available commands, simply run:
+```bash
+just
+```
+To quickly start the Vite development server:
+```bash
+just run-dev
+```
+
 ## Setup
 
 ### Backend

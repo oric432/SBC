@@ -1,0 +1,23 @@
+# List available frontend commands
+default:
+    @just --list
+
+# Install Node.js dependencies
+setup:
+    npm install
+
+# Build the React/Vite frontend (dev)
+build-dev:
+    npm run build
+
+# Build the React/Vite frontend for production
+build-release:
+    npm run build
+
+# Run the Vite frontend in dev mode
+run-dev:
+    npm run dev
+
+# Preview the built release version of the frontend locally
+run-release:
+    npm run preview
