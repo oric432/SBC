@@ -1,0 +1,43 @@
+# List available backend commands
+default:
+    @just --list
+
+# Install Node.js dependencies
+setup:
+    npm install
+
+# Build the Node.js backend (dev)
+build-dev:
+    npm run build
+
+# Build the Node.js backend for production
+build-release:
+    npm run build
+
+# Run the Node.js backend in dev mode
+run-dev:
+    npm run dev
+
+# Run the Node.js backend in production mode
+run-release:
+    npm start
+
+# Generate database migrations
+db-generate:
+    npm run db:generate
+
+# Apply database migrations
+db-migrate:
+    npm run db:migrate
+
+# Push database schema changes
+db-push:
+    npm run db:push
+
+# Open Drizzle Studio
+db-studio:
+    npm run db:studio
+
+# Seed the database
+db-seed:
+    npm run db:seed

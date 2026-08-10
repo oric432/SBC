@@ -4,6 +4,17 @@ C++26 SBC.
 High-level design and state-machine philosophy
 are in the root [`AGENTS.md`](../AGENTS.md); this file covers the engine's own layout.
 
+## Quick Start with Just
+
+To see all available commands, simply run:
+```bash
+just
+```
+To quickly build and run in development mode:
+```bash
+just run-dev
+```
+
 ## Configuration
 
 Before running, copy `settings-example.toml` to `settings.toml` (repo root — the binary reads
