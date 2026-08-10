@@ -42,8 +42,8 @@ int main() {
 
     SbcEngine::RoutesClient client{{
         .http_url_ = settings.control_plane.http_url,
-        .http_timeout_ = std::chrono::seconds{settings.control_plane.http_timeout},
-        .retry_interval_ = std::chrono::seconds{settings.control_plane.http_retry_interval}
+        .http_timeout_ = std::chrono::seconds{settings.control_plane.http_timeout_s},
+        .retry_interval_ = std::chrono::seconds{settings.control_plane.http_retry_interval_s}
     }};
 
     auto fetch_result = client.fetch_snapshot_with_retry();

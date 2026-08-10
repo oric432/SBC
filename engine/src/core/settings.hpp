@@ -31,8 +31,8 @@ struct SipSettings {
 
 struct ControlPlaneSettings {
     std::string http_url = "http://127.0.0.1:3001";
-    std::chrono::seconds http_timeout{SettingsDefaults::kConnectionTimeoutSeconds};
-    std::chrono::seconds http_retry_interval{SettingsDefaults::kRetryInterval};
+    std::chrono::seconds http_timeout_s{SettingsDefaults::kConnectionTimeoutSeconds};
+    std::chrono::seconds http_retry_interval_s{SettingsDefaults::kRetryInterval};
 };
 
 // Runtime configuration loaded from settings.toml at startup.
