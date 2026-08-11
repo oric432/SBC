@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -10,7 +11,8 @@ namespace SbcEngine {
 
 class MediaBridge : public std::enable_shared_from_this<MediaBridge> {
 public:
-    explicit MediaBridge(const boost::asio::any_io_executor& executor);
+    using ErrCallback =  std::move_only_function<void(const std::error_code err)>;
+    explicit MediaBridge(const boost::asio::any_io_executor& executor, ErrCallback callback = nullptr);
     ~MediaBridge();
 
     MediaBridge(const MediaBridge&) = delete;
@@ -27,13 +29,18 @@ public:
     void set_remote_leg_a(const std::string& addr, unsigned short port);
     void set_remote_leg_b(const std::string& addr, unsigned short port);
 
-    void start_bridge_loop();
+    [[nodiscard]] std::error_code  start_bridge_loop(ErrCallback callback = nullptr);
 
     std::expected<void, std::error_code> close();
 
 private:
+
+    void invoke_err_callback(const std::error_code  err);
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    ErrCallback on_err_callback_;
+    bool is_running_bridge_loop_;
 };
 
 } // namespace SbcEngine
