@@ -14,7 +14,6 @@
 #include "sip/routes/routes_manager.hpp"
 
 using namespace SIPI;
-
 namespace {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — signal handler needs it
 SbcEngine::PjsipStack* g_stack = nullptr;
@@ -45,10 +44,9 @@ int main() {
     auto client_config = SbcEngine::RoutesClientConfig{
         .http_url_ = settings.control_plane.http_url,
         .http_timeout_ = std::chrono::seconds{settings.control_plane.http_timeout_s},
-        .retry_interval_ = std::chrono::seconds{settings.control_plane.http_retry_interval_s}
-    };
+        .retry_interval_ = std::chrono::seconds{settings.control_plane.http_retry_interval_s}};
 
-    if (auto res = manager.fetch_routes_snapshot(client_config); !res) {
+    if(auto res = manager.fetch_routes_snapshot(client_config); !res) {
         Log::crash_error(res.error().message());
     }
 
