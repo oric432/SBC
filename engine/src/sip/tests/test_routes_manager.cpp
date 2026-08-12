@@ -1,3 +1,5 @@
+//NOLINTBEGIN(bugprone-unchecked-optional-access)
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <glaze/net/http.hpp>
@@ -14,7 +16,6 @@
 #pragma clang diagnostic pop
 #include "sip/routes/routes_manager.hpp"
 #undef private
-
 namespace SbcEngine {
 
 namespace {
@@ -383,3 +384,6 @@ TEST_CASE("RoutesManager rejects successful API response with null data") {
 }
 
 } // namespace SbcEngine
+
+//NOLINTEND(bugprone-unchecked-optional-access)
+
