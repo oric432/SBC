@@ -7,13 +7,22 @@
 
 #include "core/utils/error.hpp"
 
-#define private public //NOLINT
+// Expose the parser as a test seam without changing the production API.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wkeyword-macro"
+#define private public
+#pragma clang diagnostic pop
 #include "sip/routes/routes_manager.hpp"
 #undef private
 
 namespace SbcEngine {
 
 namespace {
+
+constexpr int kPrimaryRoutePriority = 10;
+constexpr int kSecondaryRoutePriority = 20;
+constexpr int kFallbackRoutePriority = 100;
+constexpr int kNullCodecRoutePriority = 5;
 
 glz::response make_response(int status_code, std::string body) {
     glz::response response;
@@ -36,8 +45,7 @@ TEST_CASE("RoutesManager parses successful empty routes snapshot") {
             }
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE(result.has_value());
 
@@ -65,8 +73,7 @@ TEST_CASE("RoutesManager parses successful routes snapshot with one route") {
             }
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE(result.has_value());
 
@@ -74,9 +81,9 @@ TEST_CASE("RoutesManager parses successful routes snapshot with one route") {
     CHECK(result->version == 3);
 
     REQUIRE(result->routes.size() == 1);
-    REQUIRE(result->routes.contains(10));
+    REQUIRE(result->routes.contains(kPrimaryRoutePriority));
 
-    const auto& route = result->routes.at(10);
+    const auto& route = result->routes.at(kPrimaryRoutePriority);
 
     CHECK(route.uri == "sip:alice@example.com");
     CHECK(route.sip_address == "192.168.1.10");
@@ -116,8 +123,7 @@ TEST_CASE("RoutesManager parses successful routes snapshot with multiple routes"
             }
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE(result.has_value());
 
@@ -127,9 +133,9 @@ TEST_CASE("RoutesManager parses successful routes snapshot with multiple routes"
     REQUIRE(result->routes.size() == 3);
 
     SECTION("priority 10 route") {
-        REQUIRE(result->routes.contains(10));
+        REQUIRE(result->routes.contains(kPrimaryRoutePriority));
 
-        const auto& route = result->routes.at(10);
+        const auto& route = result->routes.at(kPrimaryRoutePriority);
 
         CHECK(route.uri == "sip:alice@example.com");
         CHECK(route.sip_address == "10.0.0.10");
@@ -140,9 +146,9 @@ TEST_CASE("RoutesManager parses successful routes snapshot with multiple routes"
     }
 
     SECTION("priority 20 route") {
-        REQUIRE(result->routes.contains(20));
+        REQUIRE(result->routes.contains(kSecondaryRoutePriority));
 
-        const auto& route = result->routes.at(20);
+        const auto& route = result->routes.at(kSecondaryRoutePriority);
 
         CHECK(route.uri == "sip:bob@example.com");
         CHECK(route.sip_address == "10.0.0.20");
@@ -153,9 +159,9 @@ TEST_CASE("RoutesManager parses successful routes snapshot with multiple routes"
     }
 
     SECTION("fallback route") {
-        REQUIRE(result->routes.contains(100));
+        REQUIRE(result->routes.contains(kFallbackRoutePriority));
 
-        const auto& route = result->routes.at(100);
+        const auto& route = result->routes.at(kFallbackRoutePriority);
 
         CHECK(route.uri == "*");
         CHECK(route.sip_address == "10.0.0.100");
@@ -182,8 +188,7 @@ TEST_CASE("RoutesManager parses route without optional codec") {
             }
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE(result.has_value());
     REQUIRE(result->routes.size() == 1);
@@ -216,14 +221,13 @@ TEST_CASE("RoutesManager parses null codec as empty optional") {
             }
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE(result.has_value());
     REQUIRE(result->routes.size() == 1);
-    REQUIRE(result->routes.contains(5));
+    REQUIRE(result->routes.contains(kNullCodecRoutePriority));
 
-    const auto& route = result->routes.at(5);
+    const auto& route = result->routes.at(kNullCodecRoutePriority);
 
     CHECK(route.uri == "sip:alice@example.com");
     CHECK(route.sip_address == "192.168.0.50");
@@ -259,21 +263,20 @@ TEST_CASE("RoutesManager keeps routes ordered by priority") {
             }
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE(result.has_value());
     REQUIRE(result->routes.size() == 3);
 
-    auto it = result->routes.begin();
+    auto itr = result->routes.begin();
 
-    CHECK(it->first == 10);
+    CHECK(itr->first == 10);
 
-    ++it;
-    CHECK(it->first == 50);
+    ++itr;
+    CHECK(itr->first == 50);
 
-    ++it;
-    CHECK(it->first == 100);
+    ++itr;
+    CHECK(itr->first == 100);
 }
 
 TEST_CASE("RoutesManager rejects non-success HTTP status") {
@@ -283,14 +286,11 @@ TEST_CASE("RoutesManager rejects non-success HTTP status") {
             "success": false
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE_FALSE(result.has_value());
 
-    CHECK(
-        result.error().message().find("routes fetch bad status 500") !=
-        std::string::npos);
+    CHECK(result.error().message().contains("routes fetch bad status 500"));
 }
 
 TEST_CASE("RoutesManager rejects not found HTTP status") {
@@ -300,14 +300,11 @@ TEST_CASE("RoutesManager rejects not found HTTP status") {
             "success": false
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE_FALSE(result.has_value());
 
-    CHECK(
-        result.error().message().find("routes fetch bad status 404") !=
-        std::string::npos);
+    CHECK(result.error().message().contains("routes fetch bad status 404"));
 }
 
 TEST_CASE("RoutesManager rejects malformed JSON") {
@@ -318,15 +315,11 @@ TEST_CASE("RoutesManager rejects malformed JSON") {
             "data":
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE_FALSE(result.has_value());
 
-    CHECK(
-        result.error().message().find(
-            "routes response JSON parse failed") !=
-        std::string::npos);
+    CHECK(result.error().message().contains("routes response JSON parse failed"));
 }
 
 TEST_CASE("RoutesManager rejects API failure with error message") {
@@ -339,15 +332,11 @@ TEST_CASE("RoutesManager rejects API failure with error message") {
             }
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE_FALSE(result.has_value());
 
-    CHECK(
-        result.error().message().find(
-            "routes API returned failure: routing table unavailable") !=
-        std::string::npos);
+    CHECK(result.error().message().contains("routes API returned failure: routing table unavailable"));
 }
 
 TEST_CASE("RoutesManager uses unknown error when API failure has no error object") {
@@ -357,15 +346,11 @@ TEST_CASE("RoutesManager uses unknown error when API failure has no error object
             "success": false
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE_FALSE(result.has_value());
 
-    CHECK(
-        result.error().message().find(
-            "routes API returned failure: unknown error") !=
-        std::string::npos);
+    CHECK(result.error().message().contains("routes API returned failure: unknown error"));
 }
 
 TEST_CASE("RoutesManager rejects successful API response without data") {
@@ -375,15 +360,11 @@ TEST_CASE("RoutesManager rejects successful API response without data") {
             "success": true
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE_FALSE(result.has_value());
 
-    CHECK(
-        result.error().message().find(
-            "routes API succeeded but returned no data") !=
-        std::string::npos);
+    CHECK(result.error().message().contains("routes API succeeded but returned no data"));
 }
 
 TEST_CASE("RoutesManager rejects successful API response with null data") {
@@ -394,15 +375,11 @@ TEST_CASE("RoutesManager rejects successful API response with null data") {
             "data": null
         })");
 
-    const auto result =
-        RoutesManager::parse_routes_snapshot_response(response);
+    const auto result = RoutesManager::parse_routes_snapshot_response(response);
 
     REQUIRE_FALSE(result.has_value());
 
-    CHECK(
-        result.error().message().find(
-            "routes API succeeded but returned no data") !=
-        std::string::npos);
+    CHECK(result.error().message().contains("routes API succeeded but returned no data"));
 }
 
 } // namespace SbcEngine
