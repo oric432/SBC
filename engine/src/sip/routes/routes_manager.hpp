@@ -4,10 +4,15 @@
 #include <glaze/net/http_client.hpp>
 #include <memory>
 #include "core/utils/error.hpp"
-#include "sip/routes/routes_client.hpp"
 #include "sip/routes/routes_store.hpp"
 
 namespace SbcEngine {
+struct RoutesClientConfig {
+    std::string http_url_;
+    std::chrono::seconds http_timeout_;
+    std::chrono::seconds retry_interval_;
+};
+
 class RoutesManager {
 public:
     explicit RoutesManager(RoutesStore* routes_store)

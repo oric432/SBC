@@ -8,7 +8,6 @@
 #include "sip/call/sbc_context.hpp"
 #include "core/settings.hpp"
 #include "sip/router/message_router.hpp"
-#include "sip/routes/routes_client.hpp"
 #include "sip/routes/routes_store.hpp"
 #include "sip/stack/pjsip_init.hpp"
 #include "core/utils/log.hpp"
