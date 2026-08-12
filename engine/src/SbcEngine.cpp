@@ -12,6 +12,7 @@
 #include "sip/routes/routes_store.hpp"
 #include "sip/stack/pjsip_init.hpp"
 #include "core/utils/log.hpp"
+#include "sip/routes/routes_manager.hpp"
 
 using namespace SIPI;
 
@@ -40,15 +41,17 @@ int main() {
 
     SbcEngine::RoutesStore routes_store;
 
-    SbcEngine::RoutesClient client{{
+    SbcEngine::RoutesManager manager{&routes_store};
+
+    auto client_config = SbcEngine::RoutesClientConfig{
         .http_url_ = settings.control_plane.http_url,
         .http_timeout_ = std::chrono::seconds{settings.control_plane.http_timeout_s},
         .retry_interval_ = std::chrono::seconds{settings.control_plane.http_retry_interval_s}
-    }};
+    };
 
-    auto fetch_result = client.fetch_snapshot_with_retry();
-    Log::app()->info("loaded routing table '{}' version {} after {} attempts", fetch_result.snapshot_.table_id, fetch_result.snapshot_.version, fetch_result.attempts_);
-    routes_store.set_snapshot(std::move(fetch_result.snapshot_));
+    if (auto res = manager.fetch_routes_snapshot(client_config); !res) {
+        Log::crash_error(res.error().message());
+    }
 
     SbcEngine::PjsipConfig config;
     config.bind_ip_ = settings.sip.address;

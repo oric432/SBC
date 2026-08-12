@@ -9,6 +9,7 @@ add_library(sip STATIC
     router/real_setup_actions.cpp
     routes/routes_client.cpp
     routes/routes_store.cpp
+    routes/routes_manager.cpp
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(sip PUBLIC
@@ -23,3 +24,7 @@ target_link_libraries(sip PUBLIC
     third_party::glaze
 )
 target_precompile_headers(sip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
+
+if(BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
