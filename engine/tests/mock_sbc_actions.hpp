@@ -13,6 +13,10 @@ class MockSetupActions : public ISetupContext {
 public:
     std::vector<std::string> calls_;
 
+    // Canned outcome resolve_route() returns; tests configure this before firing
+    // InviteReceived to steer the SM's self-driven routing cascade.
+    RouteResolution route_resolution_{.kind_ = RouteResolution::Kind::kFound, .destination_ = "sip:callee@example.com"};
+
     void send_100_trying() override { calls_.emplace_back("send_100_trying"); }
 
     void send_400_bad_request() override { calls_.emplace_back("send_400_bad_request"); }
@@ -23,7 +27,10 @@ public:
 
     void send_429_too_many_requests() override { calls_.emplace_back("send_429_too_many_requests"); }
 
-    void start_routing() override { calls_.emplace_back("start_routing"); }
+    RouteResolution resolve_route() override {
+        calls_.emplace_back("resolve_route");
+        return route_resolution_;
+    }
 
     void send_route_failure_response() override { calls_.emplace_back("send_route_failure_response"); }
 

@@ -22,7 +22,7 @@ public:
     void send_403_forbidden() override;
     void send_429_too_many_requests() override;
 
-    void start_routing() override;
+    RouteResolution resolve_route() override;
     void send_route_failure_response() override;
     void send_loop_detected_response() override;
 

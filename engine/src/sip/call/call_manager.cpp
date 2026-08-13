@@ -11,10 +11,10 @@ CallManager::CallManager() = default;
 
 CallManager::~CallManager() = default;
 
-CallSession* CallManager::create_session(const std::string& call_id, SbcContext* ctx) {
+CallSession* CallManager::create_session(const std::string& call_id, SbcContext* ctx, pjsip_rx_data* rdata) {
     auto [iter, inserted] = sessions_.try_emplace(call_id);
     if (inserted) {
-        iter->second = std::make_unique<CallSession>(call_id, ctx);
+        iter->second = std::make_unique<CallSession>(call_id, ctx, rdata);
     }
     return iter->second.get();
 }

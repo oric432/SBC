@@ -24,9 +24,10 @@ namespace SbcEngine {
 class CallSession {
 public:
     using SetupMachine = Sml::sm<SetupSm<RealSetupActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
-    using DialogMachine = Sml::sm<DialogSm<RealDialogActions>, Sml::logger<SmLogger>>;
+    using DialogMachine = Sml::sm<DialogSm<RealDialogActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
 
-    CallSession(std::string call_id, SbcContext* ctx);
+    // request_uri/caller_offer_sdp are extracted from rdata internally.
+    CallSession(std::string call_id, SbcContext* ctx, pjsip_rx_data* rdata);
     ~CallSession();
 
     CallSession(const CallSession&) = delete;
@@ -48,20 +49,19 @@ public:
 
     std::shared_ptr<MediaBridge> media_bridge() { return media_bridge_; }
 
+    // Request-URI and offer SDP of the original inbound INVITE — extracted from
+    // rx_data once, at construction, and read-only from then on.
     [[nodiscard]] const std::string& caller_offer_sdp() const { return caller_offer_sdp_; }
-    void set_caller_offer_sdp(std::string sdp) { caller_offer_sdp_ = std::move(sdp); }
-
-    // Original inbound Request-URI and the resolved outbound destination —
-    // kept around so a callee-side timeout/rejection can be logged with both
-    // the target the caller asked for and the route we sent it to.
     [[nodiscard]] const std::string& request_uri() const { return request_uri_; }
-    void set_request_uri(std::string uri) { request_uri_ = std::move(uri); }
     [[nodiscard]] const std::string& outbound_destination() const { return outbound_destination_; }
     void set_outbound_destination(std::string dest) { outbound_destination_ = std::move(dest); }
 
-    // rx_data of the request currently being processed.
+    // rx_data of the request currently driving the setup SM's cascade: set at
+    // construction from the inbound INVITE, cleared once that cascade settles
+    // (see MessageRouter::process_invite) so the session never holds onto it
+    // as ambient state afterward.
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
-    void set_current_rdata(pjsip_rx_data* rdata) { current_rdata_ = rdata; }
+    void clear_rdata() { current_rdata_ = nullptr; }
 
 private:
     std::string call_id_;
@@ -74,7 +74,7 @@ private:
     std::shared_ptr<MediaBridge> media_bridge_;
 
     std::string caller_offer_sdp_;
-    pjsip_rx_data* current_rdata_ = nullptr;
+    pjsip_rx_data* current_rdata_;
 
     std::string request_uri_;
     std::string outbound_destination_;
