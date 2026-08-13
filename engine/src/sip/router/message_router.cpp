@@ -238,7 +238,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // Routing is synchronous: look the request URI up in the routes table the
     // moment the SM asks for it, and drive the SM's decision directly.
     if (setup.is(Sml::state<Routing>)) {
-        auto route = ctx_->routes_store_ != nullptr ? ctx_->routes_store_->find_route(request_uri) : std::nullopt;
+        auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
         if (route && route->sip_address == ctx_->config_.local_ip_ &&
             route->port == static_cast<int>(ctx_->config_.sip_port_)) {
             // The routing table points this request straight back at this
@@ -258,9 +258,13 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         else if (route) {
             std::string user = extract_uri_user(route->uri);
             const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
-                                            : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
+                                                  : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
 
-            Log::sip()->info("Found route for request uri {}, route uri : {}:{}",request_uri, route->sip_address, route->port);
+            Log::sip()->info(
+                "Found route for request uri {}, route uri : {}:{}",
+                request_uri,
+                route->sip_address,
+                route->port);
             setup.process_event(RouteFound{dest});
         }
         else {

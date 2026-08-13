@@ -1,11 +1,14 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include <pjsip.h>
 #include <pjsip_ua.h>
 
 #include "sip/call/sbc_context.hpp"
+#include "sip/router/real_dialog_actions.hpp"
+#include "sip/routes/routes_store.hpp"
 
 namespace SbcEngine {
 
@@ -17,8 +20,9 @@ class CallSession;
 // Setup/Dialog SM events on the owning CallSession.
 class MessageRouter {
 public:
-    explicit MessageRouter(SbcContext* ctx)
-        : ctx_(ctx) {}
+    explicit MessageRouter(SbcContext* ctx, RoutesStore* routes_store)
+        : ctx_(ctx)
+        , routes_store_(routes_store) {}
 
     // Main entry point: called by the PJSIP module for out-of-dialog requests.
     void on_rx_request(pjsip_rx_data* rx_data);
@@ -50,6 +54,7 @@ private:
     void send_405_method_not_allowed(pjsip_rx_data* rx_data);
 
     SbcContext* ctx_;
+    RoutesStore* routes_store_;
 };
 
 } // namespace SbcEngine

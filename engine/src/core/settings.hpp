@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -16,6 +17,7 @@ constexpr uint16_t kLocalSipPort = 5060;
 constexpr int kConnectionTimeoutSeconds = 5;
 // Matches PJSIP's own default (PJSIP_TD_TIMEOUT) so an unset key changes nothing.
 constexpr int kInviteTimeoutMs = 32000;
+constexpr int kRetryIntervalSeconds = 5;
 } // namespace SettingsDefaults
 
 struct LoggingSettings {
@@ -34,7 +36,8 @@ struct SipSettings {
 
 struct ControlPlaneSettings {
     std::string http_url = "http://127.0.0.1:3001";
-    int http_timeout = SettingsDefaults::kConnectionTimeoutSeconds;
+    std::chrono::seconds http_timeout_s{SettingsDefaults::kConnectionTimeoutSeconds};
+    std::chrono::seconds http_retry_interval_s{SettingsDefaults::kRetryIntervalSeconds};
 };
 
 // Runtime configuration loaded from settings.toml at startup.

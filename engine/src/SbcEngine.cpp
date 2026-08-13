@@ -1,3 +1,4 @@
+#include <chrono>
 #include <csignal>
 #include <thread>
 
@@ -7,13 +8,12 @@
 #include "sip/call/sbc_context.hpp"
 #include "core/settings.hpp"
 #include "sip/router/message_router.hpp"
-#include "sip/routes/routes_client.hpp"
 #include "sip/routes/routes_store.hpp"
 #include "sip/stack/pjsip_init.hpp"
 #include "core/utils/log.hpp"
+#include "sip/routes/routes_manager.hpp"
 
 using namespace SIPI;
-
 namespace {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — signal handler needs it
 SbcEngine::PjsipStack* g_stack = nullptr;
@@ -38,17 +38,16 @@ int main() {
     Log::set_log_level(settings.logging.level);
 
     SbcEngine::RoutesStore routes_store;
-    SbcEngine::RoutesClientConfig routes_cfg{
+
+    SbcEngine::RoutesManager manager{&routes_store};
+
+    auto client_config = SbcEngine::RoutesClientConfig{
         .http_url_ = settings.control_plane.http_url,
-        .http_timeout_seconds_ = settings.control_plane.http_timeout,
-    };
-    auto snapshot_result = SbcEngine::fetch_routes_snapshot(routes_cfg);
-    if (snapshot_result) {
-        Log::app()->info("loaded routing table '{}' version {}", snapshot_result->table_id, snapshot_result->version);
-        routes_store.set_snapshot(std::move(*snapshot_result));
-    }
-    else {
-        Log::app()->warn("failed to fetch routing table at startup: {}", snapshot_result.error());
+        .http_timeout_ = std::chrono::seconds{settings.control_plane.http_timeout_s},
+        .retry_interval_ = std::chrono::seconds{settings.control_plane.http_retry_interval_s}};
+
+    if (auto res = manager.fetch_routes_snapshot(client_config); !res) {
+        Log::crash_error(res.error().message());
     }
 
     SbcEngine::PjsipConfig config;
@@ -73,9 +72,8 @@ int main() {
     ctx.config_ = config;
     ctx.module_id_ = stack.module_id();
     ctx.call_manager_ = &call_manager;
-    ctx.routes_store_ = &routes_store;
 
-    SbcEngine::MessageRouter router{&ctx};
+    SbcEngine::MessageRouter router{&ctx, &routes_store};
     stack.set_router(&router);
 
     g_stack = &stack;
