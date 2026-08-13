@@ -136,9 +136,9 @@ void MessageRouter::handle_dialog_disconnect(CallSession* session, pjsip_inv_ses
         dialog.process_event(ByeReceived{inv == session->inv_caller()});
     }
     else if (dialog.is(Sml::state<Terminating>)) {
-        // Second leg finished → the call is fully over.
+        // Second leg finished → the call is fully over. Cleanup{} self-fires
+        // from DialogSm's own action once Terminated is reached.
         dialog.process_event(CallEnded{});
-        dialog.process_event(Cleanup{});
     }
 }
 

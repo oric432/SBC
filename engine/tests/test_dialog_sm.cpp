@@ -1,4 +1,6 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace)
+#include <queue>
+
 #include <catch2/catch_test_macros.hpp>
 #include <boost/sml.hpp>
 
@@ -9,11 +11,19 @@
 namespace Sml = boost::sml;
 using namespace SbcEngine;
 
+namespace {
+// DialogSm's own action self-fires Cleanup once Terminated is reached (see
+// DialogSelfFireQueue in dialog_sm.hpp) — exercising that here requires the
+// same process_queue<std::queue> policy the real machine uses.
+using TestMachine = Sml::sm<DialogSm<MockDialogActions>, Sml::process_queue<std::queue>>;
+} // namespace
+
 // Test: Caller initiates call termination
-// Verifies: Dialog SM properly handles BYE from caller and cleans up
+// Verifies: Dialog SM properly handles BYE from caller and self-drives straight
+// to DialogDone once the call has ended — no separate Cleanup{} step needed.
 TEST_CASE("DialogSm bye from caller", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // Initial state: Dialog SM starts in Active (confirmed dialog)
     REQUIRE(machine.is(Sml::state<Active>));
@@ -26,15 +36,10 @@ TEST_CASE("DialogSm bye from caller", "[dialog_sm]") {
     REQUIRE(actions.was_called("forward_bye_to_other_leg"));
 
     // Step 2: Receive BYE response/completion from callee leg
-    // Expected: Transition to Terminated
+    // Expected: Cleanup self-fires once Terminated is reached — lands on
+    // DialogDone directly, in this one call.
     actions.reset();
     machine.process_event(CallEnded{});
-    REQUIRE(machine.is(Sml::state<Terminated>));
-
-    // Step 3: Cleanup after call termination
-    // Expected: Transition to DialogDone, release resources
-    actions.reset();
-    machine.process_event(Cleanup{});
     REQUIRE(machine.is(Sml::state<DialogDone>));
     REQUIRE(actions.was_called("cleanup"));
 }
@@ -43,7 +48,7 @@ TEST_CASE("DialogSm bye from caller", "[dialog_sm]") {
 // Verifies: Dialog SM handles SDP renegotiation and media update successfully
 TEST_CASE("DialogSm reinvite happy path", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // Step 1: Receive re-INVITE from caller with new offer
     // Expected: Transition to Reinviting, forward to callee
@@ -70,7 +75,7 @@ TEST_CASE("DialogSm reinvite happy path", "[dialog_sm]") {
 // Verifies: Dialog SM handles rejection during media renegotiation
 TEST_CASE("DialogSm reinvite rejected", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // Receive re-INVITE from caller
     machine.process_event(ReinviteReceived{"v=0\r\n"});
@@ -88,7 +93,7 @@ TEST_CASE("DialogSm reinvite rejected", "[dialog_sm]") {
 // Verifies: Dialog SM rejects re-INVITE with unsupported media
 TEST_CASE("DialogSm reinvite invalid SDP", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // Receive re-INVITE with invalid/unsupported SDP
     // Expected: Remain in Active state, reject with 488 Not Acceptable Here
@@ -101,7 +106,7 @@ TEST_CASE("DialogSm reinvite invalid SDP", "[dialog_sm]") {
 // Verifies: Dialog SM rejects second re-INVITE while one is pending
 TEST_CASE("DialogSm reinvite collision", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // First re-INVITE received
     machine.process_event(ReinviteReceived{"v=0\r\n"});
@@ -119,7 +124,7 @@ TEST_CASE("DialogSm reinvite collision", "[dialog_sm]") {
 // Verifies: Dialog SM handles BYE mid-renegotiation
 TEST_CASE("DialogSm bye during reinvite", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // Re-INVITE pending (waiting for response)
     machine.process_event(ReinviteReceived{"v=0\r\n"});
@@ -138,7 +143,7 @@ TEST_CASE("DialogSm bye during reinvite", "[dialog_sm]") {
 // Verifies: Dialog SM terminates call if ACK to re-INVITE doesn't arrive
 TEST_CASE("DialogSm reinvite ACK timeout", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // Re-INVITE succeeded (200 OK sent to caller)
     machine.process_event(ReinviteReceived{"v=0\r\n"});
@@ -157,7 +162,7 @@ TEST_CASE("DialogSm reinvite ACK timeout", "[dialog_sm]") {
 // Verifies: Dialog SM terminates call on unexpected errors
 TEST_CASE("DialogSm call error", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // Dialog is Active (call in progress)
     REQUIRE(machine.is(Sml::state<Active>));
@@ -173,7 +178,7 @@ TEST_CASE("DialogSm call error", "[dialog_sm]") {
 // Verifies: Dialog SM terminates call if answer SDP is incompatible
 TEST_CASE("DialogSm reinvite accepted with invalid SDP", "[dialog_sm]") {
     MockDialogActions actions;
-    Sml::sm<DialogSm<MockDialogActions>> machine{actions};
+    TestMachine machine{actions};
 
     // Re-INVITE pending
     machine.process_event(ReinviteReceived{"v=0\r\n"});
