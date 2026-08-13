@@ -21,7 +21,8 @@ class CallSession;
 class MessageRouter {
 public:
     explicit MessageRouter(SbcContext* ctx, RoutesStore* routes_store)
-        : ctx_(ctx), routes_store_(routes_store) {}
+        : ctx_(ctx)
+        , routes_store_(routes_store) {}
 
     // Main entry point: called by the PJSIP module for out-of-dialog requests.
     void on_rx_request(pjsip_rx_data* rx_data);

@@ -1,4 +1,4 @@
-//NOLINTBEGIN(bugprone-unchecked-optional-access)
+// NOLINTBEGIN(bugprone-unchecked-optional-access)
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -385,5 +385,4 @@ TEST_CASE("RoutesManager rejects successful API response with null data") {
 
 } // namespace SbcEngine
 
-//NOLINTEND(bugprone-unchecked-optional-access)
-
+// NOLINTEND(bugprone-unchecked-optional-access)

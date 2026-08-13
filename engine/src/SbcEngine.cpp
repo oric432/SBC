@@ -46,7 +46,7 @@ int main() {
         .http_timeout_ = std::chrono::seconds{settings.control_plane.http_timeout_s},
         .retry_interval_ = std::chrono::seconds{settings.control_plane.http_retry_interval_s}};
 
-    if(auto res = manager.fetch_routes_snapshot(client_config); !res) {
+    if (auto res = manager.fetch_routes_snapshot(client_config); !res) {
         Log::crash_error(res.error().message());
     }
 
