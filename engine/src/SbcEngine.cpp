@@ -67,15 +67,13 @@ int main() {
 
     SbcEngine::CallManager call_manager;
 
-    SbcEngine::SbcContext ctx;
-    ctx.endpt_ = stack.endpt();
-    ctx.ioc_ = &ioc;
-    ctx.config_ = config;
-    ctx.module_id_ = stack.module_id();
-    ctx.call_manager_ = &call_manager;
-    ctx.routes_store_ = &routes_store;
+    SbcEngine::PjContext context {
+        .endpt_ = stack.endpt(),
+        .config_ = config,
+        .module_id_ = stack.module_id()
+    };
 
-    SbcEngine::MessageRouter router{&ctx};
+    SbcEngine::MessageRouter router{&context, &call_manager, &routes_store, ioc.get_executor()};
     stack.set_router(&router);
 
     g_stack = &stack;

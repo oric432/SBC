@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/asio/any_io_executor.hpp>
+
 #include <string>
 
 #include <pjsip.h>
@@ -10,6 +12,8 @@
 namespace SbcEngine {
 
 class CallSession;
+class CallManager;
+class RoutesStore;
 
 // Central dispatch for SIP traffic. Out-of-dialog requests arrive via the PJSIP
 // module (on_rx_request); in-dialog progress arrives via invite-session state
@@ -17,8 +21,14 @@ class CallSession;
 // Setup/Dialog SM events on the owning CallSession.
 class MessageRouter {
 public:
-    explicit MessageRouter(SbcContext* ctx)
-        : ctx_(ctx) {}
+    MessageRouter(PjContext* ctx,
+                  CallManager* call_manager,
+                  RoutesStore* routes_store,
+                  boost::asio::any_io_executor executor)
+        : ctx_(ctx)
+        , call_manager_(call_manager)
+        , routes_store_(routes_store)
+        , executor_(std::move(executor)) {}
 
     // Main entry point: called by the PJSIP module for out-of-dialog requests.
     void on_rx_request(pjsip_rx_data* rx_data);
@@ -49,7 +59,10 @@ private:
     void send_481_call_does_not_exist(pjsip_rx_data* rx_data);
     void send_405_method_not_allowed(pjsip_rx_data* rx_data);
 
-    SbcContext* ctx_;
+    PjContext* ctx_;
+    CallManager* call_manager_;
+    RoutesStore* routes_store_;
+    boost::asio::any_io_executor executor_;
 };
 
 } // namespace SbcEngine

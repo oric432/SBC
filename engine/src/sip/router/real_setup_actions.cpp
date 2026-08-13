@@ -116,7 +116,7 @@ void RealSetupActions::send_loop_detected_response() {
 }
 
 void RealSetupActions::create_outbound_leg(const std::string& destination) {
-    const SbcContext* ctx = session_.ctx();
+    const PjContext* ctx = session_.ctx();
     const PjsipConfig& cfg = ctx->config_;
 
     // 1. Bind local sockets for RTP relay
@@ -229,7 +229,7 @@ void RealSetupActions::forward_180_ringing() {
 }
 
 void RealSetupActions::forward_200_ok(const std::string& sdp) {
-    const SbcContext* ctx = session_.ctx();
+    const PjContext* ctx = session_.ctx();
 
     // Parse the callee's answer; point the callee-facing socket at their RTP address.
     pjmedia_sdp_session* answer = Sdp::parse(session_.pool(), sdp);
@@ -308,7 +308,7 @@ void RealSetupActions::cleanup() {
         Log::call()->error("[{}] failed to close session media bridge : {}", session_.call_id(), err.error().message());
     }
 
-    session_.ctx()->call_manager_->schedule_remove(session_.call_id());
+    session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] setup cleanup complete", session_.call_id());
 }
 

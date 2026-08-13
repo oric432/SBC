@@ -11,11 +11,15 @@ constexpr pj_size_t kPoolInitial = 4096;
 constexpr pj_size_t kPoolIncrement = 4096;
 } // namespace
 
-CallSession::CallSession(std::string call_id, SbcContext* ctx)
+CallSession::CallSession(std::string call_id,
+                         PjContext* ctx,
+                         CallManager* call_manager,
+                         const boost::asio::any_io_executor& executor)
     : call_id_(std::move(call_id))
     , ctx_(ctx)
+    , call_manager_(call_manager)
     , pool_(pjsip_endpt_create_pool(ctx->endpt_, call_id_.c_str(), kPoolInitial, kPoolIncrement))
-    , media_bridge_(std::make_shared<MediaBridge>(ctx->ioc_->get_executor()))
+    , media_bridge_(std::make_shared<MediaBridge>(executor))
     , setup_actions_(*this)
     , dialog_actions_(*this)
     , setup_sm_logger_("setup", call_id_)

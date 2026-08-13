@@ -53,14 +53,14 @@ void MessageRouter::on_rx_request(pjsip_rx_data* rx_data) {
         send_405_method_not_allowed(rx_data);
     }
 
-    ctx_->call_manager_->purge_scheduled();
+    call_manager_->purge_scheduled();
 }
 
 void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     auto* session = static_cast<CallSession*>(inv->mod_data[ctx_->module_id_]);
     if (session == nullptr) {
-        session = ctx_->call_manager_->find_by_inv(inv);
+        session = call_manager_->find_by_inv(inv);
     }
     if (session == nullptr) {
         return; // not one of ours (or already removed)
@@ -108,7 +108,7 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     default: break;
     }
 
-    ctx_->call_manager_->purge_scheduled();
+    call_manager_->purge_scheduled();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -169,7 +169,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);
         return;
     }
-    if (ctx_->call_manager_->find_by_call_id(call_id) != nullptr) {
+    if (call_manager_->find_by_call_id(call_id) != nullptr) {
         // Retransmission of an INVITE we are already handling; the transaction
         // layer answers it, nothing to orchestrate.
         return;
@@ -219,7 +219,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         return;
     }
 
-    CallSession* session = ctx_->call_manager_->create_session(call_id, ctx_);
+    CallSession* session = call_manager_->create_session(call_id, ctx_, executor_);
     session->set_inv_caller(inv);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx_->module_id_] = session;
@@ -238,7 +238,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // Routing is synchronous: look the request URI up in the routes table the
     // moment the SM asks for it, and drive the SM's decision directly.
     if (setup.is(Sml::state<Routing>)) {
-        auto route = ctx_->routes_store_ != nullptr ? ctx_->routes_store_->find_route(request_uri) : std::nullopt;
+        auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
         if (route && route->sip_address == ctx_->config_.local_ip_ &&
             route->port == static_cast<int>(ctx_->config_.sip_port_)) {
             // The routing table points this request straight back at this
@@ -352,7 +352,7 @@ CallSession* MessageRouter::find_call_session(pjsip_rx_data* rx_data) {
     if (call_id.empty()) {
         return nullptr;
     }
-    return ctx_->call_manager_->find_by_call_id(call_id);
+    return call_manager_->find_by_call_id(call_id);
 }
 
 void MessageRouter::respond_stateless(pjsip_rx_data* rx_data, int code) {

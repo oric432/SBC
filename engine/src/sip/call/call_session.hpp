@@ -2,6 +2,7 @@
 
 #include <boost/asio.hpp>
 
+#include <boost/asio/any_io_executor.hpp>
 #include <queue>
 #include <string>
 
@@ -18,6 +19,8 @@
 
 namespace SbcEngine {
 
+class CallManager;
+
 // Owns everything for one B2BUA call: the two PJSIP invite-session legs, the two
 // RTP relay sockets, and the Setup/Dialog state machines with their per-call
 // action objects. Non-copyable/movable — held by CallManager via unique_ptr.
@@ -26,7 +29,10 @@ public:
     using SetupMachine = Sml::sm<SetupSm<RealSetupActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
     using DialogMachine = Sml::sm<DialogSm<RealDialogActions>, Sml::logger<SmLogger>>;
 
-    CallSession(std::string call_id, SbcContext* ctx);
+    CallSession(std::string call_id,
+                PjContext* ctx,
+                CallManager* call_manager,
+                const boost::asio::any_io_executor& executor);
     ~CallSession();
 
     CallSession(const CallSession&) = delete;
@@ -35,7 +41,8 @@ public:
     CallSession& operator=(CallSession&&) = delete;
 
     [[nodiscard]] const std::string& call_id() const { return call_id_; }
-    [[nodiscard]] SbcContext* ctx() const { return ctx_; }
+    [[nodiscard]] PjContext* ctx() const { return ctx_; }
+    [[nodiscard]] CallManager* call_manager() const { return call_manager_; }
     [[nodiscard]] pj_pool_t* pool() const { return pool_; }
 
     SetupMachine& setup_sm() { return setup_sm_; }
@@ -65,7 +72,8 @@ public:
 
 private:
     std::string call_id_;
-    SbcContext* ctx_;
+    PjContext* ctx_;
+    CallManager* call_manager_;
     pj_pool_t* pool_ = nullptr;
 
     pjsip_inv_session* inv_caller_ = nullptr;
