@@ -30,7 +30,11 @@ Result<Settings> load_settings(const std::string& path) {
     std::string buffer;
     auto errc = glz::read_file_toml(settings, path, buffer);
     if (errc) {
-        return std::unexpected(Error("failed to load settings from {}", path));
+        if (errc.ec == glz::error_code::file_open_failure) {
+            return std::unexpected(Error("failed to load settings: could not open {}", path));
+        }
+        return std::unexpected(
+            Error("failed to load settings from {}: {}", path, glz::format_error(errc, buffer)));
     }
     return settings;
 }
