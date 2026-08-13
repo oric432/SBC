@@ -16,7 +16,9 @@ int resolve_pjsip_log_level(const std::string& level) {
     int value = 0;
 
     const char* begin = level.data();
-    const char* const end = begin + level.size();
+    
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    const char* const end = begin + level.size(); 
 
     auto [ptr, errc] = std::from_chars(begin, end, value);
     if (errc != std::errc{} || ptr != end || value < 0 || value > kMaxPjLogLevel) {
