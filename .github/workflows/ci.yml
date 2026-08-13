@@ -26,7 +26,10 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang clang-tidy clang-format ninja-build
+          sudo apt-get install -y clang clang-format ninja-build
+          # Ubuntu's default clang-tidy is too old for --allow-no-checks (needs LLVM 16+)
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 19
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-19 100
 
       - name: Cache FetchContent dependencies
         uses: actions/cache@v4
