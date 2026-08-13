@@ -28,6 +28,10 @@ run-release:
 test:
     ctest --preset test-debug
 
+# Check formatting without modifying files (CI-safe)
+format-check:
+    cmake --build build --target format-check
+
 # Run B2BUA SIPp tests (assumes engine is already running)
 test-b2bua:
     #!/usr/bin/env bash
