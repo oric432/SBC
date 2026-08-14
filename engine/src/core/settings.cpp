@@ -4,6 +4,11 @@
 
 #include <glaze/glaze.hpp>
 #include <glaze/toml/read.hpp>
+#include <glaze/toml/write.hpp>
+
+#include "core/utils/log.hpp"
+
+using namespace SIPI;
 
 namespace SbcEngine {
 
@@ -33,6 +38,16 @@ Result<Settings> load_settings(const std::string& path) {
         return std::unexpected(Error("failed to load settings from {}", path));
     }
     return settings;
+}
+
+void log_applied_settings(const Settings& settings) {
+    std::string toml;
+    auto errc = glz::write_toml(settings, toml);
+    if (errc) {
+        Log::app()->warn("failed to render applied settings for logging");
+        return;
+    }
+    Log::app()->info("applied settings:\n{}", toml);
 }
 
 } // namespace SbcEngine

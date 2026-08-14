@@ -40,6 +40,7 @@ Settings SbcApp::init_settings() {
     }
     Settings settings = *settings_result;
     Log::set_log_level(settings.logging.level);
+    log_applied_settings(settings);
     return settings;
 }
 
