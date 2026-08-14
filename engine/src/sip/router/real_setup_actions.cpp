@@ -109,7 +109,7 @@ RouteResolution RealSetupActions::resolve_route() {
     const SbcContext* ctx = session_.ctx();
     const std::string& request_uri = session_.request_uri();
 
-    auto route = ctx->routes_store_ != nullptr ? ctx->routes_store_->find_route(request_uri) : std::nullopt;
+    auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
     if (!route) {
         Log::sip()->warn("[{}] no route found for {}", session_.call_id(), request_uri);
         return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};

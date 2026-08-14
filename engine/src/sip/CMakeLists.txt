@@ -8,7 +8,6 @@ add_library(sip STATIC
     router/real_dialog_actions.cpp
     router/real_setup_actions.cpp
     router/extract_utils.cpp
-    routes/routes_client.cpp
     routes/routes_store.cpp
     routes/routes_manager.cpp
 )

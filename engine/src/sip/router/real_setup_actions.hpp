@@ -8,13 +8,15 @@
 namespace SbcEngine {
 
 class CallSession;
+class RoutesStore;
 
 // Per-call implementation of the SetupSm action interface. Each CallSession owns
 // one instance; the methods drive PJSIP and the RTP relay for that call.
 class RealSetupActions : public ISetupContext {
 public:
-    explicit RealSetupActions(CallSession& session)
-        : session_(session) {}
+    RealSetupActions(CallSession& session, RoutesStore* routes_store)
+        : session_(session)
+        , routes_store_(routes_store) {}
 
     void send_100_trying() override;
     void send_400_bad_request() override;
@@ -52,6 +54,7 @@ private:
     void send_subsequent_response(int code, const pjmedia_sdp_session* sdp = nullptr);
 
     CallSession& session_;
+    RoutesStore* routes_store_;
 };
 
 } // namespace SbcEngine

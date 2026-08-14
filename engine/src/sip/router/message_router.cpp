@@ -204,7 +204,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
 
     // CallSession extracts its own request-URI/offer SDP from rx_data at
     // construction; nothing here needs to parse the message itself.
-    CallSession* session = ctx_->call_manager_->create_session(call_id, ctx_, rx_data);
+    CallSession* session = ctx_->call_manager_->create_session(call_id, ctx_, routes_store_, rx_data);
     session->set_inv_caller(inv);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx_->module_id_] = session;

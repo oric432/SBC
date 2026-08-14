@@ -18,6 +18,8 @@
 
 namespace SbcEngine {
 
+class RoutesStore;
+
 // Owns everything for one B2BUA call: the two PJSIP invite-session legs, the two
 // RTP relay sockets, and the Setup/Dialog state machines with their per-call
 // action objects. Non-copyable/movable — held by CallManager via unique_ptr.
@@ -26,8 +28,9 @@ public:
     using SetupMachine = Sml::sm<SetupSm<RealSetupActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
     using DialogMachine = Sml::sm<DialogSm<RealDialogActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
 
-    // request_uri/caller_offer_sdp are extracted from rdata internally.
-    CallSession(std::string call_id, SbcContext* ctx, pjsip_rx_data* rdata);
+    // request_uri/caller_offer_sdp are extracted from rdata internally. routes_store
+    // is forwarded to RealSetupActions only — CallSession does not retain it.
+    CallSession(std::string call_id, SbcContext* ctx, RoutesStore* routes_store, pjsip_rx_data* rdata);
     ~CallSession();
 
     CallSession(const CallSession&) = delete;
