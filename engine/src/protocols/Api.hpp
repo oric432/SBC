@@ -8,6 +8,10 @@
 // NOLINTBEGIN(readability-identifier-naming)
 
 namespace SbcEngine::Protocols {
+// API routes client endpoints.
+namespace ClientApiEndpoints {
+constexpr std::string_view kRoutes = "/api/b2bua/routes";
+}
 
 struct ApiError {
     std::string message;

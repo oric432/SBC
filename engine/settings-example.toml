@@ -12,4 +12,5 @@ invite_timeout_ms = 32000
 
 [control_plane]
 http_url = "http://127.0.0.1:3001"
-http_timeout = 5
+http_timeout_s = 5
+http_retry_interval_s = 5
