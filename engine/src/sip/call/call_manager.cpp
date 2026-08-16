@@ -1,7 +1,7 @@
 #include "call_manager.hpp"
 
 #include "sip/call/call_session.hpp"
-#include "sip/call/sbc_context.hpp"
+#include "sip/call/pj_context.hpp"
 #include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/events.hpp"
 

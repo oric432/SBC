@@ -9,7 +9,7 @@
 #include <pjsip.h>
 #include <pjsip_ua.h>
 
-#include "sip/call/sbc_context.hpp"
+#include "sip/call/pj_context.hpp"
 #include "sip/router/real_dialog_actions.hpp"
 #include "sip/router/real_setup_actions.hpp"
 #include "net/rtp/MediaBridge.hpp"

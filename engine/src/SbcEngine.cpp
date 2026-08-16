@@ -5,7 +5,7 @@
 #include <boost/asio.hpp>
 
 #include "sip/call/call_manager.hpp"
-#include "sip/call/sbc_context.hpp"
+#include "sip/call/pj_context.hpp"
 #include "core/settings.hpp"
 #include "sip/router/message_router.hpp"
 #include "sip/routes/routes_store.hpp"

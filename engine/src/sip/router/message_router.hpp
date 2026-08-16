@@ -7,7 +7,7 @@
 #include <pjsip.h>
 #include <pjsip_ua.h>
 
-#include "sip/call/sbc_context.hpp"
+#include "sip/call/pj_context.hpp"
 #include "sip/router/real_dialog_actions.hpp"
 #include "sip/routes/routes_store.hpp"
 
