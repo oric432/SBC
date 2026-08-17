@@ -16,6 +16,11 @@ build-release:
     cmake --preset release
     cmake --build --preset build-release
 
+# Configure and build in debug mode with clang-tidy on (CI only)
+build-ci:
+    cmake --preset ci-debug
+    cmake --build --preset build-ci-debug
+
 # Run the engine in debug mode
 run-dev:
     cd build && ./SbcEngine
@@ -27,6 +32,10 @@ run-release:
 # Run standard C++ tests
 test:
     ctest --preset test-debug
+
+# Run standard C++ tests (CI only, matches build-ci preset)
+test-ci:
+    ctest --preset test-ci-debug --output-on-failure
 
 # Check formatting without modifying files (CI-safe)
 format-check:
