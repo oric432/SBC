@@ -132,6 +132,61 @@ TEST_CASE("SetupSm cancel before answer", "[setup_sm]") {
     REQUIRE(actions.was_called("cleanup"));
 }
 
+// Test: create_outbound_leg() fails to stand up the callee leg (RTP bind
+// failure, SDP parse failure, PJSIP dialog/invite failure, ...)
+// Verifies: SM self-fires OutboundLegFailed instead of InviteSent (issue #87 / #1)
+// — it does not sit in WaitingForAnswer waiting for events a nonexistent
+// callee session can never send.
+TEST_CASE("SetupSm outbound leg creation fails", "[setup_sm]") {
+    MockSetupActions actions;
+    actions.create_outbound_leg_result_ = false;
+    TestMachine machine{actions};
+
+    machine.process_event(InviteReceived{"v=0\r\n"});
+    REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("create_outbound_leg"));
+    REQUIRE_FALSE(actions.was_called("send_outbound_invite"));
+    REQUIRE(actions.was_called("send_route_failure_response"));
+    REQUIRE(actions.was_called("cleanup"));
+}
+
+// Test: create_outbound_leg() succeeds but send_outbound_invite() fails
+// (e.g. pjsip_inv_invite() itself errors)
+// Verifies: same OutboundLegFailed self-fire path as above (issue #87 / #1).
+TEST_CASE("SetupSm outbound invite send fails", "[setup_sm]") {
+    MockSetupActions actions;
+    actions.send_outbound_invite_result_ = false;
+    TestMachine machine{actions};
+
+    machine.process_event(InviteReceived{"v=0\r\n"});
+    REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("create_outbound_leg"));
+    REQUIRE(actions.was_called("send_outbound_invite"));
+    REQUIRE(actions.was_called("send_route_failure_response"));
+    REQUIRE(actions.was_called("cleanup"));
+}
+
+// Test: CallAccepted passes the shallow SdpValidator guard, but forward_200_ok()
+// itself fails to relay the answer (e.g. its real SDP parse fails)
+// Verifies: SM self-fires AcceptForwardFailed instead of settling in
+// WaitingForAck as if 200 OK had actually gone out (issue #87 / #2). Unlike
+// "invalid answer SDP" above, forward_200_ok is responsible for its own
+// caller-facing failure response — the SM only needs to self-clean.
+TEST_CASE("SetupSm forward_200_ok fails despite valid-looking SDP", "[setup_sm]") {
+    MockSetupActions actions;
+    actions.forward_200_ok_result_ = false;
+    TestMachine machine{actions};
+
+    machine.process_event(InviteReceived{"v=0\r\n"});
+    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
+
+    actions.reset();
+    machine.process_event(CallAccepted{"v=0\r\n"});
+    REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("forward_200_ok"));
+    REQUIRE(actions.was_called("cleanup"));
+}
+
 // Test: Callee sends answer with invalid SDP
 // Verifies: Setup SM rejects incompatible answer, terminates both legs, self-cleans.
 TEST_CASE("SetupSm invalid answer SDP", "[setup_sm]") {

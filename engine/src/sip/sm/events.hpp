@@ -28,6 +28,11 @@ struct LoopDetected {};
 
 struct InviteSent {};
 
+// SM-internal: self-fired when create_outbound_leg()/send_outbound_invite()
+// failed to actually stand up the callee leg, so the SM does not sit in
+// WaitingForAnswer waiting for events a nonexistent callee session can never send.
+struct OutboundLegFailed {};
+
 struct RingingReceived {};
 
 struct CallAccepted {
@@ -46,6 +51,13 @@ struct InviteTerminated {};
 
 struct AckReceived {};
 struct AckTimeout {};
+
+// SM-internal: self-fired when forward_200_ok() itself failed to relay the
+// callee's answer (e.g. it passed the shallow SdpValidator guard but the real
+// SDP parse inside forward_200_ok failed) — the response actually sent to the
+// caller was a failure response, not 200 OK, so the SM must not settle in
+// WaitingForAck as if the call had actually been accepted.
+struct AcceptForwardFailed {};
 
 struct DialogStarted {};
 
