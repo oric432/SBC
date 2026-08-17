@@ -11,8 +11,6 @@
 #include "sip/stack/sdp_mangler.hpp"
 #include "core/utils/log.hpp"
 
-using namespace SIPI;
-
 namespace SbcEngine {
 
 namespace {

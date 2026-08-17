@@ -6,8 +6,6 @@
 #include "sip/sm/events.hpp"
 #include "core/utils/log.hpp"
 
-using namespace SIPI;
-
 namespace SbcEngine {
 
 namespace {

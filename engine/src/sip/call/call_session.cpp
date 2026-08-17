@@ -3,8 +3,6 @@
 #include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 
-using namespace SIPI;
-
 namespace SbcEngine {
 
 namespace {

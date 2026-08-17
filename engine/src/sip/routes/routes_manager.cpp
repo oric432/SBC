@@ -8,7 +8,7 @@ constexpr auto kSuccessStatusCode = 200;
 }
 
 Result<void> RoutesManager::fetch_routes_snapshot(const RoutesClientConfig& config) {
-    using namespace SIPI;
+    using namespace SbcEngine;
     const std::string url = std::format("{}{}", config.http_url_, Protocols::ClientApiEndpoints::kRoutes);
     size_t attempts = 0;
 

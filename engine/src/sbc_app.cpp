@@ -7,8 +7,6 @@
 #include "core/utils/log.hpp"
 #include "sip/routes/routes_manager.hpp"
 
-using namespace SIPI;
-
 namespace SbcEngine {
 
 SbcApp* SbcApp::instance_ = nullptr;

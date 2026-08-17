@@ -8,8 +8,6 @@
 
 #include "core/utils/log.hpp"
 
-using namespace SIPI;
-
 namespace SbcEngine {
 
 int resolve_pjsip_log_level(const std::string& level) {
