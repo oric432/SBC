@@ -45,8 +45,16 @@
     ]]>
   </send>
 
-  <!-- Hold the call up for 10s (no infinite loop) so the dialog and its
-       CallSession actually exist for a while, then tear it down ourselves. -->
+  <!-- Play the pcap once (~7s) so the RTP relay path gets exercised, then
+       hold the call up for 10s total (no infinite loop) so the dialog and
+       its CallSession actually exist for a while, then tear it down
+       ourselves. -->
+  <nop>
+    <action>
+      <exec play_pcap_audio="tests/b2bua/g711a.pcap"/>
+    </action>
+  </nop>
+
   <pause milliseconds="10000"/>
 
   <send retrans="500">

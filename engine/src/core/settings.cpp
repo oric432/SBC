@@ -4,6 +4,11 @@
 
 #include <glaze/glaze.hpp>
 #include <glaze/toml/read.hpp>
+#include <glaze/toml/write.hpp>
+
+#include "core/utils/log.hpp"
+
+using namespace SIPI;
 
 namespace SbcEngine {
 
@@ -16,7 +21,9 @@ int resolve_pjsip_log_level(const std::string& level) {
     int value = 0;
 
     const char* begin = level.data();
-    const char* const end = begin + level.size();
+    
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    const char* const end = begin + level.size(); 
 
     auto [ptr, errc] = std::from_chars(begin, end, value);
     if (errc != std::errc{} || ptr != end || value < 0 || value > kMaxPjLogLevel) {
@@ -30,9 +37,23 @@ Result<Settings> load_settings(const std::string& path) {
     std::string buffer;
     auto errc = glz::read_file_toml(settings, path, buffer);
     if (errc) {
-        return std::unexpected(Error("failed to load settings from {}", path));
+        if (errc.ec == glz::error_code::file_open_failure) {
+            return std::unexpected(Error("failed to load settings: could not open {}", path));
+        }
+        return std::unexpected(
+            Error("failed to load settings from {}: {}", path, glz::format_error(errc, buffer)));
     }
     return settings;
+}
+
+void log_applied_settings(const Settings& settings) {
+    std::string toml;
+    auto errc = glz::write_toml(settings, toml);
+    if (errc) {
+        Log::app()->warn("failed to render applied settings for logging");
+        return;
+    }
+    Log::app()->info("applied settings:\n{}", toml);
 }
 
 } // namespace SbcEngine

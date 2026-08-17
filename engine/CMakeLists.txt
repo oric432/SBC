@@ -60,10 +60,19 @@ if(BUILD_ENGINE OR BUILD_TESTS)
 endif()
 
 if(BUILD_ENGINE)
-    add_executable(SbcEngine src/SbcEngine.cpp)
-    target_precompile_headers(SbcEngine PRIVATE src/core/pch.hpp)
-    target_include_directories(SbcEngine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    
+    add_executable(SbcEngine
+        src/SbcEngine.cpp
+        src/sbc_app.cpp
+    )
+
+    target_precompile_headers(SbcEngine PRIVATE
+        src/core/pch.hpp
+    )
+
+    target_include_directories(SbcEngine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
     target_link_libraries(SbcEngine PRIVATE
         project_options
         core
