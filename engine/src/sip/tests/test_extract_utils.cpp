@@ -52,8 +52,7 @@ const PjEndpoint kPjEndpoint;
 class ScopedPool {
 public:
     ScopedPool()
-        : pool_(pjsip_endpt_create_pool(kPjEndpoint.get(), "extract_utils_test_pool", kPoolInitial, kPoolIncrement)) {
-    }
+        : pool_(pjsip_endpt_create_pool(kPjEndpoint.get(), "extract_utils_test_pool", kPoolInitial, kPoolIncrement)) {}
     ~ScopedPool() { pjsip_endpt_release_pool(kPjEndpoint.get(), pool_); }
     ScopedPool(const ScopedPool&) = delete;
     ScopedPool& operator=(const ScopedPool&) = delete;
@@ -83,29 +82,27 @@ pjsip_rx_data parse_rdata(pj_pool_t* pool, const std::string& raw) {
     return rdata;
 }
 
-constexpr const char* kInviteWithSdp =
-    "INVITE sip:bob@example.com SIP/2.0\r\n"
-    "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKabc123\r\n"
-    "Max-Forwards: 70\r\n"
-    "To: <sip:bob@example.com>\r\n"
-    "From: <sip:alice@example.com>;tag=abc\r\n"
-    "Call-ID: abc123@127.0.0.1\r\n"
-    "CSeq: 1 INVITE\r\n"
-    "Content-Type: application/sdp\r\n"
-    "Content-Length: 5\r\n"
-    "\r\n"
-    "v=0\r\n";
+constexpr const char* kInviteWithSdp = "INVITE sip:bob@example.com SIP/2.0\r\n"
+                                       "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKabc123\r\n"
+                                       "Max-Forwards: 70\r\n"
+                                       "To: <sip:bob@example.com>\r\n"
+                                       "From: <sip:alice@example.com>;tag=abc\r\n"
+                                       "Call-ID: abc123@127.0.0.1\r\n"
+                                       "CSeq: 1 INVITE\r\n"
+                                       "Content-Type: application/sdp\r\n"
+                                       "Content-Length: 5\r\n"
+                                       "\r\n"
+                                       "v=0\r\n";
 
-constexpr const char* kInviteNoBody =
-    "INVITE sip:bob@example.com SIP/2.0\r\n"
-    "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKabc123\r\n"
-    "Max-Forwards: 70\r\n"
-    "To: <sip:bob@example.com>\r\n"
-    "From: <sip:alice@example.com>;tag=abc\r\n"
-    "Call-ID: abc123@127.0.0.1\r\n"
-    "CSeq: 1 INVITE\r\n"
-    "Content-Length: 0\r\n"
-    "\r\n";
+constexpr const char* kInviteNoBody = "INVITE sip:bob@example.com SIP/2.0\r\n"
+                                      "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKabc123\r\n"
+                                      "Max-Forwards: 70\r\n"
+                                      "To: <sip:bob@example.com>\r\n"
+                                      "From: <sip:alice@example.com>;tag=abc\r\n"
+                                      "Call-ID: abc123@127.0.0.1\r\n"
+                                      "CSeq: 1 INVITE\r\n"
+                                      "Content-Length: 0\r\n"
+                                      "\r\n";
 
 } // namespace
 

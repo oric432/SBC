@@ -133,11 +133,7 @@ RouteResolution RealSetupActions::resolve_route() {
     std::string user = extract_uri_user(route->uri);
     const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
                                           : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
-    Log::sip()->info(
-        "Found route for request uri {}, route uri : {}:{}",
-        request_uri,
-        route->sip_address,
-        route->port);
+    Log::sip()->info("Found route for request uri {}, route uri : {}:{}", request_uri, route->sip_address, route->port);
     return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest};
 }
 

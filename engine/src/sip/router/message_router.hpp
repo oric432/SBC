@@ -23,10 +23,11 @@ class RoutesStore;
 // Setup/Dialog SM events on the owning CallSession.
 class MessageRouter {
 public:
-    MessageRouter(PjContext* ctx,
-                  CallManager* call_manager,
-                  RoutesStore* routes_store,
-                  boost::asio::any_io_executor executor)
+    MessageRouter(
+        PjContext* ctx,
+        CallManager* call_manager,
+        RoutesStore* routes_store,
+        boost::asio::any_io_executor executor)
         : ctx_(ctx)
         , call_manager_(call_manager)
         , routes_store_(routes_store)
