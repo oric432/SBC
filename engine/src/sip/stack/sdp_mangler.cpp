@@ -4,9 +4,6 @@
 #include <cstring>
 
 #include "core/utils/log.hpp"
-
-using namespace SIPI;
-
 namespace SbcEngine::Sdp {
 
 namespace {

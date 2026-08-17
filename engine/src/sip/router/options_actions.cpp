@@ -2,8 +2,6 @@
 
 #include "core/utils/log.hpp"
 
-using namespace SIPI;
-
 namespace SbcEngine {
 
 void OptionsActions::send_options_response() {

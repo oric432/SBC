@@ -23,12 +23,12 @@ public:
 
     template <class TSm, class TEvent>
     void log_process_event(const TEvent& /*event*/) {
-        SIPI::Log::sm()->debug("{} event {}", tag_, short_name(Sml::aux::get_type_name<TEvent>()));
+        Log::sm()->debug("{} event {}", tag_, short_name(Sml::aux::get_type_name<TEvent>()));
     }
 
     template <class TSm, class TGuard, class TEvent>
     void log_guard(const TGuard& /*guard*/, const TEvent& /*event*/, bool result) {
-        SIPI::Log::sm()->trace(
+        Log::sm()->trace(
             "{} guard on {} -> {}",
             tag_,
             short_name(Sml::aux::get_type_name<TEvent>()),
@@ -37,12 +37,12 @@ public:
 
     template <class TSm, class TAction, class TEvent>
     void log_action(const TAction& /*action*/, const TEvent& /*event*/) {
-        SIPI::Log::sm()->trace("{} action for {}", tag_, short_name(Sml::aux::get_type_name<TEvent>()));
+        Log::sm()->trace("{} action for {}", tag_, short_name(Sml::aux::get_type_name<TEvent>()));
     }
 
     template <class TSm, class TSrcState, class TDstState>
     void log_state_change(const TSrcState& src, const TDstState& dst) {
-        SIPI::Log::sm()->trace("{} {} -> {}", tag_, short_name(src.c_str()), short_name(dst.c_str()));
+        Log::sm()->trace("{} {} -> {}", tag_, short_name(src.c_str()), short_name(dst.c_str()));
     }
 
 private:

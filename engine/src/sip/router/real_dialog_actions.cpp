@@ -6,8 +6,6 @@
 #include "sip/call/call_session.hpp"
 #include "core/utils/log.hpp"
 
-using namespace SIPI;
-
 namespace SbcEngine {
 
 namespace {
