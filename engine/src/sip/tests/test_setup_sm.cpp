@@ -4,8 +4,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <boost/sml.hpp>
 
-#include "sm/events.hpp"
-#include "sm/setup_sm.hpp"
+#include "../sm/events.hpp"
+#include "../sm/setup_sm.hpp"
 #include "mock_sbc_actions.hpp"
 
 namespace Sml = boost::sml;
