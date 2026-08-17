@@ -19,6 +19,7 @@ std::string extract_method(pjsip_rx_data* rx_data);
 std::string extract_sdp(pjsip_rx_data* rx_data);
 std::string extract_call_id(pjsip_rx_data* rx_data);
 std::string extract_request_uri(pjsip_rx_data* rx_data);
+std::string extract_from_uri(pjsip_rx_data* rx_data);
 
 // Pulls the "user" part out of a SIP URI like "sip:callee@sbc.local", so the
 // outbound Request-URI RealSetupActions::resolve_route() builds for a route's
