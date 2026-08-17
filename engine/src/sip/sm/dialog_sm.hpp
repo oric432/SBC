@@ -17,6 +17,13 @@ struct Terminating {};
 struct Terminated {};
 struct DialogDone {};
 
+// Queue used by DialogSm's own action to self-fire Cleanup once Terminated is
+// reached, instead of requiring external code to fire it as a separate step —
+// same mechanism as SetupSelfFireQueue (setup_sm.hpp): the action lambda takes
+// this type by value, boost::sml substitutes a live instance wired to the sm's
+// own internal queue at dispatch time (see Sml::process_queue<std::queue>).
+using DialogSelfFireQueue = Sml::back::process<Cleanup>;
+
 template <typename Actions>
 struct DialogSm {
     auto operator()() const {
@@ -56,6 +63,8 @@ struct DialogSm {
 
         auto handle_call_error = [](Actions& actions) { actions.terminate_call(); };
 
+        auto handle_call_ended = [](DialogSelfFireQueue cleanup_event) { cleanup_event(Cleanup{}); };
+
         auto handle_cleanup = [](Actions& actions) { actions.cleanup(); };
 
         // clang-format off
@@ -79,7 +88,7 @@ struct DialogSm {
              Sml::state<WaitingForReinviteAck> + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<Terminating>,
 
              // Terminating state
-             Sml::state<Terminating>           +  Sml::event<CallEnded>                                                                                           = Sml::state<Terminated>,
+             Sml::state<Terminating>           + (Sml::event<CallEnded>                                                              / handle_call_ended)          = Sml::state<Terminated>,
 
              // Cleanup
              Sml::state<Terminated>            + (Sml::event<Cleanup>                                                               / handle_cleanup)             = Sml::state<DialogDone>

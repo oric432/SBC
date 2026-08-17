@@ -1,13 +1,15 @@
 #include "real_setup_actions.hpp"
 
+#include <format>
+
 #include <pjsip_ua.h>
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/router/extract_utils.hpp"
+#include "sip/routes/routes_store.hpp"
 #include "sip/stack/sdp_mangler.hpp"
 #include "core/utils/log.hpp"
-
-using namespace SIPI;
 
 namespace SbcEngine {
 
@@ -30,6 +32,7 @@ void send_inv_msg(pjsip_inv_session* inv, pjsip_tx_data* tdata, const char* what
 
 void end_session(pjsip_inv_session* inv, int code, const char* what) {
     if (inv == nullptr) {
+        Log::sip()->warn("{}: no invite session to end", what);
         return;
     }
     pjsip_tx_data* tdata = nullptr;
@@ -101,10 +104,41 @@ void RealSetupActions::send_429_too_many_requests() {
     send_initial_response(kScTooManyRequests);
 }
 
-void RealSetupActions::start_routing() {
-    // Stage 1: routing is a fixed destination; the router fires RouteFound
-    // synchronously after this event completes.
-    Log::call()->trace("[{}] routing started", session_.call_id());
+RouteResolution RealSetupActions::resolve_route() {
+    const PjContext* ctx = session_.ctx();
+    const std::string& request_uri = session_.request_uri();
+
+    auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
+    if (!route) {
+        Log::sip()->warn("[{}] no route found for {}", session_.call_id(), request_uri);
+        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};
+    }
+
+    if (route->sip_address == ctx->config_.local_ip_ && route->port == static_cast<int>(ctx->config_.sip_port_)) {
+        // The routing table points this request straight back at this
+        // engine's own listening address. Max-Forwards decrementing alone is
+        // a fallback net (it still bounds a loop that hops through other
+        // elements first) — for the direct self-loop from the issue report,
+        // catch it here immediately rather than spending 70 round trips'
+        // worth of sessions and RTP ports first.
+        Log::sip()->warn(
+            "[{}] route for {} points back at this SBC ({}:{}), loop detected",
+            session_.call_id(),
+            request_uri,
+            route->sip_address,
+            route->port);
+        return {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}};
+    }
+
+    std::string user = extract_uri_user(route->uri);
+    const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
+                                          : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
+    Log::sip()->info(
+        "Found route for request uri {}, route uri : {}:{}",
+        request_uri,
+        route->sip_address,
+        route->port);
+    return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest};
 }
 
 void RealSetupActions::send_route_failure_response() {
@@ -115,8 +149,8 @@ void RealSetupActions::send_loop_detected_response() {
     send_subsequent_response(PJSIP_SC_LOOP_DETECTED);
 }
 
-void RealSetupActions::create_outbound_leg(const std::string& destination) {
-    const SbcContext* ctx = session_.ctx();
+bool RealSetupActions::create_outbound_leg(const std::string& destination) {
+    const PjContext* ctx = session_.ctx();
     const PjsipConfig& cfg = ctx->config_;
 
     // 1. Bind local sockets for RTP relay
@@ -126,7 +160,7 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
             "[{}] failed to bind caller RTP port: {}",
             session_.call_id(),
             caller_port.error().message());
-        return;
+        return false;
     }
     auto callee_port = session_.media_bridge()->bind_leg_b();
     if (!callee_port) {
@@ -134,7 +168,7 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
             "[{}] failed to bind callee RTP port: {}",
             session_.call_id(),
             callee_port.error().message());
-        return;
+        return false;
     }
 
     // 2. Parse the caller's offer; point the caller-facing socket at their RTP
@@ -142,7 +176,7 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
     pjmedia_sdp_session* offer = Sdp::parse(session_.pool(), session_.caller_offer_sdp());
     if (offer == nullptr) {
         Log::call()->error("[{}] cannot parse caller offer SDP", session_.call_id());
-        return;
+        return false;
     }
     auto caller_rtp = Sdp::extract_rtp_endpoint(offer);
     if (!caller_rtp.ip_.empty()) {
@@ -168,14 +202,14 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
         pjsip_dlg_create_uac(pjsip_ua_instance(), &local_uri, &local_uri, &remote_uri, &remote_uri, &dlg);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] pjsip_dlg_create_uac failed ({})", session_.call_id(), status);
-        return;
+        return false;
     }
 
     pjsip_inv_session* inv = nullptr;
     status = pjsip_inv_create_uac(dlg, offer, 0, &inv);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] pjsip_inv_create_uac failed ({})", session_.call_id(), status);
-        return;
+        return false;
     }
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
@@ -183,19 +217,20 @@ void RealSetupActions::create_outbound_leg(const std::string& destination) {
     session_.set_inv_callee(inv);
     session_.set_outbound_destination(destination);
     Log::call()->info("[{}] outbound leg created towards {}", session_.call_id(), destination);
+    return true;
 }
 
-void RealSetupActions::send_outbound_invite() {
+bool RealSetupActions::send_outbound_invite() {
     pjsip_inv_session* inv = session_.inv_callee();
     if (inv == nullptr) {
         Log::sip()->error("[{}] send_outbound_invite: no callee leg", session_.call_id());
-        return;
+        return false;
     }
     pjsip_tx_data* tdata = nullptr;
     pj_status_t status = pjsip_inv_invite(inv, &tdata);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] pjsip_inv_invite failed ({})", session_.call_id(), status);
-        return;
+        return false;
     }
 
     // pjsip_inv_invite() does not carry over or insert a Max-Forwards header on
@@ -222,14 +257,15 @@ void RealSetupActions::send_outbound_invite() {
     }
 
     send_inv_msg(inv, tdata, "send_outbound_invite");
+    return true;
 }
 
 void RealSetupActions::forward_180_ringing() {
     send_subsequent_response(PJSIP_SC_RINGING);
 }
 
-void RealSetupActions::forward_200_ok(const std::string& sdp) {
-    const SbcContext* ctx = session_.ctx();
+bool RealSetupActions::forward_200_ok(const std::string& sdp) {
+    const PjContext* ctx = session_.ctx();
 
     // Parse the callee's answer; point the callee-facing socket at their RTP address.
     pjmedia_sdp_session* answer = Sdp::parse(session_.pool(), sdp);
@@ -237,7 +273,7 @@ void RealSetupActions::forward_200_ok(const std::string& sdp) {
         Log::call()->error("[{}] cannot parse callee answer SDP", session_.call_id());
         end_session(session_.inv_callee(), PJSIP_SC_NOT_ACCEPTABLE_HERE, "forward_200_ok");
         send_subsequent_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
-        return;
+        return false;
     }
     auto callee_rtp = Sdp::extract_rtp_endpoint(answer);
     if (!callee_rtp.ip_.empty()) {
@@ -254,6 +290,7 @@ void RealSetupActions::forward_200_ok(const std::string& sdp) {
     send_subsequent_response(PJSIP_SC_OK, answer);
     session_.media_bridge()->start_bridge_loop();
     Log::call()->info("[{}] 200 OK forwarded, RTP relay armed", session_.call_id());
+    return true;
 }
 
 void RealSetupActions::forward_rejection(int status_code) {
@@ -308,7 +345,7 @@ void RealSetupActions::cleanup() {
         Log::call()->error("[{}] failed to close session media bridge : {}", session_.call_id(), err.error().message());
     }
 
-    session_.ctx()->call_manager_->schedule_remove(session_.call_id());
+    session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] setup cleanup complete", session_.call_id());
 }
 

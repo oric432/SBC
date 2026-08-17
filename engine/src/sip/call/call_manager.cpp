@@ -1,7 +1,7 @@
 #include "call_manager.hpp"
 
 #include "sip/call/call_session.hpp"
-#include "sip/call/sbc_context.hpp"
+#include "sip/call/pj_context.hpp"
 #include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/events.hpp"
 
@@ -11,10 +11,14 @@ CallManager::CallManager() = default;
 
 CallManager::~CallManager() = default;
 
-CallSession* CallManager::create_session(const std::string& call_id, SbcContext* ctx) {
+CallSession* CallManager::create_session(const std::string& call_id,
+                                         PjContext* ctx,
+                                         RoutesStore* routes_store,
+                                         const boost::asio::any_io_executor& executor,
+                                         pjsip_rx_data* rdata) {
     auto [iter, inserted] = sessions_.try_emplace(call_id);
     if (inserted) {
-        iter->second = std::make_unique<CallSession>(call_id, ctx);
+        iter->second = std::make_unique<CallSession>(call_id, ctx, this, routes_store, executor, rdata);
     }
     return iter->second.get();
 }

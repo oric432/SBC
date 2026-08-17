@@ -8,8 +8,6 @@
 #include "sip/router/message_router.hpp"
 #include "core/utils/log.hpp"
 
-using namespace SIPI;
-
 namespace SbcEngine {
 
 namespace {

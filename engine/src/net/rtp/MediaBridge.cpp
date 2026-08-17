@@ -14,6 +14,28 @@ namespace SbcEngine {
 
 using namespace RtpCpp;
 
+namespace {
+constexpr RelayLeg opposite(RelayLeg leg) {
+    return leg == RelayLeg::kLegA ? RelayLeg::kLegB : RelayLeg::kLegA;
+}
+} // namespace
+
+std::string_view to_string(RelayLeg leg) {
+    switch (leg) {
+    case RelayLeg::kLegA: return "leg_a";
+    case RelayLeg::kLegB: return "leg_b";
+    }
+    return "unknown_leg";
+}
+
+std::string_view to_string(RelayOp operation) {
+    switch (operation) {
+    case RelayOp::kReceive: return "receive";
+    case RelayOp::kSend: return "send";
+    }
+    return "unknown_op";
+}
+
 struct MediaBridge::Impl {
     explicit Impl(const boost::asio::any_io_executor& executor)
         : session_a_(make_raw_rtp_session(executor))
@@ -25,12 +47,15 @@ struct MediaBridge::Impl {
     std::optional<boost::asio::ip::udp::endpoint> dest_a_;
     std::optional<boost::asio::ip::udp::endpoint> dest_b_;
 
+    MediaBridgeErrorHandler error_handler_;
+
     static void do_relay(
         std::shared_ptr<MediaBridge> self,
+        RelayLeg src_leg,
         RtpSession<BasicRawRtpSender>& src,
         RtpSession<BasicRawRtpSender>& dst,
         boost::asio::ip::udp::endpoint& dst_ep) {
-        src.receiver().async_receive_pkt([self = std::move(self), &src, &dst, &dst_ep](
+        src.receiver().async_receive_pkt([self = std::move(self), src_leg, &src, &dst, &dst_ep](
                                              const RtpPacketView& pkt,
                                              [[maybe_unused]] const boost::asio::ip::udp::endpoint& src_ep,
                                              const std::error_code& err) mutable {
@@ -41,13 +66,20 @@ struct MediaBridge::Impl {
                     return;
                 }
 
-                // TODO : handle errors that arrent operation aborted
+                if (self->impl_->error_handler_) {
+                    self->impl_->error_handler_(src_leg, RelayOp::kReceive, err);
+                }
+                // Nothing to relay this iteration (the packet is not valid), but
+                // keep the loop alive so a transient error doesn't permanently
+                // kill the relay for the rest of the call.
+                Impl::do_relay(std::move(self), src_leg, src, dst, dst_ep);
+                return;
             }
 
             dst.sender().async_send_pkt(
                 pkt.packet(),
                 dst_ep,
-                [self, &src, &dst, &dst_ep](std::size_t /*bytes_sent*/, const std::error_code& send_err) mutable {
+                [self, src_leg, &src, &dst, &dst_ep](std::size_t /*bytes_sent*/, const std::error_code& send_err) mutable {
                     if (send_err) {
                         std::error_code abort_err =
                             boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
@@ -55,11 +87,13 @@ struct MediaBridge::Impl {
                         if (send_err == abort_err) {
                             return;
                         }
-                        // TODO: handle errors that arrent operation aborted if sending fail
+
+                        if (self->impl_->error_handler_) {
+                            self->impl_->error_handler_(opposite(src_leg), RelayOp::kSend, send_err);
+                        }
                     }
-                    Impl::do_relay(std::move(self), src, dst, dst_ep);
+                    Impl::do_relay(std::move(self), src_leg, src, dst, dst_ep);
                 });
-            // TODO propagate error if receiving fail
         });
     }
 };
@@ -117,12 +151,16 @@ void MediaBridge::set_remote_leg_b(const std::string& addr, unsigned short port)
     impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
 }
 
+void MediaBridge::set_error_handler(MediaBridgeErrorHandler handler) {
+    impl_->error_handler_ = std::move(handler);
+}
+
 void MediaBridge::start_bridge_loop() {
     if (impl_->dest_b_) {
-        Impl::do_relay(shared_from_this(), impl_->session_a_, impl_->session_b_, *impl_->dest_b_);
+        Impl::do_relay(shared_from_this(), RelayLeg::kLegA, impl_->session_a_, impl_->session_b_, *impl_->dest_b_);
     }
     if (impl_->dest_a_) {
-        Impl::do_relay(shared_from_this(), impl_->session_b_, impl_->session_a_, *impl_->dest_a_);
+        Impl::do_relay(shared_from_this(), RelayLeg::kLegB, impl_->session_b_, impl_->session_a_, *impl_->dest_a_);
     }
 }
 

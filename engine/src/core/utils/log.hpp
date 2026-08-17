@@ -9,12 +9,12 @@
 #include <spdlog/spdlog.h>
 #include <string_view>
 
-namespace SIPI::Log {
+namespace SbcEngine::Log {
 
 inline void init_logging() {
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
 
-    auto logger = std::make_shared<spdlog::logger>("SIPI", spdlog::sinks_init_list{console_sink});
+    auto logger = std::make_shared<spdlog::logger>("SbcEngine", spdlog::sinks_init_list{console_sink});
 
     spdlog::set_default_logger(logger);
     spdlog::set_pattern("[%Y:%m:%d %H:%M:%S.%e] [%t] [%^%l%$] [%n] %v");
@@ -75,4 +75,4 @@ inline void crash_error(const std::string_view msg) {
     std::quick_exit(EXIT_FAILURE);
 }
 
-} // namespace SIPI::Log
+} // namespace SbcEngine::Log

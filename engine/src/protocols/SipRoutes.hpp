@@ -9,9 +9,6 @@
 // NOLINTBEGIN(readability-identifier-naming)
 
 namespace SbcEngine::Protocols {
-
-
-
 struct SipRouteRule {
     std::string uri;
     std::string sip_address;

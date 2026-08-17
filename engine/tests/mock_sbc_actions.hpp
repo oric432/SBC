@@ -13,6 +13,16 @@ class MockSetupActions : public ISetupContext {
 public:
     std::vector<std::string> calls_;
 
+    // Canned outcome resolve_route() returns; tests configure this before firing
+    // InviteReceived to steer the SM's self-driven routing cascade.
+    RouteResolution route_resolution_{.kind_ = RouteResolution::Kind::kFound, .destination_ = "sip:callee@example.com"};
+
+    // Canned outcomes for the fallible actions; tests configure these to steer
+    // the SM's self-driven OutboundLegFailed/AcceptForwardFailed paths.
+    bool create_outbound_leg_result_ = true;
+    bool send_outbound_invite_result_ = true;
+    bool forward_200_ok_result_ = true;
+
     void send_100_trying() override { calls_.emplace_back("send_100_trying"); }
 
     void send_400_bad_request() override { calls_.emplace_back("send_400_bad_request"); }
@@ -23,22 +33,30 @@ public:
 
     void send_429_too_many_requests() override { calls_.emplace_back("send_429_too_many_requests"); }
 
-    void start_routing() override { calls_.emplace_back("start_routing"); }
+    RouteResolution resolve_route() override {
+        calls_.emplace_back("resolve_route");
+        return route_resolution_;
+    }
 
     void send_route_failure_response() override { calls_.emplace_back("send_route_failure_response"); }
 
     void send_loop_detected_response() override { calls_.emplace_back("send_loop_detected_response"); }
 
-    void create_outbound_leg(const std::string& destination) override {
+    bool create_outbound_leg(const std::string& destination) override {
         calls_.push_back("create_outbound_leg:" + destination);
+        return create_outbound_leg_result_;
     }
 
-    void send_outbound_invite() override { calls_.emplace_back("send_outbound_invite"); }
+    bool send_outbound_invite() override {
+        calls_.emplace_back("send_outbound_invite");
+        return send_outbound_invite_result_;
+    }
 
     void forward_180_ringing() override { calls_.emplace_back("forward_180_ringing"); }
 
-    void forward_200_ok(const std::string& sdp) override {
+    bool forward_200_ok(const std::string& sdp) override {
         calls_.emplace_back("forward_200_ok:" + std::to_string(sdp.length()) + "B");
+        return forward_200_ok_result_;
     }
 
     void forward_rejection(int status_code) override {
