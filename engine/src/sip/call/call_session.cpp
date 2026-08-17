@@ -24,6 +24,7 @@ CallSession::CallSession(std::string call_id,
     , caller_offer_sdp_(extract_sdp(rdata))
     , current_rdata_(rdata)
     , request_uri_(extract_request_uri(rdata))
+    , caller_uri_(extract_from_uri(rdata))
     , setup_actions_(*this, routes_store)
     , dialog_actions_(*this)
     , setup_sm_logger_("setup", call_id_)

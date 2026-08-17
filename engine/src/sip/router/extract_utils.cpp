@@ -49,6 +49,18 @@ std::string extract_request_uri(pjsip_rx_data* rx_data) {
     return {buf.data(), static_cast<std::size_t>(len)};
 }
 
+std::string extract_from_uri(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.from == nullptr || rx_data->msg_info.from->uri == nullptr) {
+        return {};
+    }
+    std::array<char, PJSIP_MAX_URL_SIZE> buf{};
+    const int len = pjsip_uri_print(PJSIP_URI_IN_FROMTO_HDR, rx_data->msg_info.from->uri, buf.data(), buf.size());
+    if (len < 0) {
+        return {};
+    }
+    return {buf.data(), static_cast<std::size_t>(len)};
+}
+
 std::string extract_uri_user(const std::string& uri) {
     auto scheme_end = uri.find(':');
     auto at_pos = uri.find('@');

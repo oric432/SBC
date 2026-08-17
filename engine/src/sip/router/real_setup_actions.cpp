@@ -262,6 +262,11 @@ bool RealSetupActions::send_outbound_invite() {
 
 void RealSetupActions::forward_180_ringing() {
     send_subsequent_response(PJSIP_SC_RINGING);
+    Log::call()->info(
+        "[{}] received 180 Ringing from callee ({}), forwarded to caller ({})",
+        session_.call_id(),
+        session_.callee_uri(),
+        session_.caller_uri());
 }
 
 bool RealSetupActions::forward_200_ok(const std::string& sdp) {
@@ -289,7 +294,11 @@ bool RealSetupActions::forward_200_ok(const std::string& sdp) {
 
     send_subsequent_response(PJSIP_SC_OK, answer);
     session_.media_bridge()->start_bridge_loop();
-    Log::call()->info("[{}] 200 OK forwarded, RTP relay armed", session_.call_id());
+    Log::call()->info(
+        "[{}] received 200 OK from callee ({}), forwarded to caller ({}); RTP relay armed",
+        session_.call_id(),
+        session_.callee_uri(),
+        session_.caller_uri());
     return true;
 }
 
@@ -331,7 +340,20 @@ void RealSetupActions::send_failure_to_caller() {
 
 void RealSetupActions::forward_ack_and_start_dialog() {
     // ACK absorption is handled by PJSIP; the router fires DialogStarted next.
-    Log::call()->info("[{}] call established", session_.call_id());
+    const auto caller_relay_port = session_.media_bridge()->leg_a_port();
+    const auto callee_relay_port = session_.media_bridge()->leg_b_port();
+    Log::call()->info(
+        "[{}] call established between caller ({}) and callee ({}); media: mode=relay-only, "
+        "caller RTP={}:{}, SBC caller-facing port={}, callee RTP={}:{}, SBC callee-facing port={}",
+        session_.call_id(),
+        session_.caller_uri(),
+        session_.callee_uri(),
+        session_.caller_rtp_ip(),
+        session_.caller_rtp_port(),
+        caller_relay_port.value_or(0),
+        session_.callee_rtp_ip(),
+        session_.callee_rtp_port(),
+        callee_relay_port.value_or(0));
 }
 
 void RealSetupActions::terminate_call() {

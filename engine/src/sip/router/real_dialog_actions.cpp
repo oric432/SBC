@@ -40,7 +40,15 @@ void RealDialogActions::send_200_ok_to_bye_sender() {
 void RealDialogActions::forward_bye_to_other_leg(bool from_caller) {
     pjsip_inv_session* other = from_caller ? session_.inv_callee() : session_.inv_caller();
     end_session(other, PJSIP_SC_OK, "forward_bye_to_other_leg");
-    Log::call()->info("[{}] BYE forwarded to {}", session_.call_id(), from_caller ? "callee" : "caller");
+    const std::string& sender_uri = from_caller ? session_.caller_uri() : session_.callee_uri();
+    const std::string& recipient_uri = from_caller ? session_.callee_uri() : session_.caller_uri();
+    Log::call()->info(
+        "[{}] received BYE from {} ({}), forwarded to {} ({})",
+        session_.call_id(),
+        from_caller ? "caller" : "callee",
+        sender_uri,
+        from_caller ? "callee" : "caller",
+        recipient_uri);
 }
 
 void RealDialogActions::forward_reinvite([[maybe_unused]] const std::string& sdp) {
