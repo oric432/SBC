@@ -34,6 +34,7 @@ include(Sanitizers)
 include(ClangFormat)
 
 add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
+add_clang_format_check_target(format-check ${CMAKE_SOURCE_DIR}/src)
 
 # Project Options Aggregator
 add_library(project_options INTERFACE)

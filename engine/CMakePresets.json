@@ -58,7 +58,14 @@
             "inherits": "default",
             "description": "Debug build with full symbols and no optimization",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "ci-debug",
+            "inherits": "debug",
+            "description": "Debug build with clang-tidy on (used by CI pipeline)",
+            "cacheVariables": {
                 "ENABLE_CLANG_TIDY": true
             }
         },
@@ -75,8 +82,7 @@
             "inherits": "default",
             "description": "Optimized build with debug information",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-                "ENABLE_CLANG_TIDY": true
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             }
         },
         {
@@ -119,6 +125,10 @@
             "configurePreset": "debug"
         },
         {
+            "name": "build-ci-debug",
+            "configurePreset": "ci-debug"
+        },
+        {
             "name": "build-release",
             "configurePreset": "release"
         },
@@ -139,6 +149,10 @@
         {
             "name": "test-debug",
             "configurePreset": "debug"
+        },
+        {
+            "name": "test-ci-debug",
+            "configurePreset": "ci-debug"
         }
     ]
 }
