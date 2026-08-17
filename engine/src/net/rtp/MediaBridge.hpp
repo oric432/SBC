@@ -4,10 +4,12 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <boost/asio/any_io_executor.hpp>
+#include <boost/asio/ip/udp.hpp>
 
 namespace SbcEngine {
 
@@ -45,6 +47,11 @@ public:
 
     void set_remote_leg_a(const std::string& addr, unsigned short port);
     void set_remote_leg_b(const std::string& addr, unsigned short port);
+
+    // Empty until the corresponding set_remote_leg_* call — i.e. before the
+    // peer's SDP has been parsed.
+    [[nodiscard]] std::optional<boost::asio::ip::udp::endpoint> remote_leg_a() const;
+    [[nodiscard]] std::optional<boost::asio::ip::udp::endpoint> remote_leg_b() const;
 
     // Not thread-safe against a running relay loop: call before start_bridge_loop(),
     // or otherwise marshal onto the bridge's own executor — the relay loop reads

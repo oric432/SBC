@@ -66,22 +66,8 @@ public:
     [[nodiscard]] const std::string& caller_offer_sdp() const { return caller_offer_sdp_; }
     [[nodiscard]] const std::string& request_uri() const { return request_uri_; }
     [[nodiscard]] const std::string& caller_uri() const { return caller_uri_; }
-    [[nodiscard]] const std::string& callee_uri() const { return outbound_destination_; }
     [[nodiscard]] const std::string& outbound_destination() const { return outbound_destination_; }
     void set_outbound_destination(std::string dest) { outbound_destination_ = std::move(dest); }
-
-    void set_caller_rtp(std::string ip, uint16_t port) {
-        caller_rtp_ip_ = std::move(ip);
-        caller_rtp_port_ = port;
-    }
-    void set_callee_rtp(std::string ip, uint16_t port) {
-        callee_rtp_ip_ = std::move(ip);
-        callee_rtp_port_ = port;
-    }
-    [[nodiscard]] const std::string& caller_rtp_ip() const { return caller_rtp_ip_; }
-    [[nodiscard]] uint16_t caller_rtp_port() const { return caller_rtp_port_; }
-    [[nodiscard]] const std::string& callee_rtp_ip() const { return callee_rtp_ip_; }
-    [[nodiscard]] uint16_t callee_rtp_port() const { return callee_rtp_port_; }
 
     // rx_data of the request currently driving the setup SM's cascade: set at
     // construction from the inbound INVITE, cleared once that cascade settles
@@ -107,10 +93,6 @@ private:
     std::string request_uri_;
     std::string caller_uri_;
     std::string outbound_destination_;
-    std::string caller_rtp_ip_;
-    uint16_t caller_rtp_port_ = 0;
-    std::string callee_rtp_ip_;
-    uint16_t callee_rtp_port_ = 0;
 
     RealSetupActions setup_actions_;
     RealDialogActions dialog_actions_;

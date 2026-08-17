@@ -261,7 +261,7 @@ void RealSetupActions::forward_180_ringing() {
     Log::call()->info(
         "[{}] received 180 Ringing from callee ({}), forwarded to caller ({})",
         session_.call_id(),
-        session_.callee_uri(),
+        session_.outbound_destination(),
         session_.caller_uri());
 }
 
@@ -293,7 +293,7 @@ bool RealSetupActions::forward_200_ok(const std::string& sdp) {
     Log::call()->info(
         "[{}] received 200 OK from callee ({}), forwarded to caller ({}); RTP relay armed",
         session_.call_id(),
-        session_.callee_uri(),
+        session_.outbound_destination(),
         session_.caller_uri());
     return true;
 }
@@ -338,17 +338,17 @@ void RealSetupActions::forward_ack_and_start_dialog() {
     // ACK absorption is handled by PJSIP; the router fires DialogStarted next.
     const auto caller_relay_port = session_.media_bridge()->leg_a_port();
     const auto callee_relay_port = session_.media_bridge()->leg_b_port();
+    const auto caller_rtp = session_.media_bridge()->remote_leg_a();
+    const auto callee_rtp = session_.media_bridge()->remote_leg_b();
     Log::call()->info(
         "[{}] call established between caller ({}) and callee ({}); media: mode=relay-only, "
-        "caller RTP={}:{}, SBC caller-facing port={}, callee RTP={}:{}, SBC callee-facing port={}",
+        "caller RTP={}, SBC caller-facing port={}, callee RTP={}, SBC callee-facing port={}",
         session_.call_id(),
         session_.caller_uri(),
-        session_.callee_uri(),
-        session_.caller_rtp_ip(),
-        session_.caller_rtp_port(),
+        session_.outbound_destination(),
+        caller_rtp ? std::format("{}:{}", caller_rtp->address().to_string(), caller_rtp->port()) : "unknown",
         caller_relay_port.value_or(0),
-        session_.callee_rtp_ip(),
-        session_.callee_rtp_port(),
+        callee_rtp ? std::format("{}:{}", callee_rtp->address().to_string(), callee_rtp->port()) : "unknown",
         callee_relay_port.value_or(0));
 }
 

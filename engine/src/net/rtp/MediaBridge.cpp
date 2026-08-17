@@ -153,6 +153,14 @@ void MediaBridge::set_remote_leg_b(const std::string& addr, unsigned short port)
     impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
 }
 
+std::optional<boost::asio::ip::udp::endpoint> MediaBridge::remote_leg_a() const {
+    return impl_->dest_a_;
+}
+
+std::optional<boost::asio::ip::udp::endpoint> MediaBridge::remote_leg_b() const {
+    return impl_->dest_b_;
+}
+
 void MediaBridge::set_error_handler(MediaBridgeErrorHandler handler) {
     impl_->error_handler_ = std::move(handler);
 }
