@@ -32,7 +32,8 @@ struct Done {};
 // boost::sml recognizes the bare back::process<...> parameter type and
 // substitutes a live instance wired to the sm's own internal queue at dispatch
 // time (see Sml::process_queue<std::queue>), no constructor wiring needed.
-using SetupSelfFireQueue = Sml::back::process<RouteFound, RouteFailed, LoopDetected, InviteSent, Cleanup>;
+using SetupSelfFireQueue =
+    Sml::back::process<RouteFound, RouteFailed, LoopDetected, InviteSent, OutboundLegFailed, AcceptForwardFailed, Cleanup>;
 
 template <typename Context>
 struct SetupSm {
@@ -85,17 +86,45 @@ struct SetupSm {
             cleanup_event(Cleanup{});
         };
 
-        auto handle_route_found = [](Context& actions, const RouteFound& evt, SetupSelfFireQueue invite_sent) {
-            actions.create_outbound_leg(evt.destination_);
-            actions.send_outbound_invite();
-            invite_sent(InviteSent{});
+        // create_outbound_leg()/send_outbound_invite() can each fail to actually
+        // stand up the callee leg (RTP bind failure, SDP parse failure, PJSIP
+        // dialog/invite/send failure) — self-fire OutboundLegFailed instead of
+        // InviteSent in that case, so the SM doesn't sit in WaitingForAnswer
+        // waiting for events a nonexistent callee session can never send.
+        auto handle_route_found = [](Context& actions, const RouteFound& evt, SetupSelfFireQueue result) {
+            const bool leg_created = actions.create_outbound_leg(evt.destination_);
+            const bool invite_sent = leg_created && actions.send_outbound_invite();
+            if (invite_sent) {
+                result(InviteSent{});
+            }
+            else {
+                result(OutboundLegFailed{});
+            }
+        };
+
+        auto handle_outbound_leg_failed = [](Context& actions, SetupSelfFireQueue cleanup_event) {
+            // Reuses the route-failure response (480): from the caller's
+            // perspective, either way we couldn't get the call to a destination.
+            actions.send_route_failure_response();
+            cleanup_event(Cleanup{});
         };
 
         auto handle_forward_ringing = [](Context& actions) { actions.forward_180_ringing(); };
 
-        auto handle_accept_valid = [](Context& actions, const CallAccepted& evt) {
-            actions.forward_200_ok(evt.answer_sdp_);
+        // forward_200_ok() can itself fail to relay the callee's answer as 200
+        // OK (e.g. it passed the shallow SdpValidator guard but the real SDP
+        // parse inside forward_200_ok failed) — it has already sent a failure
+        // response to the caller and ended the callee leg in that case, so self-fire
+        // AcceptForwardFailed instead of settling in WaitingForAck as if 200 OK went out.
+        auto handle_accept_valid = [](Context& actions, const CallAccepted& evt, SetupSelfFireQueue result) {
+            if (!actions.forward_200_ok(evt.answer_sdp_)) {
+                result(AcceptForwardFailed{});
+            }
         };
+
+        // forward_200_ok already sent the caller a failure response and ended the
+        // callee leg by the time this fires — nothing left to do but self-clean.
+        auto handle_forward_accept_failed = [](SetupSelfFireQueue cleanup_event) { cleanup_event(Cleanup{}); };
 
         auto handle_accept_invalid = [](Context& actions, SetupSelfFireQueue cleanup_event) {
             actions.send_ack_then_bye_to_callee();
@@ -143,6 +172,7 @@ struct SetupSm {
 
              // Calling state
              Sml::state<Calling>           +  Sml::event<InviteSent>                                                            = Sml::state<WaitingForAnswer>,
+             Sml::state<Calling>           + (Sml::event<OutboundLegFailed>                       / handle_outbound_leg_failed) = Sml::state<Failed>,
 
              // WaitingForAnswer state
              Sml::state<WaitingForAnswer>  + (Sml::event<RingingReceived>                         / handle_forward_ringing)     = Sml::state<Ringing>,
@@ -165,6 +195,7 @@ struct SetupSm {
              // WaitingForAck state
              Sml::state<WaitingForAck>     + (Sml::event<AckReceived>                             / handle_ack_received)        = Sml::state<Done>,
              Sml::state<WaitingForAck>     + (Sml::event<AckTimeout>                              / handle_ack_timeout)         = Sml::state<Failed>,
+             Sml::state<WaitingForAck>     + (Sml::event<AcceptForwardFailed>                      / handle_forward_accept_failed) = Sml::state<Failed>,
 
              // Cleanup transitions to Done
              Sml::state<Cancelled>         + (Sml::event<Cleanup>                                 / handle_cleanup)             = Sml::state<Done>,
