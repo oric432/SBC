@@ -53,6 +53,10 @@ int resolve_pjsip_log_level(const std::string& level);
 
 Result<Settings> load_settings(const std::string& path);
 
+// Logs the fully-resolved settings (file values merged over defaults) as TOML,
+// so it's visible at startup which values are actually in effect (#84).
+void log_applied_settings(const Settings& settings);
+
 } // namespace SbcEngine
 
 // NOLINTEND(readability-identifier-naming)
