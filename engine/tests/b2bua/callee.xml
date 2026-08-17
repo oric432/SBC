@@ -40,8 +40,15 @@
 
   <recv request="ACK" rtd="true" crlf="true"></recv>
 
-  <!-- No pcap loop here: just wait for the SBC to forward the caller's BYE
-       (fired ~10s in on the caller side) instead of looping forever. -->
+  <!-- Play the pcap once (~7s) so the RTP relay path gets exercised, then
+       just wait for the SBC to forward the caller's BYE (fired ~10s in on
+       the caller side) instead of looping forever. -->
+  <nop>
+    <action>
+      <exec play_pcap_audio="tests/b2bua/g711a.pcap"/>
+    </action>
+  </nop>
+
   <recv request="BYE" crlf="true"></recv>
 
   <send>

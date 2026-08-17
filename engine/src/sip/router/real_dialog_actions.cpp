@@ -14,6 +14,7 @@ namespace {
 
 void end_session(pjsip_inv_session* inv, int code, const char* what) {
     if (inv == nullptr) {
+        Log::sip()->warn("{}: no invite session to end", what);
         return;
     }
     pjsip_tx_data* tdata = nullptr;
@@ -75,7 +76,11 @@ void RealDialogActions::terminate_call() {
 }
 
 void RealDialogActions::cleanup() {
-    (void)session_.media_bridge()->close();
+    auto err = session_.media_bridge()->close();
+    if (!err.has_value()) {
+        Log::call()->error("[{}] failed to close session media bridge : {}", session_.call_id(), err.error().message());
+    }
+
     session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] dialog cleanup complete", session_.call_id());
 }

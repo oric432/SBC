@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace SbcEngine {
@@ -25,6 +26,15 @@ public:
 // SETUP CONTEXT: For SetupSm and related setup-phase operations
 // ════════════════════════════════════════════════════════════════════════════
 
+// Outcome of a synchronous routing lookup, returned by ISetupContext::resolve_route()
+// so the SM's own transition table can decide which follow-up event to self-fire.
+struct RouteResolution {
+    enum class Kind : std::uint8_t { kFound, kFailed, kLoop };
+
+    Kind kind_ = Kind::kFailed;
+    std::string destination_; // only meaningful when kind_ == kFound
+};
+
 class ISetupContext : public IContext {
 public:
     ISetupContext() = default;
@@ -44,17 +54,25 @@ public:
     virtual void send_429_too_many_requests() = 0; // rate limit exceeded
 
     // Routing operations
-    virtual void start_routing() = 0;
+    virtual RouteResolution resolve_route() = 0;
     virtual void send_route_failure_response() = 0;
     virtual void send_loop_detected_response() = 0;
 
-    // Outbound leg management
-    virtual void create_outbound_leg(const std::string& destination) = 0;
-    virtual void send_outbound_invite() = 0;
+    // Outbound leg management. Both return false if the callee leg was not
+    // actually stood up/dispatched (RTP bind failure, SDP parse failure, PJSIP
+    // dialog/invite/send failure) so the SM can self-fire OutboundLegFailed
+    // instead of proceeding as though the outbound INVITE was sent.
+    virtual bool create_outbound_leg(const std::string& destination) = 0;
+    virtual bool send_outbound_invite() = 0;
 
     // Response forwarding (setup phase)
     virtual void forward_180_ringing() = 0;
-    virtual void forward_200_ok(const std::string& sdp) = 0;
+    // Returns false if the callee's answer could not actually be relayed as
+    // 200 OK (e.g. SDP parse failure) — forward_200_ok has already sent a
+    // failure response to the caller and ended the callee leg itself in that
+    // case, so the SM must self-fire AcceptForwardFailed rather than settle
+    // in WaitingForAck as if 200 OK had gone out.
+    virtual bool forward_200_ok(const std::string& sdp) = 0;
     virtual void forward_rejection(int status_code) = 0;
     virtual void forward_timeout() = 0;
 

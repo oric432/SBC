@@ -13,6 +13,7 @@
 namespace SbcEngine {
 
 class CallSession;
+class RoutesStore;
 struct PjContext;
 
 // Owns all active CallSessions and provides lookup by Call-ID or by either of a
@@ -31,7 +32,9 @@ public:
 
     CallSession* create_session(const std::string& call_id,
                                 PjContext* ctx,
-                                const boost::asio::any_io_executor& executor);
+                                RoutesStore* routes_store,
+                                const boost::asio::any_io_executor& executor,
+                                pjsip_rx_data* rdata);
     CallSession* find_by_call_id(const std::string& call_id);
     CallSession* find_by_inv(pjsip_inv_session* inv);
     void remove_session(const std::string& call_id);
