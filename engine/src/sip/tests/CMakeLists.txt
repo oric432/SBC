@@ -1,5 +1,6 @@
 add_executable(sip_tests
     test_routes_manager.cpp
+    test_extract_utils.cpp
 )
 
 target_include_directories(sip_tests PRIVATE

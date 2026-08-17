@@ -1,9 +1,13 @@
 #include "real_setup_actions.hpp"
 
+#include <format>
+
 #include <pjsip_ua.h>
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/router/extract_utils.hpp"
+#include "sip/routes/routes_store.hpp"
 #include "sip/stack/sdp_mangler.hpp"
 #include "core/utils/log.hpp"
 
@@ -101,10 +105,41 @@ void RealSetupActions::send_429_too_many_requests() {
     send_initial_response(kScTooManyRequests);
 }
 
-void RealSetupActions::start_routing() {
-    // Stage 1: routing is a fixed destination; the router fires RouteFound
-    // synchronously after this event completes.
-    Log::call()->trace("[{}] routing started", session_.call_id());
+RouteResolution RealSetupActions::resolve_route() {
+    const SbcContext* ctx = session_.ctx();
+    const std::string& request_uri = session_.request_uri();
+
+    auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
+    if (!route) {
+        Log::sip()->warn("[{}] no route found for {}", session_.call_id(), request_uri);
+        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};
+    }
+
+    if (route->sip_address == ctx->config_.local_ip_ && route->port == static_cast<int>(ctx->config_.sip_port_)) {
+        // The routing table points this request straight back at this
+        // engine's own listening address. Max-Forwards decrementing alone is
+        // a fallback net (it still bounds a loop that hops through other
+        // elements first) — for the direct self-loop from the issue report,
+        // catch it here immediately rather than spending 70 round trips'
+        // worth of sessions and RTP ports first.
+        Log::sip()->warn(
+            "[{}] route for {} points back at this SBC ({}:{}), loop detected",
+            session_.call_id(),
+            request_uri,
+            route->sip_address,
+            route->port);
+        return {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}};
+    }
+
+    std::string user = extract_uri_user(route->uri);
+    const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
+                                          : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
+    Log::sip()->info(
+        "Found route for request uri {}, route uri : {}:{}",
+        request_uri,
+        route->sip_address,
+        route->port);
+    return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest};
 }
 
 void RealSetupActions::send_route_failure_response() {

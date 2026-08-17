@@ -1,11 +1,8 @@
 #include "message_router.hpp"
 
-#include <array>
-#include <format>
-
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
-#include "sip/routes/routes_store.hpp"
+#include "sip/router/extract_utils.hpp"
 #include "sip/sm/events.hpp"
 #include "core/utils/log.hpp"
 
@@ -15,18 +12,6 @@ namespace SbcEngine {
 
 namespace {
 constexpr int kMinFinalErrorCode = 300;
-
-// Pulls the "user" part out of a SIP URI like "sip:callee@sbc.local", so the
-// outbound Request-URI we build for the destination keeps the same user
-// (destinations only carry an IP:port, not an identity of their own).
-std::string extract_uri_user(const std::string& uri) {
-    auto scheme_end = uri.find(':');
-    auto at_pos = uri.find('@');
-    if (scheme_end == std::string::npos || at_pos == std::string::npos || at_pos <= scheme_end) {
-        return {};
-    }
-    return uri.substr(scheme_end + 1, at_pos - scheme_end - 1);
-}
 } // namespace
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -139,10 +124,8 @@ void MessageRouter::handle_setup_disconnect(CallSession* session, pjsip_inv_sess
         // Caller leg dropped mid-setup (CANCEL or timeout) → cancel the callee.
         setup.process_event(CancelReceived{});
     }
-
-    if (setup.is(Sml::state<Failed>) || setup.is(Sml::state<Cancelled>) || setup.is(Sml::state<TimedOut>)) {
-        setup.process_event(Cleanup{});
-    }
+    // Cleanup{} is self-fired by the SM's own terminal-state actions (setup_sm.hpp)
+    // once it reaches Failed/Cancelled/TimedOut — nothing to drive here.
 }
 
 void MessageRouter::handle_dialog_disconnect(CallSession* session, pjsip_inv_session* inv) {
@@ -153,9 +136,9 @@ void MessageRouter::handle_dialog_disconnect(CallSession* session, pjsip_inv_ses
         dialog.process_event(ByeReceived{inv == session->inv_caller()});
     }
     else if (dialog.is(Sml::state<Terminating>)) {
-        // Second leg finished → the call is fully over.
+        // Second leg finished → the call is fully over. Cleanup{} self-fires
+        // from DialogSm's own action once Terminated is reached.
         dialog.process_event(CallEnded{});
-        dialog.process_event(Cleanup{});
     }
 }
 
@@ -219,67 +202,20 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         return;
     }
 
-    CallSession* session = ctx_->call_manager_->create_session(call_id, ctx_);
+    // CallSession extracts its own request-URI/offer SDP from rx_data at
+    // construction; nothing here needs to parse the message itself.
+    CallSession* session = ctx_->call_manager_->create_session(call_id, ctx_, routes_store_, rx_data);
     session->set_inv_caller(inv);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx_->module_id_] = session;
 
-    std::string request_uri = extract_request_uri(rx_data);
-    Log::call()->info("[{}] INVITE received, request-uri {}", call_id, request_uri);
-    session->set_request_uri(request_uri);
+    Log::call()->info("[{}] INVITE received, request-uri {}", call_id, session->request_uri());
 
-    const std::string sdp = extract_sdp(rx_data);
-    session->set_caller_offer_sdp(sdp);
-    session->set_current_rdata(rx_data);
-
-    auto& setup = session->setup_sm();
-    setup.process_event(InviteReceived{sdp});
-
-    // Routing is synchronous: look the request URI up in the routes table the
-    // moment the SM asks for it, and drive the SM's decision directly.
-    if (setup.is(Sml::state<Routing>)) {
-        auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
-        if (route && route->sip_address == ctx_->config_.local_ip_ &&
-            route->port == static_cast<int>(ctx_->config_.sip_port_)) {
-            // The routing table points this request straight back at this
-            // engine's own listening address. Max-Forwards decrementing alone
-            // is a fallback net (it still bounds a loop that hops through
-            // other elements first) — for the direct self-loop from the
-            // issue report, catch it here immediately rather than spending 70
-            // round trips' worth of sessions and RTP ports first.
-            Log::sip()->warn(
-                "[{}] route for {} points back at this SBC ({}:{}), loop detected",
-                call_id,
-                request_uri,
-                route->sip_address,
-                route->port);
-            setup.process_event(LoopDetected{});
-        }
-        else if (route) {
-            std::string user = extract_uri_user(route->uri);
-            const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
-                                                  : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
-
-            Log::sip()->info(
-                "Found route for request uri {}, route uri : {}:{}",
-                request_uri,
-                route->sip_address,
-                route->port);
-            setup.process_event(RouteFound{dest});
-        }
-        else {
-            Log::sip()->warn("[{}] no route found for {}", call_id, request_uri);
-            setup.process_event(RouteFailed{});
-        }
-    }
-    if (setup.is(Sml::state<Calling>)) {
-        setup.process_event(InviteSent{});
-    }
-    if (setup.is(Sml::state<Failed>)) {
-        setup.process_event(Cleanup{});
-    }
-
-    session->set_current_rdata(nullptr);
+    // Routing, sending the outbound INVITE, and any resulting Cleanup are all
+    // self-driven by the SM's own actions (setup_sm.hpp) off this single event —
+    // nothing here inspects .is(state) to decide what to fire next.
+    session->setup_sm().process_event(InviteReceived{session->caller_offer_sdp()});
+    session->clear_rdata();
 }
 
 void MessageRouter::process_bye(pjsip_rx_data* rx_data) {
@@ -305,51 +241,6 @@ void MessageRouter::process_ack([[maybe_unused]] pjsip_rx_data* rx_data) {
 // ════════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
 // ════════════════════════════════════════════════════════════════════════════
-
-std::string MessageRouter::extract_method(pjsip_rx_data* rx_data) {
-    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
-        return {};
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C API
-    const pj_str_t& name = rx_data->msg_info.msg->line.req.method.name;
-    return {name.ptr, static_cast<std::size_t>(name.slen)};
-}
-
-std::string MessageRouter::extract_sdp(pjsip_rx_data* rx_data) {
-    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
-        return {};
-    }
-    const pjsip_msg_body* body = rx_data->msg_info.msg->body;
-    if (body == nullptr || body->data == nullptr) {
-        return {};
-    }
-    return {static_cast<const char*>(body->data), static_cast<std::size_t>(body->len)};
-}
-
-std::string MessageRouter::extract_call_id(pjsip_rx_data* rx_data) {
-    if (rx_data == nullptr || rx_data->msg_info.cid == nullptr) {
-        return {};
-    }
-    const pj_str_t& cid = rx_data->msg_info.cid->id;
-    return {cid.ptr, static_cast<std::size_t>(cid.slen)};
-}
-
-std::string MessageRouter::extract_request_uri(pjsip_rx_data* rx_data) {
-    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
-        return {};
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C API
-    const pjsip_uri* uri = rx_data->msg_info.msg->line.req.uri;
-    if (uri == nullptr) {
-        return {};
-    }
-    std::array<char, PJSIP_MAX_URL_SIZE> buf{};
-    const int len = pjsip_uri_print(PJSIP_URI_IN_REQ_URI, uri, buf.data(), buf.size());
-    if (len < 0) {
-        return {};
-    }
-    return {buf.data(), static_cast<std::size_t>(len)};
-}
 
 CallSession* MessageRouter::find_call_session(pjsip_rx_data* rx_data) {
     const std::string call_id = extract_call_id(rx_data);

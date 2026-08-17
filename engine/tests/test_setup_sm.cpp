@@ -1,4 +1,6 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace)
+#include <queue>
+
 #include <catch2/catch_test_macros.hpp>
 #include <boost/sml.hpp>
 
@@ -9,52 +11,45 @@
 namespace Sml = boost::sml;
 using namespace SbcEngine;
 
+namespace {
+// SetupSm's actions self-fire follow-up events (routing outcome, InviteSent,
+// Cleanup) via an injected SetupSelfFireQueue — see setup_sm.hpp. Exercising
+// that here requires the same process_queue<std::queue> policy the real machine uses.
+using TestMachine = Sml::sm<SetupSm<MockSetupActions>, Sml::process_queue<std::queue>>;
+} // namespace
+
 // Test: Happy path from initial INVITE through dialog establishment
-// Verifies: Complete successful call setup flow without errors
+// Verifies: One InviteReceived cascades, unaided, all the way to WaitingForAnswer;
+// remaining (genuinely async) stimuli are still driven one at a time.
 TEST_CASE("SetupSm happy path", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    TestMachine machine{actions};
 
-    // Initial state: machine should be in Idle
     REQUIRE(machine.is(Sml::state<Idle>));
 
-    // Step 1: Receive valid INVITE with valid SDP offer
-    // Expected: SM validates SDP in guard, sends 100 Trying, transitions to Routing and starts routing
+    // Step 1: Valid INVITE — SM validates SDP, sends 100 Trying, resolves routing,
+    // creates the outbound leg, sends the outbound INVITE, and lands in
+    // WaitingForAnswer, all off this single call — no external .is()/process_event driving.
     machine.process_event(InviteReceived{"v=0\r\n"});
-    REQUIRE(machine.is(Sml::state<Routing>));
+    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
     REQUIRE(actions.was_called("send_100_trying"));
-    REQUIRE(actions.was_called("start_routing"));
-
-    // Step 2: Route found to destination
-    // Expected: Transition to Calling, create outbound leg and send INVITE
-    actions.reset();
-    machine.process_event(RouteFound{"sip:callee@example.com"});
-    REQUIRE(machine.is(Sml::state<Calling>));
-    REQUIRE(actions.was_called("create_outbound_leg"));
+    REQUIRE(actions.was_called("resolve_route"));
+    REQUIRE(actions.was_called("create_outbound_leg:sip:callee@example.com"));
     REQUIRE(actions.was_called("send_outbound_invite"));
 
-    // Step 3: Outbound INVITE sent
-    // Expected: Transition to WaitingForAnswer (awaiting response from callee)
-    actions.reset();
-    machine.process_event(InviteSent{});
-    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
-
-    // Step 4: Receive 180 Ringing from callee
-    // Expected: Transition to Ringing, forward 180 to caller
+    // Step 2: Receive 180 Ringing from callee
     actions.reset();
     machine.process_event(RingingReceived{});
     REQUIRE(machine.is(Sml::state<Ringing>));
     REQUIRE(actions.was_called("forward_180_ringing"));
 
-    // Step 5: Receive 200 OK from callee with valid answer SDP
-    // Expected: Transition to WaitingForAck, forward 200 OK to caller
+    // Step 3: Receive 200 OK from callee with valid answer SDP
     actions.reset();
     machine.process_event(CallAccepted{"v=0\r\n"});
     REQUIRE(machine.is(Sml::state<WaitingForAck>));
     REQUIRE(actions.was_called("forward_200_ok"));
 
-    // Step 6: Receive ACK from caller
-    // Expected: Transition to Done, forward ACK
+    // Step 4: Receive ACK from caller
     actions.reset();
     machine.process_event(AckReceived{});
     REQUIRE(machine.is(Sml::state<Done>));
@@ -62,54 +57,41 @@ TEST_CASE("SetupSm happy path", "[setup_sm]") {
 }
 
 // Test: Invalid INVITE message (empty SDP)
-// Verifies: Setup SM rejects empty INVITE and sends 400 Bad Request
+// Verifies: SM self-drives straight to Done — no separate Cleanup{} step needed.
 TEST_CASE("SetupSm invalid INVITE", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    TestMachine machine{actions};
 
-    // Send INVITE with empty SDP (no message body - invalid SIP)
-    // Expected: SM validates in guard, transitions to Failed, send 400 Bad Request
     machine.process_event(InviteReceived{""});
-    REQUIRE(machine.is(Sml::state<Failed>));
-    REQUIRE(actions.was_called("send_400_bad_request"));
-
-    // Cleanup after failure
-    // Expected: Transition to Done, release resources
-    actions.reset();
-    machine.process_event(Cleanup{});
     REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("send_400_bad_request"));
     REQUIRE(actions.was_called("cleanup"));
 }
 
 // Test: Invalid SDP offer in INVITE
-// Verifies: Setup SM rejects invalid SDP content and sends 488 Not Acceptable
+// Verifies: SM self-drives straight to Done, sending 488 Not Acceptable en route.
 TEST_CASE("SetupSm invalid offer SDP", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    TestMachine machine{actions};
 
-    // Receive INVITE with non-empty but invalid SDP content
-    // Expected: SM validates SDP in guard, transitions to Failed and sends 488 Not Acceptable
     machine.process_event(InviteReceived{"malformed"});
-    REQUIRE(machine.is(Sml::state<Failed>));
+    REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("send_488_not_acceptable"));
+    REQUIRE(actions.was_called("cleanup"));
 }
 
 // Test: Routing logic fails to find destination
-// Verifies: Setup SM handles unavailable/unreachable destinations
+// Verifies: resolve_route()'s canned RouteResolution drives the SM straight to Done.
 TEST_CASE("SetupSm route failed", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};
+    TestMachine machine{actions};
 
-    // Valid INVITE with valid SDP — SM validates in guard and transitions to Routing
     machine.process_event(InviteReceived{"v=0\r\n"});
-    REQUIRE(machine.is(Sml::state<Routing>));
-
-    // Routing fails (no available routes, destination unreachable, etc.)
-    // Expected: Transition to Failed, send appropriate failure response
-    actions.reset();
-    machine.process_event(RouteFailed{});
-    REQUIRE(machine.is(Sml::state<Failed>));
+    REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("resolve_route"));
     REQUIRE(actions.was_called("send_route_failure_response"));
+    REQUIRE(actions.was_called("cleanup"));
 }
 
 // Test: Routing resolves to this engine's own listening address
@@ -117,126 +99,103 @@ TEST_CASE("SetupSm route failed", "[setup_sm]") {
 // (github issue #39 — an unbounded loop would otherwise exhaust ports)
 TEST_CASE("SetupSm loop detected", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}};
+    TestMachine machine{actions};
 
     machine.process_event(InviteReceived{"v=0\r\n"});
-    REQUIRE(machine.is(Sml::state<Routing>));
-
-    actions.reset();
-    machine.process_event(LoopDetected{});
-    REQUIRE(machine.is(Sml::state<Failed>));
+    REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("send_loop_detected_response"));
+    REQUIRE(actions.was_called("cleanup"));
 }
 
 // Test: Caller cancels call before receiving answer
-// Verifies: Setup SM properly handles call cancellation mid-setup
+// Verifies: reaching Cancelled self-fires Cleanup too — lands on Done directly.
 TEST_CASE("SetupSm cancel before answer", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    TestMachine machine{actions};
 
-    // Establish call up to Ringing state (callee phone is ringing)
     machine.process_event(InviteReceived{"v=0\r\n"});
-    machine.process_event(RouteFound{"sip:callee@example.com"});
-    machine.process_event(InviteSent{});
     machine.process_event(RingingReceived{});
+    REQUIRE(machine.is(Sml::state<Ringing>));
 
     // Caller sends CANCEL before call is answered
-    // Expected: Transition to Cancelling state, send CANCEL to callee
     actions.reset();
     machine.process_event(CancelReceived{});
     REQUIRE(machine.is(Sml::state<Cancelling>));
     REQUIRE(actions.was_called("send_cancel"));
 
     // Receive final response (487 Request Terminated) from callee
-    // Expected: Transition to Cancelled, forward final response to caller
     actions.reset();
     machine.process_event(InviteTerminated{});
-    REQUIRE(machine.is(Sml::state<Cancelled>));
+    REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("forward_final_response"));
+    REQUIRE(actions.was_called("cleanup"));
 }
 
 // Test: Callee sends answer with invalid SDP
-// Verifies: Setup SM rejects incompatible answer and terminates both legs
+// Verifies: Setup SM rejects incompatible answer, terminates both legs, self-cleans.
 TEST_CASE("SetupSm invalid answer SDP", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    TestMachine machine{actions};
 
-    // Progress call to Ringing (awaiting answer from callee)
     machine.process_event(InviteReceived{"v=0\r\n"});
-    machine.process_event(RouteFound{"sip:callee@example.com"});
-    machine.process_event(InviteSent{});
     machine.process_event(RingingReceived{});
+    REQUIRE(machine.is(Sml::state<Ringing>));
 
-    // Receive 200 OK from callee but with invalid answer SDP
-    // Expected: SM validates in guard, transitions to Failed, ACK the callee's response and send BYE,
-    //           then send failure response back to caller
     actions.reset();
     machine.process_event(CallAccepted{"malformed answer"});
-    REQUIRE(machine.is(Sml::state<Failed>));
+    REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("send_ack_then_bye_to_callee"));
     REQUIRE(actions.was_called("send_failure_to_caller"));
+    REQUIRE(actions.was_called("cleanup"));
 }
 
 // Test: Callee rejects incoming call
-// Verifies: Setup SM forwards rejection responses correctly
+// Verifies: Setup SM forwards rejection and self-cleans to Done.
 TEST_CASE("SetupSm call rejected", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    TestMachine machine{actions};
 
-    // Establish call up to InviteSent (waiting for response from callee)
     machine.process_event(InviteReceived{"v=0\r\n"});
-    machine.process_event(RouteFound{"sip:callee@example.com"});
-    machine.process_event(InviteSent{});
+    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
 
-    // Receive final rejection (480 Temporarily Unavailable) from callee
-    // Expected: Transition to Failed, forward rejection to caller
     actions.reset();
     machine.process_event(CallRejected{kStatusCodeCallRejected});
-    REQUIRE(machine.is(Sml::state<Failed>));
+    REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("forward_rejection:480"));
+    REQUIRE(actions.was_called("cleanup"));
 }
 
 // Test: Callee never answers the INVITE (PJSIP surfaces this as cause 408)
-// Verifies: Setup SM distinguishes timeout from an explicit rejection
+// Verifies: Setup SM distinguishes timeout from an explicit rejection, self-cleans.
 TEST_CASE("SetupSm call timeout", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    TestMachine machine{actions};
 
-    // Establish call up to InviteSent (waiting for response from callee)
     machine.process_event(InviteReceived{"v=0\r\n"});
-    machine.process_event(RouteFound{"sip:callee@example.com"});
-    machine.process_event(InviteSent{});
+    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
 
-    // No final response from callee within the transaction timeout
-    // Expected: Transition to TimedOut, forward timeout to caller
     actions.reset();
     machine.process_event(CallTimeout{});
-    REQUIRE(machine.is(Sml::state<TimedOut>));
-    REQUIRE(actions.was_called("forward_timeout"));
-
-    actions.reset();
-    machine.process_event(Cleanup{});
     REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("forward_timeout"));
     REQUIRE(actions.was_called("cleanup"));
 }
 
 // Test: ACK timeout while waiting for ACK from caller
-// Verifies: Setup SM terminates call if caller doesn't ACK 200 OK in time
+// Verifies: Setup SM terminates both legs of the call and self-cleans.
 TEST_CASE("SetupSm ACK timeout", "[setup_sm]") {
     MockSetupActions actions;
-    Sml::sm<SetupSm<MockSetupActions>> machine{actions};
+    TestMachine machine{actions};
 
-    // Reach WaitingForAck state (sent 200 OK to caller, waiting for ACK)
     machine.process_event(InviteReceived{"v=0\r\n"});
-    machine.process_event(RouteFound{"sip:callee@example.com"});
-    machine.process_event(InviteSent{});
     machine.process_event(CallAccepted{"v=0\r\n"});
+    REQUIRE(machine.is(Sml::state<WaitingForAck>));
 
-    // ACK from caller is missing or timeout occurs
-    // Expected: Transition to Failed, terminate both legs of the call
     actions.reset();
     machine.process_event(AckTimeout{});
-    REQUIRE(machine.is(Sml::state<Failed>));
+    REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("terminate_call"));
+    REQUIRE(actions.was_called("cleanup"));
 }
 // NOLINTEND(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace)

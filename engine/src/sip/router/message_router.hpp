@@ -40,11 +40,6 @@ private:
     static void handle_setup_disconnect(CallSession* session, pjsip_inv_session* inv);
     static void handle_dialog_disconnect(CallSession* session, pjsip_inv_session* inv);
 
-    // Helper functions
-    static std::string extract_method(pjsip_rx_data* rx_data);
-    static std::string extract_sdp(pjsip_rx_data* rx_data);
-    static std::string extract_call_id(pjsip_rx_data* rx_data);
-    static std::string extract_request_uri(pjsip_rx_data* rx_data);
     CallSession* find_call_session(pjsip_rx_data* rx_data);
 
     void respond_stateless(pjsip_rx_data* rx_data, int code);

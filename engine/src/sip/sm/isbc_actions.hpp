@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace SbcEngine {
@@ -25,6 +26,15 @@ public:
 // SETUP CONTEXT: For SetupSm and related setup-phase operations
 // ════════════════════════════════════════════════════════════════════════════
 
+// Outcome of a synchronous routing lookup, returned by ISetupContext::resolve_route()
+// so the SM's own transition table can decide which follow-up event to self-fire.
+struct RouteResolution {
+    enum class Kind : std::uint8_t { kFound, kFailed, kLoop };
+
+    Kind kind_ = Kind::kFailed;
+    std::string destination_; // only meaningful when kind_ == kFound
+};
+
 class ISetupContext : public IContext {
 public:
     ISetupContext() = default;
@@ -44,7 +54,7 @@ public:
     virtual void send_429_too_many_requests() = 0; // rate limit exceeded
 
     // Routing operations
-    virtual void start_routing() = 0;
+    virtual RouteResolution resolve_route() = 0;
     virtual void send_route_failure_response() = 0;
     virtual void send_loop_detected_response() = 0;
 
