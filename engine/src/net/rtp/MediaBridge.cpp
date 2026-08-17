@@ -79,7 +79,9 @@ struct MediaBridge::Impl {
             dst.sender().async_send_pkt(
                 pkt.packet(),
                 dst_ep,
-                [self, src_leg, &src, &dst, &dst_ep](std::size_t /*bytes_sent*/, const std::error_code& send_err) mutable {
+                [self, src_leg, &src, &dst, &dst_ep](
+                    std::size_t /*bytes_sent*/,
+                    const std::error_code& send_err) mutable {
                     if (send_err) {
                         std::error_code abort_err =
                             boost::asio::error::make_error_code(boost::asio::error::operation_aborted);

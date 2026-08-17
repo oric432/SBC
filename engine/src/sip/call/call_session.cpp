@@ -10,12 +10,13 @@ constexpr pj_size_t kPoolInitial = 4096;
 constexpr pj_size_t kPoolIncrement = 4096;
 } // namespace
 
-CallSession::CallSession(std::string call_id,
-                         PjContext* ctx,
-                         CallManager* call_manager,
-                         RoutesStore* routes_store,
-                         const boost::asio::any_io_executor& executor,
-                         pjsip_rx_data* rdata)
+CallSession::CallSession(
+    std::string call_id,
+    PjContext* ctx,
+    CallManager* call_manager,
+    RoutesStore* routes_store,
+    const boost::asio::any_io_executor& executor,
+    pjsip_rx_data* rdata)
     : call_id_(std::move(call_id))
     , ctx_(ctx)
     , call_manager_(call_manager)
@@ -35,7 +36,11 @@ CallSession::CallSession(std::string call_id,
     // can reach that call, so this satisfies it.
     media_bridge_->set_error_handler([call_id = call_id_](RelayLeg leg, RelayOp operation, std::error_code error) {
         Log::call()->error(
-            "[{}] media relay error: {} {} failed: {}", call_id, to_string(leg), to_string(operation), error.message());
+            "[{}] media relay error: {} {} failed: {}",
+            call_id,
+            to_string(leg),
+            to_string(operation),
+            error.message());
     });
 }
 
