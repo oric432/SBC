@@ -41,6 +41,9 @@ test-ci:
 format-check:
     cmake --build build --target format-check
 
+format:
+    cmake --build build --target format
+
 # Run B2BUA SIPp tests (assumes engine is already running)
 test-b2bua:
     #!/usr/bin/env bash
