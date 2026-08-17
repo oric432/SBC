@@ -28,11 +28,11 @@ public:
     void send_route_failure_response() override;
     void send_loop_detected_response() override;
 
-    void create_outbound_leg(const std::string& destination) override;
-    void send_outbound_invite() override;
+    bool create_outbound_leg(const std::string& destination) override;
+    bool send_outbound_invite() override;
 
     void forward_180_ringing() override;
-    void forward_200_ok(const std::string& sdp) override;
+    bool forward_200_ok(const std::string& sdp) override;
     void forward_rejection(int status_code) override;
     void forward_timeout() override;
 
