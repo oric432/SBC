@@ -52,3 +52,97 @@ Copy `.env-example` to `.env` and configure the following:
 - `npm run db:studio` — open Drizzle Studio to browse tables
 
 Schema lives in `src/db/schema.ts`; generated migrations land in `drizzle/` (local only, not committed).
+
+## API Reference
+
+Base URL: `http://localhost:<PORT>` (`PORT` defaults to `3001`).
+
+### Response envelope
+
+All endpoints return JSON in one of two shapes:
+
+```jsonc
+// success
+{ "success": true, "data": <T> }
+
+// error
+{ "success": false, "error": { "message": "...", "details": <optional> } }
+```
+
+### Errors
+
+| Status | Meaning |
+|---|---|
+| 400 Bad Request | Body/param failed schema validation, or invalid data (Postgres class `22`) |
+| 404 Not Found | Route with given priority (or the `default` route table) doesn't exist |
+| 409 Conflict | Priority/target priority collision (Postgres class `23`, or swap target vanished mid-transaction) |
+| 503 Service Unavailable | Database unreachable |
+| 500 Internal Server Error | Unexpected error |
+
+### `SipRouteRule`
+
+```ts
+{
+  uri: string;
+  sip_address: string;
+  port: number;          // 1-65535
+  codec?: string | null;
+}
+```
+
+### Routes — `/api/b2bua/routes`
+
+All routes operate on the single `default` route table.
+
+#### `GET /api/b2bua/routes`
+
+Returns the full route snapshot.
+
+Response `data`:
+```ts
+{
+  table_id: string;
+  version: number;
+  routes: Record<string /* priority */, SipRouteRule>;
+}
+```
+
+#### `POST /api/b2bua/routes`
+
+Create a route. Body:
+```ts
+{
+  priority: number;      // >= 1
+  uri: string;
+  sip_address: string;
+  port: number;          // 1-65535
+  codec?: string | null;
+}
+```
+
+Response: `201 Created`, `data` is the created `SipRouteRule`.
+
+#### `PUT /api/b2bua/routes/:priority`
+
+Replace the route at `:priority`. Body: same shape as `POST` (the body's `priority` may differ from the URL param to move the route to a new priority).
+
+Response: `data` is the updated `SipRouteRule`. `404` if no route exists at `:priority`.
+
+#### `PATCH /api/b2bua/routes/:priority/swap`
+
+Swap the route at `:priority` with the route at `targetPriority`, applying new field values to the source route in the same call. Body:
+```ts
+{
+  targetPriority: number; // >= 1
+  uri: string;
+  sip_address: string;
+  port: number;           // 1-65535
+  codec?: string | null;
+}
+```
+
+Response: `data` is the updated `SipRouteRule` (now at `targetPriority`). `404` if `:priority` doesn't exist, `409` if `targetPriority` doesn't exist.
+
+#### `DELETE /api/b2bua/routes/:priority`
+
+Delete the route at `:priority`. Response: `data` is `undefined`. `404` if no route exists at `:priority`.
