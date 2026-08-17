@@ -134,6 +134,18 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
         return std::unexpected(pj_error("pjsip_100rel_init_module failed", status));
     }
 
+    // initializes the SIP event notification module (RFC 3265) to support SUBSCRIBE and NOTIFY requests
+    status = pjsip_evsub_init_module(endpt_);
+    if (status != PJ_SUCCESS) {
+        return std::unexpected(pj_error("pjsip_evsub_init_module failed", status));
+    }
+
+    // initializes the REFER (RFC 3515)
+    status = pjsip_xfer_init_module(endpt_);
+    if (status != PJ_SUCCESS) {
+        return std::unexpected(pj_error("pjsip_xfer_init_module failed", status));
+    }
+
     static std::string mod_name = "mod-sbc";
     pj_bzero(&module_, sizeof(module_));
     module_.name = pj_str(mod_name.data());
