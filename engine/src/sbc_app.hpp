@@ -4,7 +4,7 @@
 
 #include "core/settings.hpp"
 #include "sip/call/call_manager.hpp"
-#include "sip/call/sbc_context.hpp"
+#include "sip/call/pj_context.hpp"
 #include "sip/router/message_router.hpp"
 #include "sip/routes/routes_store.hpp"
 #include "sip/stack/pjsip_init.hpp"
@@ -16,8 +16,9 @@ namespace SbcEngine {
 // sequence driven by run() (which blocks until SIGINT/SIGTERM). Holds every
 // piece of long-lived state main() used to keep as separate locals.
 //
-// ctx_ stores pointers into this object's other members (ioc_, call_manager_),
-// so instances must never be copied or moved.
+// router_ stores pointers into this object's other members (ctx_, call_manager_,
+// routes_store_) and the io_context's executor, so instances must never be
+// copied or moved.
 class SbcApp {
 public:
     SbcApp();
@@ -59,7 +60,7 @@ private:
     PjsipStack stack_;
     CallManager call_manager_;
     RoutesStore routes_store_;
-    SbcContext ctx_;
+    PjContext ctx_;
     MessageRouter router_;
 };
 

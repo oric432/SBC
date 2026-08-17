@@ -14,7 +14,7 @@ namespace SbcEngine {
 SbcApp* SbcApp::instance_ = nullptr;
 
 SbcApp::SbcApp()
-    : router_(&ctx_, &routes_store_) {}
+    : router_(&ctx_, &call_manager_, &routes_store_, ioc_.get_executor()) {}
 
 void SbcApp::handle_signal(int /*signum*/) {
     if (instance_ != nullptr) {
@@ -74,10 +74,8 @@ PjsipConfig SbcApp::init_pjsip(const Settings& settings) {
 
 void SbcApp::init_context(const PjsipConfig& config) {
     ctx_.endpt_ = stack_.endpt();
-    ctx_.ioc_ = &ioc_;
     ctx_.config_ = config;
     ctx_.module_id_ = stack_.module_id();
-    ctx_.call_manager_ = &call_manager_;
 
     stack_.set_router(&router_);
 }

@@ -81,7 +81,7 @@ void RealDialogActions::cleanup() {
         Log::call()->error("[{}] failed to close session media bridge : {}", session_.call_id(), err.error().message());
     }
 
-    session_.ctx()->call_manager_->schedule_remove(session_.call_id());
+    session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] dialog cleanup complete", session_.call_id());
 }
 

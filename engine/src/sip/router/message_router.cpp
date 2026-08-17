@@ -38,14 +38,14 @@ void MessageRouter::on_rx_request(pjsip_rx_data* rx_data) {
         send_405_method_not_allowed(rx_data);
     }
 
-    ctx_->call_manager_->purge_scheduled();
+    call_manager_->purge_scheduled();
 }
 
 void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     auto* session = static_cast<CallSession*>(inv->mod_data[ctx_->module_id_]);
     if (session == nullptr) {
-        session = ctx_->call_manager_->find_by_inv(inv);
+        session = call_manager_->find_by_inv(inv);
     }
     if (session == nullptr) {
         return; // not one of ours (or already removed)
@@ -93,7 +93,7 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     default: break;
     }
 
-    ctx_->call_manager_->purge_scheduled();
+    call_manager_->purge_scheduled();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -152,7 +152,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
         respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);
         return;
     }
-    if (ctx_->call_manager_->find_by_call_id(call_id) != nullptr) {
+    if (call_manager_->find_by_call_id(call_id) != nullptr) {
         // Retransmission of an INVITE we are already handling; the transaction
         // layer answers it, nothing to orchestrate.
         return;
@@ -204,7 +204,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
 
     // CallSession extracts its own request-URI/offer SDP from rx_data at
     // construction; nothing here needs to parse the message itself.
-    CallSession* session = ctx_->call_manager_->create_session(call_id, ctx_, routes_store_, rx_data);
+    CallSession* session = call_manager_->create_session(call_id, ctx_, routes_store_, executor_, rx_data);
     session->set_inv_caller(inv);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx_->module_id_] = session;
@@ -247,7 +247,7 @@ CallSession* MessageRouter::find_call_session(pjsip_rx_data* rx_data) {
     if (call_id.empty()) {
         return nullptr;
     }
-    return ctx_->call_manager_->find_by_call_id(call_id);
+    return call_manager_->find_by_call_id(call_id);
 }
 
 void MessageRouter::respond_stateless(pjsip_rx_data* rx_data, int code) {

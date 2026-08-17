@@ -2,13 +2,14 @@
 
 #include <boost/asio.hpp>
 
+#include <boost/asio/any_io_executor.hpp>
 #include <queue>
 #include <string>
 
 #include <pjsip.h>
 #include <pjsip_ua.h>
 
-#include "sip/call/sbc_context.hpp"
+#include "sip/call/pj_context.hpp"
 #include "sip/router/real_dialog_actions.hpp"
 #include "sip/router/real_setup_actions.hpp"
 #include "net/rtp/MediaBridge.hpp"
@@ -18,6 +19,7 @@
 
 namespace SbcEngine {
 
+class CallManager;
 class RoutesStore;
 
 // Owns everything for one B2BUA call: the two PJSIP invite-session legs, the two
@@ -30,7 +32,12 @@ public:
 
     // request_uri/caller_offer_sdp are extracted from rdata internally. routes_store
     // is forwarded to RealSetupActions only — CallSession does not retain it.
-    CallSession(std::string call_id, SbcContext* ctx, RoutesStore* routes_store, pjsip_rx_data* rdata);
+    CallSession(std::string call_id,
+                PjContext* ctx,
+                CallManager* call_manager,
+                RoutesStore* routes_store,
+                const boost::asio::any_io_executor& executor,
+                pjsip_rx_data* rdata);
     ~CallSession();
 
     CallSession(const CallSession&) = delete;
@@ -39,7 +46,8 @@ public:
     CallSession& operator=(CallSession&&) = delete;
 
     [[nodiscard]] const std::string& call_id() const { return call_id_; }
-    [[nodiscard]] SbcContext* ctx() const { return ctx_; }
+    [[nodiscard]] PjContext* ctx() const { return ctx_; }
+    [[nodiscard]] CallManager* call_manager() const { return call_manager_; }
     [[nodiscard]] pj_pool_t* pool() const { return pool_; }
 
     SetupMachine& setup_sm() { return setup_sm_; }
@@ -68,7 +76,8 @@ public:
 
 private:
     std::string call_id_;
-    SbcContext* ctx_;
+    PjContext* ctx_;
+    CallManager* call_manager_;
     pj_pool_t* pool_ = nullptr;
 
     pjsip_inv_session* inv_caller_ = nullptr;

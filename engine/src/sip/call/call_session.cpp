@@ -12,11 +12,17 @@ constexpr pj_size_t kPoolInitial = 4096;
 constexpr pj_size_t kPoolIncrement = 4096;
 } // namespace
 
-CallSession::CallSession(std::string call_id, SbcContext* ctx, RoutesStore* routes_store, pjsip_rx_data* rdata)
+CallSession::CallSession(std::string call_id,
+                         PjContext* ctx,
+                         CallManager* call_manager,
+                         RoutesStore* routes_store,
+                         const boost::asio::any_io_executor& executor,
+                         pjsip_rx_data* rdata)
     : call_id_(std::move(call_id))
     , ctx_(ctx)
+    , call_manager_(call_manager)
     , pool_(pjsip_endpt_create_pool(ctx->endpt_, call_id_.c_str(), kPoolInitial, kPoolIncrement))
-    , media_bridge_(std::make_shared<MediaBridge>(ctx->ioc_->get_executor()))
+    , media_bridge_(std::make_shared<MediaBridge>(executor))
     , caller_offer_sdp_(extract_sdp(rdata))
     , current_rdata_(rdata)
     , request_uri_(extract_request_uri(rdata))

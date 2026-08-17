@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/asio/any_io_executor.hpp>
+
 #include <pjsip.h>
 #include <pjsip_ua.h>
 
@@ -12,7 +14,7 @@ namespace SbcEngine {
 
 class CallSession;
 class RoutesStore;
-struct SbcContext;
+struct PjContext;
 
 // Owns all active CallSessions and provides lookup by Call-ID or by either of a
 // call's two PJSIP invite sessions.
@@ -28,8 +30,11 @@ public:
     CallManager(CallManager&&) = delete;
     CallManager& operator=(CallManager&&) = delete;
 
-    CallSession* create_session(
-        const std::string& call_id, SbcContext* ctx, RoutesStore* routes_store, pjsip_rx_data* rdata);
+    CallSession* create_session(const std::string& call_id,
+                                PjContext* ctx,
+                                RoutesStore* routes_store,
+                                const boost::asio::any_io_executor& executor,
+                                pjsip_rx_data* rdata);
     CallSession* find_by_call_id(const std::string& call_id);
     CallSession* find_by_inv(pjsip_inv_session* inv);
     void remove_session(const std::string& call_id);
