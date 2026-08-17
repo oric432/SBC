@@ -26,7 +26,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang clang-tidy clang-format ninja-build just
+          sudo apt-get install -y clang clang-tidy clang-format ninja-build just ccache
 
       - name: Cache FetchContent dependencies
         uses: actions/cache@v4
