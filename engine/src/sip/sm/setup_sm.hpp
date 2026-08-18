@@ -32,8 +32,8 @@ struct Done {};
 // boost::sml recognizes the bare back::process<...> parameter type and
 // substitutes a live instance wired to the sm's own internal queue at dispatch
 // time (see Sml::process_queue<std::queue>), no constructor wiring needed.
-using SetupSelfFireQueue =
-    Sml::back::process<RouteFound, RouteFailed, LoopDetected, InviteSent, OutboundLegFailed, AcceptForwardFailed, Cleanup>;
+using SetupSelfFireQueue = Sml::back::
+    process<RouteFound, RouteFailed, LoopDetected, InviteSent, OutboundLegFailed, AcceptForwardFailed, Cleanup>;
 
 template <typename Context>
 struct SetupSm {

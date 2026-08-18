@@ -207,7 +207,11 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     inv->mod_data[ctx_->module_id_] = session;
 
-    Log::call()->info("[{}] INVITE received, request-uri {}", call_id, session->request_uri());
+    Log::call()->info(
+        "[{}] received INVITE from caller ({}), request-uri {}",
+        call_id,
+        session->caller_uri(),
+        session->request_uri());
 
     // Routing, sending the outbound INVITE, and any resulting Cleanup are all
     // self-driven by the SM's own actions (setup_sm.hpp) off this single event —

@@ -79,7 +79,9 @@ struct MediaBridge::Impl {
             dst.sender().async_send_pkt(
                 pkt.packet(),
                 dst_ep,
-                [self, src_leg, &src, &dst, &dst_ep](std::size_t /*bytes_sent*/, const std::error_code& send_err) mutable {
+                [self, src_leg, &src, &dst, &dst_ep](
+                    std::size_t /*bytes_sent*/,
+                    const std::error_code& send_err) mutable {
                     if (send_err) {
                         std::error_code abort_err =
                             boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
@@ -149,6 +151,14 @@ void MediaBridge::set_remote_leg_a(const std::string& addr, unsigned short port)
 
 void MediaBridge::set_remote_leg_b(const std::string& addr, unsigned short port) {
     impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
+}
+
+std::optional<boost::asio::ip::udp::endpoint> MediaBridge::remote_leg_a() const {
+    return impl_->dest_a_;
+}
+
+std::optional<boost::asio::ip::udp::endpoint> MediaBridge::remote_leg_b() const {
+    return impl_->dest_b_;
 }
 
 void MediaBridge::set_error_handler(MediaBridgeErrorHandler handler) {

@@ -32,12 +32,13 @@ public:
 
     // request_uri/caller_offer_sdp are extracted from rdata internally. routes_store
     // is forwarded to RealSetupActions only — CallSession does not retain it.
-    CallSession(std::string call_id,
-                PjContext* ctx,
-                CallManager* call_manager,
-                RoutesStore* routes_store,
-                const boost::asio::any_io_executor& executor,
-                pjsip_rx_data* rdata);
+    CallSession(
+        std::string call_id,
+        PjContext* ctx,
+        CallManager* call_manager,
+        RoutesStore* routes_store,
+        const boost::asio::any_io_executor& executor,
+        pjsip_rx_data* rdata);
     ~CallSession();
 
     CallSession(const CallSession&) = delete;
@@ -64,6 +65,7 @@ public:
     // rx_data once, at construction, and read-only from then on.
     [[nodiscard]] const std::string& caller_offer_sdp() const { return caller_offer_sdp_; }
     [[nodiscard]] const std::string& request_uri() const { return request_uri_; }
+    [[nodiscard]] const std::string& caller_uri() const { return caller_uri_; }
     [[nodiscard]] const std::string& outbound_destination() const { return outbound_destination_; }
     void set_outbound_destination(std::string dest) { outbound_destination_ = std::move(dest); }
 
@@ -89,6 +91,7 @@ private:
     pjsip_rx_data* current_rdata_;
 
     std::string request_uri_;
+    std::string caller_uri_;
     std::string outbound_destination_;
 
     RealSetupActions setup_actions_;
