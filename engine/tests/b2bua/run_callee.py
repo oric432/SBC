@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import argparse
 import subprocess
 import time
 import sys
@@ -12,28 +11,21 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 engine_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
 os.chdir(engine_dir)
 
-parser = argparse.ArgumentParser(description="SIPp callee for B2BUA tests")
-parser.add_argument(
-    "--loop", action="store_true",
-    help="Hold the call up indefinitely (Ctrl+C to hang up), instead of the "
-         "default: wait for the caller's BYE and exit on its own.",
-)
-args = parser.parse_args()
-
 with open("tests/b2bua/config.json", "r") as f:
     config = json.load(f)
 
 local_ip = config.get("local_ip", "127.0.0.1")
 callee_port = str(config.get("callee_port", "5061"))
 callee_media_port = str(config.get("callee_media_port", "6004"))
-scenario = "tests/b2bua/callee_loop.xml" if args.loop else "tests/b2bua/callee.xml"
+loop = bool(config.get("call_loop", False))
+scenario = "tests/b2bua/callee_loop.xml" if loop else "tests/b2bua/callee.xml"
 callee_args = ["sipp", "-sf", scenario, "-i", local_ip, "-p", callee_port, "-mp", callee_media_port, "-m", "1"]
 
 print(f"Starting SIPp Callee (listening on {callee_port})...")
 print(f"--> Local SIP URI: sip:sipp@{local_ip}:{callee_port}")
 print(f"--> Target SIP URI for routes: sip:service@{local_ip}:{callee_port}")
 
-if args.loop:
+if loop:
     print("\n*** SIPp is now running in the foreground. ***")
     print("*** Press Ctrl+C to exit and clean up... ***\n")
 
