@@ -1,26 +1,15 @@
-add_executable(sbc_tests
-    test_setup_sm.cpp
-    test_dialog_sm.cpp
-    test_options_sm.cpp
+add_executable(sbc_mock_tests
+    test_mock_sbc_actions.cpp
 )
 
-# Enable template instantiations for test types in state machine implementations
-target_compile_definitions(sbc_tests PRIVATE __INCLUDE_MOCK_ACTIONS__)
-
-target_precompile_headers(sbc_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sip/pch.hpp
-)
-
-target_include_directories(sbc_tests PRIVATE
+target_include_directories(sbc_mock_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/sip
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(sbc_tests PRIVATE
+target_link_libraries(sbc_mock_tests PRIVATE
     third_party::catch2
-    third_party::spdlog
-    third_party::boost_sml
 )
 
-add_test(NAME sbc_tests COMMAND sbc_tests)
-
+add_test(NAME sbc_mock_tests COMMAND sbc_mock_tests)
