@@ -49,7 +49,7 @@
   <label id="pcap_loop"/>
   <nop>
     <action>
-      <exec play_pcap_audio="tests/b2bua/g711a.pcap"/>
+      <exec play_pcap_audio="g711a.pcap"/>
     </action>
   </nop>
   <pause milliseconds="7080"/>
