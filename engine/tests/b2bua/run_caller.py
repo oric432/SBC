@@ -20,7 +20,21 @@ caller_port = str(config.get("caller_port", "5062"))
 caller_media_port = str(config.get("caller_media_port", "6002"))
 loop = bool(config.get("call_loop", False))
 scenario = "tests/b2bua/caller_loop.xml" if loop else "tests/b2bua/caller.xml"
-caller_args = ["sipp", "-sf", scenario, f"{local_ip}:{sbc_port}", "-i", local_ip, "-p", caller_port, "-mp", caller_media_port, "-m", "1"]
+caller_args = [
+    "sipp",
+    "-sf",
+    scenario,
+    f"{local_ip}:{sbc_port}",
+    "-i",
+    local_ip,
+    "-p",
+    caller_port,
+    "-mp",
+    caller_media_port,
+    "-m",
+    "1",
+    "-nostdin",
+]
 
 print(f"Running SIPp Caller (sending to {sbc_port})...")
 print(f"--> Local SIP URI: sip:sipp@{local_ip}:{caller_port}")

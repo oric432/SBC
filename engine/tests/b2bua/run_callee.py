@@ -19,7 +19,20 @@ callee_port = str(config.get("callee_port", "5061"))
 callee_media_port = str(config.get("callee_media_port", "6004"))
 loop = bool(config.get("call_loop", False))
 scenario = "tests/b2bua/callee_loop.xml" if loop else "tests/b2bua/callee.xml"
-callee_args = ["sipp", "-sf", scenario, "-i", local_ip, "-p", callee_port, "-mp", callee_media_port, "-m", "1"]
+callee_args = [
+    "sipp",
+    "-sf",
+    scenario,
+    "-i",
+    local_ip,
+    "-p",
+    callee_port,
+    "-mp",
+    callee_media_port,
+    "-m",
+    "1",
+    "-nostdin",
+]
 
 print(f"Starting SIPp Callee (listening on {callee_port})...")
 print(f"--> Local SIP URI: sip:sipp@{local_ip}:{callee_port}")

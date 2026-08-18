@@ -13,6 +13,24 @@ Edit `config.json` to change the test IPs and ports:
 
 RTP (using `g711a.pcap`) is continuously streamed independently by both Caller and Callee at realistic G.711 packet pacing (~30ms per packet).
 
+### SIPp raw-socket permission
+
+The scenarios use SIPp's `play_pcap_audio` action. Replaying packets from a
+PCAP requires permission to create raw network sockets. Grant only that
+capability to the installed SIPp executable once:
+
+```bash
+SIPP_BIN="$(readlink -f "$(command -v sipp)")"
+sudo setcap cap_net_raw+ep "$SIPP_BIN"
+getcap "$SIPP_BIN"
+```
+
+The final command should report `cap_net_raw=ep`. Without this capability,
+SIPp fails when media playback begins with `Can't create raw IPv4 socket`.
+The `just test-b2bua` recipe checks this prerequisite before starting either
+SIPp process and prints the setup command when it is missing. Running the
+entire test as root is unnecessary.
+
 ## How to Run
 
 ### Default: short call with caller-initiated BYE
