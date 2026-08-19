@@ -5,8 +5,6 @@ build/
 .memsearch/
 docs/
 settings.toml
-**/config.json
-*/config.json
 skills-lock.json
 agentdb.rvf
 agentdb.rvf.lock
