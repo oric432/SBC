@@ -75,10 +75,9 @@ void CallManager::process_pending_rtp_inactivity() {
     }
 
     rtp_inactivity_timer_->run_pending_scan([this](std::chrono::steady_clock::duration interval) {
-        std::vector<CallSession*> inactive_sessions;
         const auto now = std::chrono::steady_clock::now();
         for (auto& [call_id, session] : sessions_) {
-            if (!session->setup_sm().is(Sml::state<Done>)) {
+            if (!session->setup_sm().is_done()) {
                 continue;
             }
 
@@ -88,15 +87,9 @@ void CallManager::process_pending_rtp_inactivity() {
             }
 
             auto& dialog = session->dialog_sm();
-            if (dialog.is(Sml::state<Active>) || dialog.is(Sml::state<Reinviting>) ||
-                dialog.is(Sml::state<WaitingForReinviteAck>)) {
-                inactive_sessions.push_back(session.get());
+            if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
+                dialog.process_event(CallError{});
             }
-        }
-
-        for (CallSession* session : inactive_sessions) {
-            Log::call()->warn("[{}] RTP inactivity timeout; terminating call", session->call_id());
-            session->dialog_sm().process_event(CallError{});
         }
     });
 }
