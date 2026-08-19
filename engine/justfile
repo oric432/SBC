@@ -45,7 +45,7 @@ format:
     cmake --build build --target format
 
 # Run B2BUA SIPp tests (assumes engine is already running)
-test-b2bua:
+test-b2bua *args:
     #!/usr/bin/env bash
     set -e
 
@@ -62,19 +62,8 @@ test-b2bua:
         echo "run once: sudo setcap cap_net_raw+ep \"$(readlink -f "$SIPP_BIN")\"" >&2
         exit 1
     fi
-    
-    # Start callee in background
-    python3 tests/b2bua/run_callee.py &
-    CALLEE_PID=$!
-    
-    # Give it a second to bind
-    sleep 1
-    
-    # Run caller in foreground
-    python3 tests/b2bua/run_caller.py
-    
-    # Wait for callee to finish
-    wait $CALLEE_PID
+
+    python3 tests/b2bua/run_test.py {{args}}
 
 # Generate schemas using the schema generator tool
 generate-schemas:

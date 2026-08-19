@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import os
 import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -14,10 +14,45 @@ class Config(TypedDict, total=False):
     sbc_port: str
     caller_port: str
     caller_media_port: str
-    call_loop: bool
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the B2BUA SIPp caller")
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="keep the call and RTP playback running until interrupted",
+    )
+    return parser.parse_args()
+
+
+def run_sipp(command: list[str]) -> int:
+    process = subprocess.Popen(command)
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def handle_sigterm(_signum: int, _frame: object) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        print("\nInterrupted. Cleaning up SIPp process...")
+        return 130
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        print("Cleanup complete.")
 
 
 def main() -> int:
+    args = parse_args()
     engine_dir = Path(__file__).resolve().parents[2]
     os.chdir(engine_dir)
 
@@ -28,8 +63,7 @@ def main() -> int:
     sbc_port = config.get("sbc_port", "5060")
     caller_port = config.get("caller_port", "5062")
     caller_media_port = config.get("caller_media_port", "6002")
-    loop = config.get("call_loop", False)
-    scenario = "tests/b2bua/caller_loop.xml" if loop else "tests/b2bua/caller.xml"
+    scenario = "tests/b2bua/caller_loop.xml" if args.loop else "tests/b2bua/caller.xml"
     caller_args = [
         "sipp",
         "-sf",
@@ -50,27 +84,14 @@ def main() -> int:
     print(f"--> Local SIP URI: sip:sipp@{local_ip}:{caller_port}")
     print(f"--> Dialing SIP URI: sip:service@{local_ip}:{sbc_port}")
 
-    if loop:
+    if args.loop:
         print("\n*** SIPp is now running in the foreground. ***")
         print("*** It will show a UI attempting to place the call. ***")
         print("*** Press Ctrl+C to exit and clean up... ***\n")
+    else:
+        print("*** Call holds for ~10s then caller sends BYE. No Ctrl+C needed. ***")
 
-        caller_process = subprocess.Popen(caller_args)
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\nCtrl+C detected! Cleaning up SIPp process...")
-            caller_process.send_signal(signal.SIGINT)
-            caller_process.wait()
-            print("Cleanup complete.")
-            return 0
-
-    print("*** Call holds for ~10s then caller sends BYE. No Ctrl+C needed. ***")
-    try:
-        return subprocess.run(caller_args, check=False).returncode
-    except KeyboardInterrupt:
-        return 1
+    return run_sipp(caller_args)
 
 
 if __name__ == "__main__":
