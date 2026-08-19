@@ -14,6 +14,13 @@ Edit `config.json` to configure the scenarios:
 - `callee_media_port`: Base RTP port used by the Callee.
 - `caller_media_port`: Base RTP port used by the Caller.
 
+SIPp reserves two RTP sockets for each configured media base port: the base
+port for audio and `base + 2` for video, even though these scenarios advertise
+only audio. Keep the Caller and Callee base ports at least four ports apart to
+avoid a bind collision. For example, the values in `config-example.json`
+reserve `6002`/`6004` for the Caller and `6006`/`6008` for the Callee. A
+collision is reported by SIPp as `Unable to bind video RTP socket`.
+
 RTP (using `g711a.pcap`) is continuously streamed independently by both Caller and Callee at realistic G.711 packet pacing (~30ms per packet).
 
 ### SIPp raw-socket permission
