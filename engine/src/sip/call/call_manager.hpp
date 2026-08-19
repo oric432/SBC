@@ -46,6 +46,11 @@ public:
     void schedule_remove(const std::string& call_id);
     void purge_scheduled();
 
+    // The RTP executor queues only immutable call IDs here. The PJSIP thread
+    // drains them and re-resolves the session before touching SIP state.
+    void enqueue_rtp_inactivity(std::string call_id);
+    void process_pending_rtp_inactivity();
+
     // Sends a BYE to both legs of every call whose dialog is confirmed and
     // still up (Active/Reinviting/WaitingForReinviteAck), so peers aren't left
     // hanging when the process shuts down. Calls still mid-setup (no answer
@@ -55,6 +60,7 @@ public:
 private:
     std::unordered_map<std::string, std::unique_ptr<CallSession>> sessions_;
     std::vector<std::string> pending_remove_;
+    std::vector<std::string> pending_rtp_inactivity_;
 };
 
 } // namespace SbcEngine

@@ -94,6 +94,11 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     call_manager_->purge_scheduled();
 }
 
+void MessageRouter::process_pending_media_events() {
+    call_manager_->process_pending_rtp_inactivity();
+    call_manager_->purge_scheduled();
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // INVITE-STATE DISCONNECT MAPPING
 // ════════════════════════════════════════════════════════════════════════════

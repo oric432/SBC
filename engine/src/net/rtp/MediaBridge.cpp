@@ -1,5 +1,7 @@
 #include "MediaBridge.hpp"
 
+#include "RtpInactivityTimer.hpp"
+
 #include <boost/asio/error.hpp>
 #include <optional>
 #include <system_error>
@@ -37,9 +39,11 @@ std::string_view to_string(RelayOp operation) {
 }
 
 struct MediaBridge::Impl {
-    explicit Impl(const boost::asio::any_io_executor& executor)
+    explicit Impl(const boost::asio::any_io_executor& executor, std::chrono::steady_clock::duration inactivity_timeout)
         : session_a_(make_raw_rtp_session(executor))
-        , session_b_(make_raw_rtp_session(executor)) {}
+        , session_b_(make_raw_rtp_session(executor))
+        , executor_(executor)
+        , inactivity_timeout_(inactivity_timeout) {}
 
     RtpSession<BasicRawRtpSender> session_a_;
     RtpSession<BasicRawRtpSender> session_b_;
@@ -48,6 +52,10 @@ struct MediaBridge::Impl {
     std::optional<boost::asio::ip::udp::endpoint> dest_b_;
 
     MediaBridgeErrorHandler error_handler_;
+    MediaBridgeInactivityHandler inactivity_handler_;
+    boost::asio::any_io_executor executor_;
+    std::chrono::steady_clock::duration inactivity_timeout_;
+    std::shared_ptr<RtpInactivityTimer> inactivity_timer_;
 
     static void do_relay(
         std::shared_ptr<MediaBridge> self,
@@ -76,6 +84,10 @@ struct MediaBridge::Impl {
                 return;
             }
 
+            if (self->impl_->inactivity_timer_) {
+                self->impl_->inactivity_timer_->notify_activity();
+            }
+
             dst.sender().async_send_pkt(
                 pkt.packet(),
                 dst_ep,
@@ -100,8 +112,10 @@ struct MediaBridge::Impl {
     }
 };
 
-MediaBridge::MediaBridge(const boost::asio::any_io_executor& executor)
-    : impl_(std::make_unique<Impl>(executor)) {}
+MediaBridge::MediaBridge(
+    const boost::asio::any_io_executor& executor,
+    std::chrono::steady_clock::duration inactivity_timeout)
+    : impl_(std::make_unique<Impl>(executor, inactivity_timeout)) {}
 
 MediaBridge::~MediaBridge() = default;
 
@@ -165,7 +179,20 @@ void MediaBridge::set_error_handler(MediaBridgeErrorHandler handler) {
     impl_->error_handler_ = std::move(handler);
 }
 
+void MediaBridge::set_inactivity_handler(MediaBridgeInactivityHandler handler) {
+    impl_->inactivity_handler_ = std::move(handler);
+}
+
 void MediaBridge::start_bridge_loop() {
+    std::weak_ptr<MediaBridge> weak_self = weak_from_this();
+    impl_->inactivity_timer_ =
+        std::make_shared<RtpInactivityTimer>(impl_->executor_, impl_->inactivity_timeout_, [weak_self] {
+            if (auto self = weak_self.lock(); self && self->impl_->inactivity_handler_) {
+                self->impl_->inactivity_handler_();
+            }
+        });
+    impl_->inactivity_timer_->start();
+
     if (impl_->dest_b_) {
         Impl::do_relay(shared_from_this(), RelayLeg::kLegA, impl_->session_a_, impl_->session_b_, *impl_->dest_b_);
     }
@@ -175,6 +202,10 @@ void MediaBridge::start_bridge_loop() {
 }
 
 std::expected<void, std::error_code> MediaBridge::close() {
+    if (impl_->inactivity_timer_) {
+        impl_->inactivity_timer_->stop();
+        impl_->inactivity_timer_.reset();
+    }
     auto err = impl_->session_a_.close();
     if (!err) {
         return err;

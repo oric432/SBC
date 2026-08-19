@@ -1,6 +1,7 @@
 add_library(net STATIC
     rtp/RtpCpp.cpp
     rtp/MediaBridge.cpp
+    rtp/RtpInactivityTimer.cpp
 )
 target_compile_definitions(net PRIVATE RTPCPP_USE_BOOST_ASIO)
 

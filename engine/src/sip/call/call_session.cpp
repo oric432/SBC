@@ -1,5 +1,6 @@
 #include "call_session.hpp"
 
+#include "sip/call/call_manager.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 
@@ -21,7 +22,8 @@ CallSession::CallSession(
     , ctx_(ctx)
     , call_manager_(call_manager)
     , pool_(pjsip_endpt_create_pool(ctx->endpt_, call_id_.c_str(), kPoolInitial, kPoolIncrement))
-    , media_bridge_(std::make_shared<MediaBridge>(executor))
+    , media_bridge_(
+          std::make_shared<MediaBridge>(executor, std::chrono::seconds{ctx->config_.rtp_inactivity_timeout_s_}))
     , caller_offer_sdp_(extract_sdp(rdata))
     , current_rdata_(rdata)
     , request_uri_(extract_request_uri(rdata))
@@ -43,6 +45,8 @@ CallSession::CallSession(
             to_string(operation),
             error.message());
     });
+    media_bridge_->set_inactivity_handler(
+        [call_manager, call_id = call_id_] { call_manager->enqueue_rtp_inactivity(call_id); });
 }
 
 CallSession::~CallSession() {

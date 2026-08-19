@@ -4,6 +4,7 @@
 #include "sip/call/pj_context.hpp"
 #include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/events.hpp"
+#include "core/utils/log.hpp"
 
 namespace SbcEngine {
 
@@ -51,6 +52,26 @@ void CallManager::purge_scheduled() {
         sessions_.erase(call_id);
     }
     pending_remove_.clear();
+}
+
+void CallManager::enqueue_rtp_inactivity(std::string call_id) {
+    pending_rtp_inactivity_.push_back(std::move(call_id));
+}
+
+void CallManager::process_pending_rtp_inactivity() {
+    for (const auto& call_id : pending_rtp_inactivity_) {
+        CallSession* session = find_by_call_id(call_id);
+        if (session == nullptr || !session->setup_sm().is(Sml::state<Done>)) {
+            continue;
+        }
+
+        auto& dialog = session->dialog_sm();
+        if (dialog.is(Sml::state<Active>) || dialog.is(Sml::state<Reinviting>) ||
+            dialog.is(Sml::state<WaitingForReinviteAck>)) {
+            Log::call()->warn("[{}] RTP inactivity timeout; terminating call", call_id);
+            dialog.process_event(CallError{});
+        }
+    }
 }
 
 void CallManager::terminate_established_calls() {

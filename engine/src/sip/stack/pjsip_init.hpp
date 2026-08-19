@@ -14,6 +14,7 @@ class MessageRouter;
 
 constexpr uint16_t kDefaultSipPort = 5060;
 constexpr int kDefaultInviteTimeoutMs = 32000; // matches PJSIP's own default (PJSIP_TD_TIMEOUT)
+constexpr int kDefaultRtpInactivityTimeoutSeconds = 60;
 
 // Runtime configuration for the PJSIP stack.
 struct PjsipConfig {
@@ -25,6 +26,7 @@ struct PjsipConfig {
     // How long to wait for a final response to an outbound INVITE before PJSIP
     // times out the transaction (surfaces as cause 408), see Settings::invite_timeout_ms.
     int invite_timeout_ms_ = kDefaultInviteTimeoutMs;
+    int rtp_inactivity_timeout_s_ = kDefaultRtpInactivityTimeoutSeconds;
 
     // "<sip:{identity_user_}@{local_ip_}:{sip_port_}>" — the SBC's own reachable
     // address, used as Contact/From on legs it originates or answers.

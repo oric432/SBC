@@ -61,6 +61,7 @@ PjsipConfig SbcApp::init_pjsip(const Settings& settings) {
     config.sip_port_ = settings.sip.port;
     config.identity_user_ = settings.sip.identity_user;
     config.invite_timeout_ms_ = settings.sip.invite_timeout_ms;
+    config.rtp_inactivity_timeout_s_ = settings.sip.rtp_inactivity_timeout_s;
     config.pjsip_log_level_ = resolve_pjsip_log_level(settings.logging.pjsip_level);
 
     if (auto res = stack_.init(config); !res) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -29,9 +30,15 @@ std::string_view to_string(RelayOp operation);
 // relay loop's completion handler — keep it fast and non-blocking.
 using MediaBridgeErrorHandler = std::function<void(RelayLeg leg, RelayOp operation, std::error_code error)>;
 
+// Runs on the bridge's Asio executor. The handler must not access PJSIP or a
+// CallSession directly; queue work back to the SIP thread instead.
+using MediaBridgeInactivityHandler = std::function<void()>;
+
 class MediaBridge : public std::enable_shared_from_this<MediaBridge> {
 public:
-    explicit MediaBridge(const boost::asio::any_io_executor& executor);
+    explicit MediaBridge(
+        const boost::asio::any_io_executor& executor,
+        std::chrono::steady_clock::duration inactivity_timeout = std::chrono::steady_clock::duration::zero());
     ~MediaBridge();
 
     MediaBridge(const MediaBridge&) = delete;
@@ -57,6 +64,7 @@ public:
     // or otherwise marshal onto the bridge's own executor — the relay loop reads
     // this handler without synchronization on the assumption it is set up front.
     void set_error_handler(MediaBridgeErrorHandler handler);
+    void set_inactivity_handler(MediaBridgeInactivityHandler handler);
 
     void start_bridge_loop();
 
