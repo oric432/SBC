@@ -3,21 +3,20 @@
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/steady_timer.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
 
 namespace SbcEngine {
 
-// Tracks call-wide RTP activity. Public operations may be called from any
-// thread; timer mutation and the expiry handler always run on its Asio
-// executor. Pending waits keep only this timer alive, never its owner.
+// One process-wide periodic timer used to request an inactivity scan. It does
+// not own or inspect calls; CallManager performs that work on the SIP thread.
 class RtpInactivityTimer : public std::enable_shared_from_this<RtpInactivityTimer> {
 public:
-    RtpInactivityTimer(
-        const boost::asio::any_io_executor& executor,
-        std::chrono::steady_clock::duration timeout,
-        std::function<void()> expiry_handler);
+    using ScanHandler = std::function<void(std::chrono::steady_clock::duration)>;
+
+    RtpInactivityTimer(const boost::asio::any_io_executor& executor, std::chrono::steady_clock::duration interval);
     ~RtpInactivityTimer() = default;
 
     RtpInactivityTimer(const RtpInactivityTimer&) = delete;
@@ -25,21 +24,20 @@ public:
     RtpInactivityTimer(RtpInactivityTimer&&) = delete;
     RtpInactivityTimer& operator=(RtpInactivityTimer&&) = delete;
 
-    // Starts the inactivity window. A non-positive timeout disables it.
     void start();
-    // Restarts the window after a successfully received RTP packet.
-    void notify_activity();
-    // Prevents future expiry notification and cancels the active wait.
     void stop();
 
+    // Called by the SIP thread. If the Asio timer has ticked, invokes the
+    // injected scan there rather than on the timer's executor.
+    void run_pending_scan(const ScanHandler& scan_handler);
+
 private:
-    void arm_on_executor();
-    void stop_on_executor();
+    void arm();
 
     boost::asio::any_io_executor executor_;
     boost::asio::steady_timer timer_;
-    std::chrono::steady_clock::duration timeout_;
-    std::function<void()> expiry_handler_;
+    std::chrono::steady_clock::duration interval_;
+    std::atomic_bool scan_pending_{false};
     bool running_ = false;
 };
 

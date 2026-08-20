@@ -3,60 +3,52 @@
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/error.hpp>
 
-#include <utility>
-
 namespace SbcEngine {
 
 RtpInactivityTimer::RtpInactivityTimer(
     const boost::asio::any_io_executor& executor,
-    std::chrono::steady_clock::duration timeout,
-    std::function<void()> expiry_handler)
+    std::chrono::steady_clock::duration interval)
     : executor_(executor)
     , timer_(executor)
-    , timeout_(timeout)
-    , expiry_handler_(std::move(expiry_handler)) {}
+    , interval_(interval) {}
 
 void RtpInactivityTimer::start() {
-    boost::asio::dispatch(executor_, [self = shared_from_this()] { self->arm_on_executor(); });
-}
-
-void RtpInactivityTimer::notify_activity() {
     boost::asio::dispatch(executor_, [self = shared_from_this()] {
-        if (self->running_) {
-            self->arm_on_executor();
+        if (!self->running_ && self->interval_ > std::chrono::steady_clock::duration::zero()) {
+            self->running_ = true;
+            self->arm();
         }
     });
 }
 
 void RtpInactivityTimer::stop() {
-    boost::asio::dispatch(executor_, [self = shared_from_this()] { self->stop_on_executor(); });
+    boost::asio::dispatch(executor_, [self = shared_from_this()] {
+        self->running_ = false;
+        self->timer_.cancel();
+    });
 }
 
-void RtpInactivityTimer::arm_on_executor() {
-    if (timeout_ <= std::chrono::steady_clock::duration::zero()) {
-        return;
+void RtpInactivityTimer::run_pending_scan(const ScanHandler& scan_handler) {
+    if (scan_pending_.exchange(false, std::memory_order_acq_rel) && scan_handler) {
+        scan_handler(interval_);
     }
+}
 
-    running_ = true;
-    timer_.expires_after(timeout_);
+void RtpInactivityTimer::arm() {
+    timer_.expires_after(interval_);
     timer_.async_wait([self = shared_from_this()](const boost::system::error_code& error) {
         if (error == boost::asio::error::operation_aborted || !self->running_) {
             return;
         }
         if (error) {
+            self->running_ = false;
             return;
         }
-
-        self->running_ = false;
-        if (self->expiry_handler_) {
-            self->expiry_handler_();
+        self->scan_pending_.store(true, std::memory_order_release);
+        if (self->running_) {
+            self->arm();
         }
     });
-}
-
-void RtpInactivityTimer::stop_on_executor() {
-    running_ = false;
-    timer_.cancel();
 }
 
 } // namespace SbcEngine

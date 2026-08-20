@@ -86,6 +86,10 @@ void SbcApp::init_signal_handlers() {
 }
 
 void SbcApp::run() {
+    call_manager_.start_rtp_inactivity_timer(
+        ioc_.get_executor(),
+        std::chrono::seconds{ctx_.config_.rtp_inactivity_timeout_s_});
+
     // Keep the io_context alive even when no RTP sessions are open yet.
     auto work_guard = boost::asio::make_work_guard(ioc_);
     std::thread asio_thread{[this] { ioc_.run(); }};

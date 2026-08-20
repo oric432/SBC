@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -13,6 +14,7 @@
 namespace SbcEngine {
 
 class CallSession;
+class RtpInactivityTimer;
 class RoutesStore;
 struct PjContext;
 
@@ -46,10 +48,12 @@ public:
     void schedule_remove(const std::string& call_id);
     void purge_scheduled();
 
-    // The RTP executor queues only immutable call IDs here. The PJSIP thread
-    // drains them and re-resolves the session before touching SIP state.
-    void enqueue_rtp_inactivity(std::string call_id);
-    void process_pending_rtp_inactivity();
+    // A single Asio timer requests periodic scans. The actual scan and all
+    // CallError transitions happen in process_pending_rtp_inactivity() on the
+    // SIP thread.
+    void start_rtp_inactivity_timer(
+        const boost::asio::any_io_executor& executor,
+        std::chrono::steady_clock::duration interval);
 
     // Sends a BYE to both legs of every call whose dialog is confirmed and
     // still up (Active/Reinviting/WaitingForReinviteAck), so peers aren't left
@@ -57,10 +61,14 @@ public:
     // yet) are left alone here.
     void terminate_established_calls();
 
+    void process_pending_rtp_inactivity();
+
 private:
+    void stop_rtp_inactivity_timer();
+
     std::unordered_map<std::string, std::unique_ptr<CallSession>> sessions_;
     std::vector<std::string> pending_remove_;
-    std::vector<std::string> pending_rtp_inactivity_;
+    std::shared_ptr<RtpInactivityTimer> rtp_inactivity_timer_;
 };
 
 } // namespace SbcEngine

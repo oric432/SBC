@@ -17,10 +17,7 @@ constexpr std::size_t kReceiveBufferSize = 2048;
 constexpr unsigned short kUnreachableTestPort = 12345;
 constexpr auto kShortInactivityTimeout = 20ms;
 constexpr auto kExpiryRunWindow = 60ms;
-constexpr auto kRestartInactivityTimeout = 40ms;
 constexpr auto kActivityDelay = 25ms;
-constexpr auto kPostActivityCheckWindow = 25ms;
-constexpr auto kFinalExpiryWindow = 35ms;
 } // namespace
 
 TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
@@ -117,63 +114,41 @@ TEST_CASE("MediaBridge reports relay send errors via the error handler", "[Media
     CHECK(error);
 }
 
-TEST_CASE("RtpInactivityTimer expires once without activity", "[RtpInactivityTimer]") {
+TEST_CASE("RtpInactivityTimer exposes a pending periodic scan", "[RtpInactivityTimer]") {
     io_context ioc;
-    int expiry_count = 0;
-    auto timer =
-        std::make_shared<RtpInactivityTimer>(ioc.get_executor(), kShortInactivityTimeout, [&expiry_count] {
-            ++expiry_count;
-        });
+    int scan_count = 0;
+    auto timer = std::make_shared<RtpInactivityTimer>(ioc.get_executor(), kShortInactivityTimeout);
 
     timer->start();
     ioc.run_for(kExpiryRunWindow);
+    timer->run_pending_scan([&scan_count](auto) { ++scan_count; });
+    timer->run_pending_scan([&scan_count](auto) { ++scan_count; });
 
-    CHECK(expiry_count == 1);
+    CHECK(scan_count == 1);
 }
 
-TEST_CASE("RtpInactivityTimer restarts its window after activity", "[RtpInactivityTimer]") {
+TEST_CASE("RtpInactivityTimer stops future ticks", "[RtpInactivityTimer]") {
     io_context ioc;
-    bool expired = false;
-    auto timer = std::make_shared<RtpInactivityTimer>(ioc.get_executor(), kRestartInactivityTimeout, [&expired] {
-        expired = true;
-    });
+    int scan_count = 0;
+    auto timer = std::make_shared<RtpInactivityTimer>(ioc.get_executor(), kShortInactivityTimeout);
 
     timer->start();
     ioc.run_for(kActivityDelay);
-    timer->notify_activity();
-    ioc.run_for(kPostActivityCheckWindow);
-    CHECK_FALSE(expired);
-
-    ioc.run_for(kFinalExpiryWindow);
-    CHECK(expired);
-}
-
-TEST_CASE("RtpInactivityTimer does not retain its callback owner", "[RtpInactivityTimer]") {
-    io_context ioc;
-    auto owner = std::make_shared<int>(0);
-    std::weak_ptr<int> weak_owner = owner;
-    auto timer = std::make_shared<RtpInactivityTimer>(ioc.get_executor(), kShortInactivityTimeout, [weak_owner] {
-        if (auto locked = weak_owner.lock()) {
-            ++*locked;
-        }
-    });
-
-    timer->start();
-    timer.reset();
-    owner.reset();
+    timer->run_pending_scan([&scan_count](auto) { ++scan_count; });
+    timer->stop();
+    ioc.restart();
     ioc.run_for(kExpiryRunWindow);
+    timer->run_pending_scan([&scan_count](auto) { ++scan_count; });
 
-    CHECK(weak_owner.expired());
+    CHECK(scan_count == 1);
 }
 
-TEST_CASE("MediaBridge reports call-wide RTP inactivity", "[MediaBridge]") {
+TEST_CASE("MediaBridge records the last RTP activity time", "[MediaBridge]") {
     io_context ioc;
-    bool expired = false;
-    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor(), kShortInactivityTimeout);
-    bridge->set_inactivity_handler([&expired] { expired = true; });
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
 
+    const auto before_start = std::chrono::steady_clock::now();
     bridge->start_bridge_loop();
-    ioc.run_for(kExpiryRunWindow);
 
-    CHECK(expired);
+    CHECK(bridge->last_packet_time() >= before_start);
 }
