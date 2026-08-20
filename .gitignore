@@ -11,3 +11,5 @@ agentdb.rvf
 agentdb.rvf.lock
 ruvector.db
 CLAUDE.md
+build-cross
+build-cross-musl
