@@ -4,8 +4,8 @@ build/
 .claude/
 .memsearch/
 docs/
-.claude-flow/
 settings.toml
+**/config.json
 skills-lock.json
 agentdb.rvf
 agentdb.rvf.lock

@@ -5,13 +5,41 @@ Integration tests for the SBC's B2BUA functionality using SIPp.
 
 ## Configuration
 
-Edit `config.json` to change the test IPs and ports:
+Edit `config.json` to configure the scenarios:
+
 - `local_ip`: IP for SIPp to bind to.
 - `sbc_port`: Port of the SBC to send calls to.
 - `callee_port`: Port the Callee listens on.
 - `caller_port`: Port the Caller uses.
+- `callee_media_port`: Base RTP port used by the Callee.
+- `caller_media_port`: Base RTP port used by the Caller.
+
+SIPp reserves two RTP sockets for each configured media base port: the base
+port for audio and `base + 2` for video, even though these scenarios advertise
+only audio. Keep the Caller and Callee base ports at least four ports apart to
+avoid a bind collision. For example, the values in `config-example.json`
+reserve `6002`/`6004` for the Caller and `6006`/`6008` for the Callee. A
+collision is reported by SIPp as `Unable to bind video RTP socket`.
 
 RTP (using `g711a.pcap`) is continuously streamed independently by both Caller and Callee at realistic G.711 packet pacing (~30ms per packet).
+
+### SIPp raw-socket permission
+
+The scenarios use SIPp's `play_pcap_audio` action. Replaying packets from a
+PCAP requires permission to create raw network sockets. Grant only that
+capability to the installed SIPp executable once:
+
+```bash
+SIPP_BIN="$(readlink -f "$(command -v sipp)")"
+sudo setcap cap_net_raw+ep "$SIPP_BIN"
+getcap "$SIPP_BIN"
+```
+
+The final command should report `cap_net_raw=ep`. Without this capability,
+SIPp fails when media playback begins with `Can't create raw IPv4 socket`.
+The `just test-b2bua` recipe checks this prerequisite before starting either
+SIPp process and prints the setup command when it is missing. Running the
+entire test as root is unnecessary.
 
 ## How to Run
 
@@ -34,19 +62,14 @@ with `--log-level trace`.
    ```
 4. Both processes exit on their own after the BYE/200 OK exchange.
 
-### `--loop`: long-lived call, manual teardown
+### Loop mode: long-lived call, manual teardown
 
-Pass `--loop` to either script to hold the call up indefinitely instead
-(the original behavior): audio loops continuously and nothing sends `BYE`
-on its own.
+In this mode, audio loops continuously and neither scenario sends `BYE`
+automatically.
 
 1. Start the SBC engine.
-2. Start the Callee:
+2. From the engine directory, start the test:
    ```bash
-   python3 run_callee.py --loop
+   just test-b2bua --loop
    ```
-3. Start the Caller:
-   ```bash
-   python3 run_caller.py --loop
-   ```
-4. Press `Ctrl+C` on each to stop.
+3. Press `Ctrl+C` to stop both SIPp processes.

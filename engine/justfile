@@ -45,22 +45,25 @@ format:
     cmake --build build --target format
 
 # Run B2BUA SIPp tests (assumes engine is already running)
-test-b2bua:
+test-b2bua *args:
     #!/usr/bin/env bash
     set -e
-    
-    # Start callee in background
-    python3 tests/b2bua/run_callee.py &
-    CALLEE_PID=$!
-    
-    # Give it a second to bind
-    sleep 1
-    
-    # Run caller in foreground
-    python3 tests/b2bua/run_caller.py
-    
-    # Wait for callee to finish
-    wait $CALLEE_PID
+
+    SIPP_BIN="$(command -v sipp || true)"
+    if [[ -z "$SIPP_BIN" ]]; then
+        echo "error: SIPp is not installed or is not in PATH" >&2
+        exit 1
+    fi
+
+    # play_pcap_audio opens a raw socket. Non-root runs therefore require
+    # CAP_NET_RAW on the SIPp executable.
+    if [[ $EUID -ne 0 ]] && ! getcap "$(readlink -f "$SIPP_BIN")" 2>/dev/null | grep -q 'cap_net_raw'; then
+        echo "error: SIPp needs CAP_NET_RAW to replay tests/b2bua/g711a.pcap" >&2
+        echo "run once: sudo setcap cap_net_raw+ep \"$(readlink -f "$SIPP_BIN")\"" >&2
+        exit 1
+    fi
+
+    python3 tests/b2bua/run_test.py {{args}}
 
 # Generate schemas using the schema generator tool
 generate-schemas:
