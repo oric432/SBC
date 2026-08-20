@@ -1,5 +1,18 @@
 cmake_minimum_required(VERSION 3.23)
+
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/CrossToolchainFetch.cmake")
+
 project(sbc LANGUAGES C CXX)
+
+if(CMAKE_TOOLCHAIN_FILE)
+    # CMake's Clang-ASM module still emits the legacy single-dash
+    # -gcc-toolchain spelling for CMAKE_ASM_COMPILER_EXTERNAL_TOOLCHAIN; this
+    # clang build (22.1.8) rejects it outright ("unknown argument"), even
+    # though the C/CXX modules already emit the modern --gcc-toolchain= form
+    # and compile fine. --sysroot alone (set separately via CMAKE_SYSROOT) is
+    # all hand-written .S sources (e.g. Boost.Context) need.
+    set(CMAKE_ASM_COMPILER_EXTERNAL_TOOLCHAIN "")
+endif()
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

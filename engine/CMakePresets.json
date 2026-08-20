@@ -87,6 +87,32 @@
             }
         },
         {
+            "name": "cross-linux-gnu",
+            "description": "Release build cross-compiled for x86_64 Linux (glibc 2.17 baseline) via CACI-International/cpp-toolchain",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-cross",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/build-cross/portable_cc_toolchain/x86_64-unknown-linux-gnu.cmake",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER_LAUNCHER": "ccache",
+                "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"
+            }
+        },
+        {
+            "name": "cross-linux-musl",
+            "description": "Release build, fully static x86_64 Linux binary (musl) via CACI-International/cpp-toolchain",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build-cross-musl",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/build-cross-musl/portable_cc_toolchain/x86_64-unknown-linux-musl.cmake",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER_LAUNCHER": "ccache",
+                "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"
+            }
+        },
+        {
             "name": "tools-only",
             "inherits": "release",
             "description": "Release build with tools only",
@@ -142,6 +168,14 @@
             "configurePreset": "tools-only"
         },
         {
+            "name": "build-cross-linux-gnu",
+            "configurePreset": "cross-linux-gnu"
+        },
+        {
+            "name": "build-cross-linux-musl",
+            "configurePreset": "cross-linux-musl"
+        },
+        {
             "name": "build-schema-gen",
             "configurePreset": "schema-gen-only"
         }
@@ -154,6 +188,14 @@
         {
             "name": "test-ci-debug",
             "configurePreset": "ci-debug"
+        },
+        {
+            "name": "test-cross-linux-gnu",
+            "configurePreset": "cross-linux-gnu"
+        },
+        {
+            "name": "test-cross-linux-musl",
+            "configurePreset": "cross-linux-musl"
         }
     ]
 }
