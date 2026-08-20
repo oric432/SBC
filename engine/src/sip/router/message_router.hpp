@@ -40,6 +40,10 @@ public:
     // `rdata` is the message that triggered the change (may be null).
     void on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
 
+    // Called by the PJSIP event loop so media-thread notifications are handled
+    // on the only thread allowed to touch invite sessions and dialog SMs.
+    void process_pending_media_events();
+
 private:
     // Stateful message handlers
     void process_invite(pjsip_rx_data* rx_data);

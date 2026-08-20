@@ -1,5 +1,6 @@
 #include "call_session.hpp"
 
+#include "sip/call/call_manager.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 

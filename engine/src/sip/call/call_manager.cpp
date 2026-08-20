@@ -1,9 +1,11 @@
 #include "call_manager.hpp"
 
+#include "net/rtp/RtpInactivityTimer.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/events.hpp"
+#include "core/utils/log.hpp"
 
 namespace SbcEngine {
 
@@ -31,6 +33,7 @@ CallSession* CallManager::find_by_call_id(const std::string& call_id) {
 
 CallSession* CallManager::find_by_inv(pjsip_inv_session* inv) {
     for (auto& [call_id, session] : sessions_) {
+        (void)call_id;
         if (session->inv_caller() == inv || session->inv_callee() == inv) {
             return session.get();
         }
@@ -53,6 +56,52 @@ void CallManager::purge_scheduled() {
     pending_remove_.clear();
 }
 
+void CallManager::start_rtp_inactivity_timer(
+    const boost::asio::any_io_executor& executor,
+    std::chrono::steady_clock::duration interval) {
+    rtp_inactivity_timer_ = std::make_shared<RtpInactivityTimer>(executor, interval);
+    rtp_inactivity_timer_->start();
+}
+
+void CallManager::stop_rtp_inactivity_timer() {
+    if (rtp_inactivity_timer_) {
+        rtp_inactivity_timer_->stop();
+        rtp_inactivity_timer_.reset();
+    }
+}
+
+void CallManager::process_pending_rtp_inactivity() {
+    if (!rtp_inactivity_timer_) {
+        return;
+    }
+
+    rtp_inactivity_timer_->run_pending_scan([this](std::chrono::steady_clock::duration interval) {
+        std::vector<CallSession*> inactive_sessions;
+        const auto now = std::chrono::steady_clock::now();
+        for (auto& [call_id, session] : sessions_) {
+            if (!session->setup_sm().is(Sml::state<Done>)) {
+                continue;
+            }
+
+            const auto last_packet = session->media_bridge()->last_packet_time();
+            if (last_packet == std::chrono::steady_clock::time_point{} || now - last_packet < interval) {
+                continue;
+            }
+
+            auto& dialog = session->dialog_sm();
+            if (dialog.is(Sml::state<Active>) || dialog.is(Sml::state<Reinviting>) ||
+                dialog.is(Sml::state<WaitingForReinviteAck>)) {
+                inactive_sessions.push_back(session.get());
+            }
+        }
+
+        for (CallSession* session : inactive_sessions) {
+            Log::call()->warn("[{}] RTP inactivity timeout; terminating call", session->call_id());
+            session->dialog_sm().process_event(CallError{});
+        }
+    });
+}
+
 void CallManager::terminate_established_calls() {
     for (auto& [call_id, session] : sessions_) {
         auto& dialog = session->dialog_sm();
@@ -61,6 +110,8 @@ void CallManager::terminate_established_calls() {
             dialog.process_event(CallError{});
         }
     }
+
+    stop_rtp_inactivity_timer();
 }
 
 } // namespace SbcEngine
