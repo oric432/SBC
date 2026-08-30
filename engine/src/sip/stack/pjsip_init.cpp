@@ -144,6 +144,17 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
         return std::unexpected(pj_error("pjsip_endpt_register_module failed", status));
     }
 
+    // pjsip_inv_usage_init() already registered INVITE/ACK/BYE/CANCEL/UPDATE
+    // (plus PRACK via 100rel) in the endpoint's Allow capability; add OPTIONS
+    // so responses built from that capability (see OptionsActions) advertise
+    // it too, per RFC 3261.
+    static std::string options_method = "OPTIONS";
+    pj_str_t options_tag = pj_str(options_method.data());
+    status = pjsip_endpt_add_capability(endpt_, &module_, PJSIP_H_ALLOW, nullptr, 1, &options_tag);
+    if (status != PJ_SUCCESS) {
+        return std::unexpected(pj_error("pjsip_endpt_add_capability failed", status));
+    }
+
     g_active_stack = this;
     initialized_ = true;
     Log::sip()->info("PJSIP stack initialized, listening on {}:{}", config.bind_ip_, config.sip_port_);
