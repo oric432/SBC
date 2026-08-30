@@ -8,6 +8,7 @@
 #include <pjsip_ua.h>
 
 #include "sip/call/pj_context.hpp"
+#include "sip/router/options_actions.hpp"
 #include "sip/router/real_dialog_actions.hpp"
 #include "sip/routes/routes_store.hpp"
 
@@ -31,7 +32,8 @@ public:
         : ctx_(ctx)
         , call_manager_(call_manager)
         , routes_store_(routes_store)
-        , executor_(std::move(executor)) {}
+        , executor_(std::move(executor))
+        , options_actions_(ctx) {}
 
     // Main entry point: called by the PJSIP module for out-of-dialog requests.
     void on_rx_request(pjsip_rx_data* rx_data);
@@ -46,6 +48,7 @@ private:
     void process_bye(pjsip_rx_data* rx_data);
     void process_cancel(pjsip_rx_data* rx_data);
     void process_ack(pjsip_rx_data* rx_data);
+    void process_options(pjsip_rx_data* rx_data);
 
     // Invite-state → SM event mapping per leg
     static void handle_setup_disconnect(CallSession* session, pjsip_inv_session* inv);
@@ -61,6 +64,7 @@ private:
     CallManager* call_manager_;
     RoutesStore* routes_store_;
     boost::asio::any_io_executor executor_;
+    OptionsActions options_actions_;
 };
 
 } // namespace SbcEngine

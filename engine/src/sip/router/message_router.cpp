@@ -2,8 +2,12 @@
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include <queue>
+
 #include "sip/router/extract_utils.hpp"
 #include "sip/sm/events.hpp"
+#include "sip/sm/options_sm.hpp"
+#include "sip/sm/sm_logger.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
@@ -31,6 +35,9 @@ void MessageRouter::on_rx_request(pjsip_rx_data* rx_data) {
     }
     else if (method == "ACK") {
         process_ack(rx_data);
+    }
+    else if (method == "OPTIONS") {
+        process_options(rx_data);
     }
     else {
         send_405_method_not_allowed(rx_data);
@@ -238,6 +245,22 @@ void MessageRouter::process_cancel(pjsip_rx_data* rx_data) {
 
 void MessageRouter::process_ack([[maybe_unused]] pjsip_rx_data* rx_data) {
     // Stray ACK (no matching dialog): ACK never gets a response; drop it.
+}
+
+void MessageRouter::process_options(pjsip_rx_data* rx_data) {
+    // Out-of-dialog OPTIONS (RFC 3261): answered directly here, without
+    // creating a dialog or involving a CallSession. A fresh machine per
+    // request keeps options_actions_ reusable across requests; the SM
+    // self-fires ResponseSent right after the response goes out and runs
+    // cleanup() as that transition's own action (see OptionsSm), so a single
+    // MessageReceived drives it straight to Done with nothing left to call
+    // by hand afterward.
+    options_actions_.set_request(rx_data);
+    SmLogger logger("options", extract_call_id(rx_data));
+    Sml::sm<OptionsSm<OptionsActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>> options_sm{
+        options_actions_,
+        logger};
+    options_sm.process_event(MessageReceived{});
 }
 
 // ════════════════════════════════════════════════════════════════════════════
