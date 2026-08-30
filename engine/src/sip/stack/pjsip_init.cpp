@@ -124,6 +124,11 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
         return std::unexpected(pj_error("pjsip_inv_usage_init failed", status));
     }
 
+    status = pjsip_timer_init_module(endpt_);
+    if (status != PJ_SUCCESS) {
+        return std::unexpected(pj_error("pjsip_timer_init_module failed", status));
+    }
+
     // The invite session attaches mod-100rel when creating UAC sessions and
     // asserts if it was never registered, so it must be initialized even
     // though we do not orchestrate PRACK ourselves.

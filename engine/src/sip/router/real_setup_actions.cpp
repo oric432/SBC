@@ -202,7 +202,10 @@ bool RealSetupActions::create_outbound_leg(const std::string& destination) {
     }
 
     pjsip_inv_session* inv = nullptr;
-    status = pjsip_inv_create_uac(dlg, offer, 0, &inv);
+    // This is an independent RFC 4028 negotiation from the caller-facing
+    // leg. PJSIP refreshes with UPDATE when the callee advertises UPDATE in
+    // Allow, otherwise it uses re-INVITE.
+    status = pjsip_inv_create_uac(dlg, offer, PJSIP_INV_SUPPORT_TIMER, &inv);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] pjsip_inv_create_uac failed ({})", session_.call_id(), status);
         return false;
