@@ -58,6 +58,9 @@ void SbcApp::init_routes(const Settings& settings) {
 PjsipConfig SbcApp::init_pjsip(const Settings& settings) {
     PjsipConfig config;
     config.bind_ip_ = settings.sip.address;
+    // Single-homed deployment: the address we bind to is also the address we
+    // advertise (Contact/SDP). Breaks if sip.address is ever "0.0.0.0".
+    config.local_ip_ = settings.sip.address;
     config.sip_port_ = settings.sip.port;
     config.identity_user_ = settings.sip.identity_user;
     config.invite_timeout_ms_ = settings.sip.invite_timeout_ms;

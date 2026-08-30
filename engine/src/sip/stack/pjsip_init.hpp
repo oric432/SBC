@@ -19,7 +19,10 @@ constexpr int kDefaultRtpInactivityTimeoutSeconds = 60;
 // Runtime configuration for the PJSIP stack.
 struct PjsipConfig {
     std::string bind_ip_ = "0.0.0.0"; // interface the SIP UDP transport binds to
-    std::string local_ip_ = "127.0.0.1"; // address advertised in rewritten SDP (must be routable)
+    // Address advertised in rewritten SDP and Contact headers (must be routable
+    // by peers, never "0.0.0.0"). Sourced from Settings::sip.address — see
+    // SbcApp::init_pjsip.
+    std::string local_ip_ = "127.0.0.1";
     uint16_t sip_port_ = kDefaultSipPort;
     int pjsip_log_level_ = 0; // native PJSIP log verbosity (0 = disabled), see Settings::pjsip_log_level
     std::string identity_user_ = "sbc"; // user part of our own Contact/From URI, see Settings::sip_identity_user
