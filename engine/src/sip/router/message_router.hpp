@@ -11,6 +11,7 @@
 #include "sip/router/options_actions.hpp"
 #include "sip/router/real_dialog_actions.hpp"
 #include "sip/routes/routes_store.hpp"
+#include "sip/sm/options_sm_runner.hpp"
 
 namespace SbcEngine {
 
@@ -33,7 +34,8 @@ public:
         , call_manager_(call_manager)
         , routes_store_(routes_store)
         , executor_(std::move(executor))
-        , options_actions_(ctx) {}
+        , options_actions_(ctx)
+        , options_sm_(options_actions_, "") {}
 
     // Main entry point: called by the PJSIP module for out-of-dialog requests.
     void on_rx_request(pjsip_rx_data* rx_data);
@@ -64,7 +66,10 @@ private:
     CallManager* call_manager_;
     RoutesStore* routes_store_;
     boost::asio::any_io_executor executor_;
+    // options_sm_ must be declared after options_actions_ (construction
+    // order) since it's given a reference to it.
     OptionsActions options_actions_;
+    OptionsSmRunner options_sm_;
 };
 
 } // namespace SbcEngine
