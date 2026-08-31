@@ -63,10 +63,6 @@ public:
     // the SIP thread. It is the default time point until the relay is started.
     [[nodiscard]] std::chrono::steady_clock::time_point last_packet_time() const;
 
-    // The timestamp is written by the RTP executor and may safely be read by
-    // the SIP thread. It is the default time point until the relay is started.
-    [[nodiscard]] std::chrono::steady_clock::time_point last_packet_time() const;
-
     void start_bridge_loop();
 
     std::expected<void, std::error_code> close();
