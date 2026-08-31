@@ -2,8 +2,10 @@
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+
 #include "sip/router/extract_utils.hpp"
 #include "sip/sm/events.hpp"
+#include "sip/sm/options_sm_runner.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
@@ -36,6 +38,9 @@ void MessageRouter::on_rx_request(pjsip_rx_data* rx_data) {
     }
     else if (method == "ACK") {
         process_ack(rx_data);
+    }
+    else if (method == "OPTIONS") {
+        process_options(rx_data);
     }
     else {
         send_405_method_not_allowed(rx_data);
@@ -85,7 +90,7 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     case PJSIP_INV_STATE_DISCONNECTED:
         Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_DISCONNECTED", session->call_id());
 
-        if (setup.is(Sml::state<Done>)) {
+        if (setup.is_done()) {
             handle_dialog_disconnect(session, inv);
         }
         else {
@@ -109,7 +114,7 @@ void MessageRouter::handle_setup_disconnect(CallSession* session, pjsip_inv_sess
     const int cause = static_cast<int>(inv->cause);
 
     if (is_callee_leg) {
-        if (setup.is(Sml::state<Cancelling>)) {
+        if (setup.is_cancelling()) {
             // Our CANCEL took effect; caller side is finished by PJSIP.
             setup.process_event(InviteTerminated{});
         }
@@ -143,11 +148,11 @@ void MessageRouter::handle_dialog_disconnect(CallSession* session, pjsip_inv_ses
             is_caller_leg ? "caller" : "callee");
     }
 
-    if (dialog.is(Sml::state<Active>)) {
+    if (dialog.is_active()) {
         // First leg to drop initiates teardown of the other.
         dialog.process_event(ByeReceived{is_caller_leg});
     }
-    else if (dialog.is(Sml::state<Terminating>)) {
+    else if (dialog.is_terminating()) {
         // Second leg finished → the call is fully over. Cleanup{} self-fires
         // from DialogSm's own action once Terminated is reached.
         dialog.process_event(CallEnded{});
@@ -256,6 +261,21 @@ void MessageRouter::process_cancel(pjsip_rx_data* rx_data) {
 
 void MessageRouter::process_ack([[maybe_unused]] pjsip_rx_data* rx_data) {
     // Stray ACK (no matching dialog): ACK never gets a response; drop it.
+}
+
+void MessageRouter::process_options(pjsip_rx_data* rx_data) {
+    // Out-of-dialog OPTIONS (RFC 3261): answered directly here, without
+    // creating a dialog or involving a CallSession. options_sm_ is a single
+    // persistent instance reset() per request (rather than reconstructed) to
+    // avoid a heap allocation on every OPTIONS keepalive — safe because
+    // on_rx_request is only ever driven from the PJSIP event-pump thread.
+    // The SM self-fires ResponseSent right after the response goes out and
+    // runs cleanup() as that transition's own action (see OptionsSm), so a
+    // single MessageReceived drives it straight to Done with nothing left to
+    // call by hand afterward.
+    options_actions_.set_request(rx_data);
+    options_sm_.reset(extract_call_id(rx_data));
+    options_sm_.process_event(MessageReceived{});
 }
 
 // ════════════════════════════════════════════════════════════════════════════

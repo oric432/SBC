@@ -10,6 +10,9 @@ add_library(sip STATIC
     router/extract_utils.cpp
     routes/routes_store.cpp
     routes/routes_manager.cpp
+    sm/setup_sm_runner.cpp
+    sm/dialog_sm_runner.cpp
+    sm/options_sm_runner.cpp
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(sip PUBLIC

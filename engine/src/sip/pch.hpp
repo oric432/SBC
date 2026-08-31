@@ -22,3 +22,7 @@
 #include <spdlog/logger.h>
 #include <spdlog/common.h>
 #include <boost/sml.hpp>
+#include <boost/asio.hpp>
+#include <pjlib.h>
+#include <pjsip.h>
+#include <pjsip_ua.h>
