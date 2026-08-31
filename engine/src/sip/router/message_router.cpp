@@ -45,16 +45,10 @@ void MessageRouter::on_rx_request(pjsip_rx_data* rx_data) {
     else {
         send_405_method_not_allowed(rx_data);
     }
-
-    call_manager_->purge_scheduled();
 }
 
 void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-    auto* session = static_cast<CallSession*>(inv->mod_data[ctx_->module_id_]);
-    if (session == nullptr) {
-        session = call_manager_->find_by_inv(inv);
-    }
+    CallSession* session = call_manager_->find_by_inv(inv);
     if (session == nullptr) {
         return; // not one of ours (or already removed)
     }
@@ -100,7 +94,10 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
 
     default: break;
     }
+}
 
+void MessageRouter::process_pending_media_events() {
+    call_manager_->process_pending_rtp_inactivity();
     call_manager_->purge_scheduled();
 }
 
@@ -227,8 +224,6 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     // construction; nothing here needs to parse the message itself.
     CallSession* session = call_manager_->create_session(call_id, ctx_, routes_store_, executor_, rx_data);
     session->set_inv_caller(inv);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-    inv->mod_data[ctx_->module_id_] = session;
 
     Log::call()->info(
         "[{}] received INVITE from caller ({}), request-uri {}",

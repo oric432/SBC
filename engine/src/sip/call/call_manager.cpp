@@ -1,5 +1,7 @@
 #include "call_manager.hpp"
 
+#include "core/utils/log.hpp"
+#include "net/rtp/RtpInactivityTimer.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/sm/events.hpp"
@@ -30,6 +32,7 @@ CallSession* CallManager::find_by_call_id(const std::string& call_id) {
 
 CallSession* CallManager::find_by_inv(pjsip_inv_session* inv) {
     for (auto& [call_id, session] : sessions_) {
+        (void)call_id;
         if (session->inv_caller() == inv || session->inv_callee() == inv) {
             return session.get();
         }
@@ -38,27 +41,73 @@ CallSession* CallManager::find_by_inv(pjsip_inv_session* inv) {
 }
 
 void CallManager::remove_session(const std::string& call_id) {
-    sessions_.erase(call_id);
+    schedule_remove(call_id);
 }
 
 void CallManager::schedule_remove(const std::string& call_id) {
-    pending_remove_.push_back(call_id);
+    auto iter = sessions_.find(call_id);
+    if (iter == sessions_.end()) {
+        return;
+    }
+
+    retired_sessions_.push_back(std::move(iter->second));
+    sessions_.erase(iter);
 }
 
 void CallManager::purge_scheduled() {
-    for (const auto& call_id : pending_remove_) {
-        sessions_.erase(call_id);
+    retired_sessions_.clear();
+}
+
+void CallManager::start_rtp_inactivity_timer(
+    const boost::asio::any_io_executor& executor,
+    std::chrono::steady_clock::duration interval) {
+    rtp_inactivity_timer_ = std::make_shared<RtpInactivityTimer>(executor, interval);
+    rtp_inactivity_timer_->start();
+}
+
+void CallManager::stop_rtp_inactivity_timer() {
+    if (rtp_inactivity_timer_) {
+        rtp_inactivity_timer_->stop();
+        rtp_inactivity_timer_.reset();
     }
-    pending_remove_.clear();
+}
+
+void CallManager::process_pending_rtp_inactivity() {
+    if (!rtp_inactivity_timer_) {
+        return;
+    }
+
+    rtp_inactivity_timer_->run_pending_scan([this](std::chrono::steady_clock::duration interval) {
+        const auto now = std::chrono::steady_clock::now();
+        for (auto& [call_id, session] : sessions_) {
+            if (!session->setup_sm().is_done()) {
+                continue;
+            }
+
+            const auto last_packet = session->media_bridge()->last_packet_time();
+            if (!is_rtp_inactive(last_packet, now, interval)) {
+                continue;
+            }
+
+            auto& dialog = session->dialog_sm();
+            if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
+                Log::call()->warn("[{}] removing session because the RTP inactivity timeout expired", call_id);
+                dialog.process_event(CallError{});
+            }
+        }
+    });
 }
 
 void CallManager::terminate_established_calls() {
     for (auto& [call_id, session] : sessions_) {
+        (void)call_id;
         auto& dialog = session->dialog_sm();
         if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
             dialog.process_event(CallError{});
         }
     }
+
+    stop_rtp_inactivity_timer();
 }
 
 } // namespace SbcEngine

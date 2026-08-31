@@ -2,13 +2,23 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "net/rtp/MediaBridge.hpp"
+#include "net/rtp/RtpInactivityTimer.hpp"
 #include <boost/asio.hpp>
-#include <chrono>
 #include <vector>
 
 using namespace SbcEngine;
 using namespace boost::asio;
 using namespace boost::asio::ip;
+using namespace std::chrono_literals;
+
+namespace {
+constexpr auto kRelayRunWindow = 250ms;
+constexpr std::size_t kReceiveBufferSize = 2048;
+constexpr unsigned short kUnreachableTestPort = 12345;
+constexpr auto kShortInactivityTimeout = 20ms;
+constexpr auto kExpiryRunWindow = 60ms;
+constexpr auto kActivityDelay = 25ms;
+} // namespace
 
 TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
     io_context ioc;
@@ -42,13 +52,13 @@ TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
 
     // Async receive on callee socket
     bool received = false;
-    std::vector<uint8_t> recv_buf(2048);
+    std::vector<uint8_t> recv_buf(kReceiveBufferSize);
     udp::endpoint recv_ep;
     callee_sock.async_receive_from(
         buffer(recv_buf),
         recv_ep,
-        [&](const boost::system::error_code& ec, std::size_t bytes_recvd) {
-            REQUIRE(!ec);
+        [&](const boost::system::error_code& errc, std::size_t bytes_recvd) {
+            REQUIRE(!errc);
             REQUIRE(bytes_recvd == dummy_packet.size());
             // The bridge sends from Leg B to Callee.
             REQUIRE(recv_ep.port() == leg_b_port.value());
@@ -56,7 +66,7 @@ TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
         });
 
     // Run io_context for a short duration to process the async relay
-    ioc.run_for(std::chrono::milliseconds(250));
+    ioc.run_for(kRelayRunWindow);
 
     REQUIRE(received == true);
 }
@@ -86,7 +96,7 @@ TEST_CASE("MediaBridge reports relay send errors via the error handler", "[Media
     // Leg A's relay target is IPv6 while its bound socket is IPv4-only, so the
     // relay's send to leg B fails immediately once a packet arrives on leg A.
     bridge->set_remote_leg_a("127.0.0.1", caller_ep.port());
-    bridge->set_remote_leg_b("::1", 12345);
+    bridge->set_remote_leg_b("::1", kUnreachableTestPort);
 
     bridge->start_bridge_loop();
 
@@ -95,11 +105,68 @@ TEST_CASE("MediaBridge reports relay send errors via the error handler", "[Media
     udp::endpoint bridge_leg_a_ep(make_address("127.0.0.1"), leg_a_port.value());
     caller_sock.send_to(buffer(dummy_packet), bridge_leg_a_ep);
 
-    ioc.run_for(std::chrono::milliseconds(250));
+    ioc.run_for(kRelayRunWindow);
 
     REQUIRE_FALSE(reported_errors.empty());
     const auto& [leg, operation, error] = reported_errors.front();
     CHECK(leg == RelayLeg::kLegB);
     CHECK(operation == RelayOp::kSend);
     CHECK(error);
+}
+
+TEST_CASE("RtpInactivityTimer exposes a pending periodic scan", "[RtpInactivityTimer]") {
+    io_context ioc;
+    int scan_count = 0;
+    auto timer = std::make_shared<RtpInactivityTimer>(ioc.get_executor(), kShortInactivityTimeout);
+
+    timer->start();
+    ioc.run_for(kExpiryRunWindow);
+    timer->run_pending_scan([&scan_count](auto) { ++scan_count; });
+    timer->run_pending_scan([&scan_count](auto) { ++scan_count; });
+
+    CHECK(scan_count == 1);
+}
+
+TEST_CASE("RtpInactivityTimer stops future ticks", "[RtpInactivityTimer]") {
+    io_context ioc;
+    int scan_count = 0;
+    auto timer = std::make_shared<RtpInactivityTimer>(ioc.get_executor(), kShortInactivityTimeout);
+
+    timer->start();
+    ioc.run_for(kActivityDelay);
+    timer->run_pending_scan([&scan_count](auto) { ++scan_count; });
+    timer->stop();
+    ioc.restart();
+    ioc.run_for(kExpiryRunWindow);
+    timer->run_pending_scan([&scan_count](auto) { ++scan_count; });
+
+    CHECK(scan_count == 1);
+}
+
+TEST_CASE("MediaBridge records the last RTP activity time", "[MediaBridge]") {
+    io_context ioc;
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+
+    const auto before_start = std::chrono::steady_clock::now();
+    bridge->start_bridge_loop();
+
+    CHECK(bridge->last_packet_time() >= before_start);
+}
+
+TEST_CASE("is_rtp_inactive gates on elapsed time and a never-started bridge", "[RtpInactivityTimer]") {
+    constexpr auto kInterval = 60s;
+    const auto now = std::chrono::steady_clock::now();
+
+    SECTION("no packet ever recorded is never inactive, no matter how far in the past `now` looks") {
+        CHECK_FALSE(is_rtp_inactive(std::chrono::steady_clock::time_point{}, now, kInterval));
+    }
+
+    SECTION("elapsed time under the interval is not inactive") {
+        CHECK_FALSE(is_rtp_inactive(now - (kInterval - 1s), now, kInterval));
+    }
+
+    SECTION("elapsed time at or over the interval is inactive") {
+        CHECK(is_rtp_inactive(now - kInterval, now, kInterval));
+        CHECK(is_rtp_inactive(now - (kInterval + 1s), now, kInterval));
+    }
 }

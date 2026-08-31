@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -13,11 +14,12 @@
 namespace SbcEngine {
 
 class CallSession;
+class RtpInactivityTimer;
 class RoutesStore;
 struct PjContext;
 
-// Owns all active CallSessions and provides lookup by Call-ID or by either of a
-// call's two PJSIP invite sessions.
+// Owns all CallSessions and provides authoritative lookup by Call-ID or by
+// either of a call's two PJSIP invite sessions.
 class CallManager {
 public:
     // Both out of line: the sessions_ map needs the complete CallSession type
@@ -41,10 +43,17 @@ public:
     void remove_session(const std::string& call_id);
 
     // A session cannot delete itself from inside its own SM action (the SM is
-    // still executing). cleanup() marks it here; the router purges after the
-    // current callback fully unwinds.
+    // still executing). Scheduling immediately removes every lookup path, then
+    // purge_scheduled() destroys the retired object after PJSIP dispatch returns.
     void schedule_remove(const std::string& call_id);
     void purge_scheduled();
+
+    // A single Asio timer requests periodic scans. The actual scan and all
+    // CallError transitions happen in process_pending_rtp_inactivity() on the
+    // SIP thread.
+    void start_rtp_inactivity_timer(
+        const boost::asio::any_io_executor& executor,
+        std::chrono::steady_clock::duration interval);
 
     // Sends a BYE to both legs of every call whose dialog is confirmed and
     // still up (Active/Reinviting/WaitingForReinviteAck), so peers aren't left
@@ -52,9 +61,14 @@ public:
     // yet) are left alone here.
     void terminate_established_calls();
 
+    void process_pending_rtp_inactivity();
+
 private:
+    void stop_rtp_inactivity_timer();
+
     std::unordered_map<std::string, std::unique_ptr<CallSession>> sessions_;
-    std::vector<std::string> pending_remove_;
+    std::vector<std::unique_ptr<CallSession>> retired_sessions_;
+    std::shared_ptr<RtpInactivityTimer> rtp_inactivity_timer_;
 };
 
 } // namespace SbcEngine

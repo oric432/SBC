@@ -196,6 +196,9 @@ void PjsipStack::run() {
     while (running_) {
         const pj_time_val timeout = {.sec = 0, .msec = kEventPollMs};
         pjsip_endpt_handle_events(endpt_, &timeout);
+        if (router_ != nullptr) {
+            router_->process_pending_media_events();
+        }
     }
 }
 
