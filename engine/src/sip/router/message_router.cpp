@@ -12,6 +12,11 @@ namespace SbcEngine {
 
 namespace {
 constexpr int kMinFinalErrorCode = 300;
+constexpr char kSessionTimerExpiredCause[] = "No session refresh received.";
+
+bool is_session_timer_expiry(const pjsip_inv_session* inv) {
+    return inv->cause == PJSIP_SC_REQUEST_TIMEOUT && pj_stricmp2(&inv->cause_text, kSessionTimerExpiredCause) == 0;
+}
 } // namespace
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -133,10 +138,19 @@ void MessageRouter::handle_setup_disconnect(CallSession* session, pjsip_inv_sess
 
 void MessageRouter::handle_dialog_disconnect(CallSession* session, pjsip_inv_session* inv) {
     auto& dialog = session->dialog_sm();
+    const bool is_caller_leg = inv == session->inv_caller();
+
+    if (is_session_timer_expiry(inv)) {
+        Log::call()->warn(
+            "[{}] RFC 4028 session timer expired on {} leg; PJSIP sent BYE because the session refresh was missing "
+            "or unanswered",
+            session->call_id(),
+            is_caller_leg ? "caller" : "callee");
+    }
 
     if (dialog.is_active()) {
         // First leg to drop initiates teardown of the other.
-        dialog.process_event(ByeReceived{inv == session->inv_caller()});
+        dialog.process_event(ByeReceived{is_caller_leg});
     }
     else if (dialog.is_terminating()) {
         // Second leg finished → the call is fully over. Cleanup{} self-fires
@@ -162,7 +176,11 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     }
 
     // Let PJSIP vet transaction-level correctness before we orchestrate.
-    unsigned options = 0;
+    // Enable RFC 4028 on the caller-facing leg. The timer module processes
+    // Session-Expires/Min-SE and owns timer-only UPDATE/re-INVITE refreshes;
+    // the verified options must also be passed to pjsip_inv_create_uas() so
+    // peer requirements discovered here remain attached to this leg.
+    unsigned options = PJSIP_INV_SUPPORT_TIMER;
     pj_status_t status = pjsip_inv_verify_request(rx_data, &options, nullptr, nullptr, ctx_->endpt_, nullptr);
     if (status != PJ_SUCCESS) {
         respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);
@@ -197,7 +215,7 @@ void MessageRouter::process_invite(pjsip_rx_data* rx_data) {
     }
 
     pjsip_inv_session* inv = nullptr;
-    status = pjsip_inv_create_uas(dlg, rx_data, nullptr, 0, &inv);
+    status = pjsip_inv_create_uas(dlg, rx_data, nullptr, options, &inv);
     pjsip_dlg_dec_lock(dlg);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("pjsip_inv_create_uas failed ({})", status);
