@@ -1,5 +1,6 @@
 #include "call_manager.hpp"
 
+#include "core/utils/log.hpp"
 #include "net/rtp/RtpInactivityTimer.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/call/pj_context.hpp"
@@ -90,6 +91,7 @@ void CallManager::process_pending_rtp_inactivity() {
 
             auto& dialog = session->dialog_sm();
             if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
+                Log::call()->warn("[{}] removing session because the RTP inactivity timeout expired", call_id);
                 dialog.process_event(CallError{});
             }
         }
