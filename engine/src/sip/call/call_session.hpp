@@ -61,6 +61,7 @@ public:
     [[nodiscard]] const std::string& caller_offer_sdp() const { return caller_offer_sdp_; }
     [[nodiscard]] const std::string& request_uri() const { return request_uri_; }
     [[nodiscard]] const std::string& caller_uri() const { return caller_uri_; }
+    [[nodiscard]] const std::string& caller_display_name() const { return caller_display_name_; }
     [[nodiscard]] const std::string& outbound_destination() const { return outbound_destination_; }
     void set_outbound_destination(std::string dest) { outbound_destination_ = std::move(dest); }
 
@@ -87,6 +88,7 @@ private:
 
     std::string request_uri_;
     std::string caller_uri_;
+    std::string caller_display_name_;
     std::string outbound_destination_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.

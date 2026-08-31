@@ -21,6 +21,15 @@ std::string extract_call_id(pjsip_rx_data* rx_data);
 std::string extract_request_uri(pjsip_rx_data* rx_data);
 std::string extract_from_uri(pjsip_rx_data* rx_data);
 
+// Pulls the display name off the inbound From header, e.g. "Alice" for
+// `From: Alice <sip:alice@example.com>`. PJSIP's header parser always parses
+// From/To as a name-addr (parse_hdr_fromto passes PJSIP_PARSE_URI_AS_NAMEADDR
+// unconditionally), so ->uri is always a pjsip_name_addr even when no display
+// name was present in the message — .display is just empty in that case.
+// Used by RealSetupActions::create_outbound_leg() to carry the caller's real
+// identity onto the outbound leg's From header instead of the SBC's own.
+std::string extract_from_display_name(pjsip_rx_data* rx_data);
+
 // Pulls the "user" part out of a SIP URI like "sip:callee@sbc.local", so the
 // outbound Request-URI RealSetupActions::resolve_route() builds for a route's
 // destination keeps the same user (destinations only carry an IP:port, not an

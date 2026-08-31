@@ -26,6 +26,7 @@ CallSession::CallSession(
     , current_rdata_(rdata)
     , request_uri_(extract_request_uri(rdata))
     , caller_uri_(extract_from_uri(rdata))
+    , caller_display_name_(extract_from_display_name(rdata))
     , setup_actions_(*this, routes_store)
     , dialog_actions_(*this)
     , setup_sm_(setup_actions_, call_id_)

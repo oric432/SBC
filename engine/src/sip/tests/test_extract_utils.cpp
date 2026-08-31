@@ -94,6 +94,16 @@ constexpr const char* kInviteWithSdp = "INVITE sip:bob@example.com SIP/2.0\r\n"
                                        "\r\n"
                                        "v=0\r\n";
 
+constexpr const char* kInviteWithDisplayName = "INVITE sip:bob@example.com SIP/2.0\r\n"
+                                               "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKabc123\r\n"
+                                               "Max-Forwards: 70\r\n"
+                                               "To: <sip:bob@example.com>\r\n"
+                                               "From: Alice <sip:alice@example.com>;tag=abc\r\n"
+                                               "Call-ID: abc123@127.0.0.1\r\n"
+                                               "CSeq: 1 INVITE\r\n"
+                                               "Content-Length: 0\r\n"
+                                               "\r\n";
+
 constexpr const char* kInviteNoBody = "INVITE sip:bob@example.com SIP/2.0\r\n"
                                       "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKabc123\r\n"
                                       "Max-Forwards: 70\r\n"
@@ -165,6 +175,22 @@ TEST_CASE("extract_request_uri formats the request-URI", "[extract_utils]") {
     ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
     CHECK(extract_request_uri(&rdata) == "sip:bob@example.com");
+}
+
+TEST_CASE("extract_from_display_name returns empty for null rx_data", "[extract_utils]") {
+    CHECK(extract_from_display_name(nullptr).empty());
+}
+
+TEST_CASE("extract_from_display_name returns empty when the From header has no display name", "[extract_utils]") {
+    ScopedPool pool;
+    auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
+    CHECK(extract_from_display_name(&rdata).empty());
+}
+
+TEST_CASE("extract_from_display_name reads the From header's display name", "[extract_utils]") {
+    ScopedPool pool;
+    auto rdata = parse_rdata(pool.get(), kInviteWithDisplayName);
+    CHECK(extract_from_display_name(&rdata) == "Alice");
 }
 
 TEST_CASE("extract_uri_user extracts the user part of a sip URI", "[extract_utils]") {

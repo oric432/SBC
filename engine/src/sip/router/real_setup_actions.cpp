@@ -187,15 +187,27 @@ bool RealSetupActions::create_outbound_leg(const std::string& destination) {
         session_.media_bridge()->leg_b_port().value());
 
     // 4. Create the UAC dialog + invite session towards the destination.
-    std::string local_uri_s = cfg.own_contact_uri();
+    // From carries the caller's real identity (name + number) so the SBC stays
+    // transparent about who is calling; Contact stays the SBC's own address so
+    // in-dialog requests (re-INVITE/BYE/UPDATE) keep routing through it.
+    const std::string caller_user = extract_uri_user(session_.caller_uri());
+    if (caller_user.empty()) {
+        Log::sip()->error(
+            "[{}] create_outbound_leg: caller From header has no user part, cannot build outbound From",
+            session_.call_id());
+        return false;
+    }
+    std::string local_uri_s = cfg.caller_facing_from_uri(session_.caller_display_name(), caller_user);
+    std::string local_contact_s = cfg.own_contact_uri();
     std::string dest_s = destination;
 
     const pj_str_t local_uri = pj_str(local_uri_s.data());
+    const pj_str_t local_contact = pj_str(local_contact_s.data());
     const pj_str_t remote_uri = pj_str(dest_s.data());
 
     pjsip_dialog* dlg = nullptr;
     pj_status_t status =
-        pjsip_dlg_create_uac(pjsip_ua_instance(), &local_uri, &local_uri, &remote_uri, &remote_uri, &dlg);
+        pjsip_dlg_create_uac(pjsip_ua_instance(), &local_uri, &local_contact, &remote_uri, &remote_uri, &dlg);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] pjsip_dlg_create_uac failed ({})", session_.call_id(), status);
         return false;
