@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -57,6 +58,10 @@ public:
     // or otherwise marshal onto the bridge's own executor — the relay loop reads
     // this handler without synchronization on the assumption it is set up front.
     void set_error_handler(MediaBridgeErrorHandler handler);
+
+    // The timestamp is written by the RTP executor and may safely be read by
+    // the SIP thread. It is the default time point until the relay is started.
+    [[nodiscard]] std::chrono::steady_clock::time_point last_packet_time() const;
 
     void start_bridge_loop();
 

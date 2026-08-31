@@ -17,6 +17,7 @@ constexpr uint16_t kLocalSipPort = 5060;
 constexpr int kConnectionTimeoutSeconds = 5;
 // Matches PJSIP's own default (PJSIP_TD_TIMEOUT) so an unset key changes nothing.
 constexpr int kInviteTimeoutMs = 32000;
+constexpr int kRtpInactivityTimeoutSeconds = 60;
 constexpr int kRetryIntervalSeconds = 5;
 } // namespace SettingsDefaults
 
@@ -32,6 +33,9 @@ struct SipSettings {
     // How long to wait for a final response to an outbound INVITE before
     // treating it as timed out (PJSIP transaction Timer B/D), in milliseconds.
     int invite_timeout_ms = SettingsDefaults::kInviteTimeoutMs;
+    // Ends an established call after this many seconds without RTP from either
+    // leg. Set to 0 to disable inactivity detection.
+    int rtp_inactivity_timeout_s = SettingsDefaults::kRtpInactivityTimeoutSeconds;
 };
 
 struct ControlPlaneSettings {

@@ -48,6 +48,7 @@ struct MediaBridge::Impl {
     std::optional<boost::asio::ip::udp::endpoint> dest_b_;
 
     MediaBridgeErrorHandler error_handler_;
+    std::atomic<std::chrono::steady_clock::time_point> last_packet_time_;
 
     static void do_relay(
         std::shared_ptr<MediaBridge> self,
@@ -75,6 +76,8 @@ struct MediaBridge::Impl {
                 Impl::do_relay(std::move(self), src_leg, src, dst, dst_ep);
                 return;
             }
+
+            self->impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
 
             dst.sender().async_send_pkt(
                 pkt.packet(),
@@ -165,7 +168,13 @@ void MediaBridge::set_error_handler(MediaBridgeErrorHandler handler) {
     impl_->error_handler_ = std::move(handler);
 }
 
+std::chrono::steady_clock::time_point MediaBridge::last_packet_time() const {
+    return impl_->last_packet_time_.load(std::memory_order_relaxed);
+}
+
 void MediaBridge::start_bridge_loop() {
+    impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
+
     if (impl_->dest_b_) {
         Impl::do_relay(shared_from_this(), RelayLeg::kLegA, impl_->session_a_, impl_->session_b_, *impl_->dest_b_);
     }

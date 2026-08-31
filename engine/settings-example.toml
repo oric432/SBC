@@ -9,6 +9,9 @@ identity_user = "sbc"
 # How long to wait for the callee to answer an outbound INVITE before giving
 # up and reporting a timeout to the caller (PJSIP default: 32000).
 invite_timeout_ms = 32000
+# End an established call after no RTP is received from either leg for this
+# many seconds. Set to 0 to disable RTP inactivity detection.
+rtp_inactivity_timeout_s = 60
 
 [control_plane]
 http_url = "http://127.0.0.1:3001"

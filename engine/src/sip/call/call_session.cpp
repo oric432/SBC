@@ -1,5 +1,6 @@
 #include "call_session.hpp"
 
+#include "sip/call/call_manager.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 
@@ -45,7 +46,7 @@ CallSession::CallSession(
 }
 
 CallSession::~CallSession() {
-    Log::call()->trace("[{}] CallSession destroyed, releasing pool (mod_data[{}] freed)", call_id_, ctx_->module_id_);
+    Log::call()->trace("[{}] CallSession destroyed, releasing pool", call_id_);
     if (pool_ != nullptr) {
         pjsip_endpt_release_pool(ctx_->endpt_, pool_);
         pool_ = nullptr;
