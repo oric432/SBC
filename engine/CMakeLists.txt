@@ -31,6 +31,7 @@ option(ENABLE_TSAN "Enable Thread Sanitizer" OFF)
 option(ENABLE_LSAN "Enable Leak Sanitizer" OFF)
 option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(ENABLE_CLANG_TIDY "Enable clang tidy during build" OFF)
+option(ENABLE_FAST_LINKER "Use mold/lld instead of the default linker if available" ON)
 
 if(BUILD_TESTS)
     enable_testing()
@@ -45,9 +46,14 @@ include(CompilerWarnings)
 include(ClangTidy)
 include(Sanitizers)
 include(ClangFormat)
+include(Linker)
 
 add_clang_format_target(format ${CMAKE_SOURCE_DIR}/src)
 add_clang_format_check_target(format-check ${CMAKE_SOURCE_DIR}/src)
+
+if(ENABLE_FAST_LINKER)
+    enable_fast_linker()
+endif()
 
 # Project Options Aggregator
 add_library(project_options INTERFACE)
