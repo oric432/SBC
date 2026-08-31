@@ -68,6 +68,13 @@ std::string PjsipConfig::own_contact_uri() const {
     return std::format("<sip:{}@{}:{}>", identity_user_, local_ip_, sip_port_);
 }
 
+std::string PjsipConfig::caller_facing_from_uri(const std::string& display_name, const std::string& user) const {
+    if (display_name.empty()) {
+        return std::format("<sip:{}@{}:{}>", user, local_ip_, sip_port_);
+    }
+    return std::format("\"{}\" <sip:{}@{}:{}>", display_name, user, local_ip_, sip_port_);
+}
+
 PjsipStack::~PjsipStack() {
     shutdown();
 }

@@ -34,6 +34,15 @@ struct PjsipConfig {
     // "<sip:{identity_user_}@{local_ip_}:{sip_port_}>" — the SBC's own reachable
     // address, used as Contact/From on legs it originates or answers.
     [[nodiscard]] std::string own_contact_uri() const;
+
+    // "<sip:{user}@{local_ip_}:{sip_port_}>" (or `"{display_name}" <...>` when
+    // display_name is non-empty) — used as From on the outbound leg towards a
+    // callee, so the SBC stays transparent about caller identity while the
+    // host part still resolves back to the SBC itself, not the caller's own
+    // (possibly private/unreachable) address. Never used for Contact: that
+    // must stay own_contact_uri() so in-dialog requests keep routing through
+    // the SBC.
+    [[nodiscard]] std::string caller_facing_from_uri(const std::string& display_name, const std::string& user) const;
 };
 
 // RAII wrapper around the low-level PJSIP C stack.

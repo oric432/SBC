@@ -61,6 +61,19 @@ std::string extract_from_uri(pjsip_rx_data* rx_data) {
     return {buf.data(), static_cast<std::size_t>(len)};
 }
 
+std::string extract_from_display_name(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.from == nullptr || rx_data->msg_info.from->uri == nullptr) {
+        return {};
+    }
+    // From/To headers are always parsed as name-addr, see parse_hdr_fromto in sip_parser.c.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
+    const auto* name_addr = reinterpret_cast<const pjsip_name_addr*>(rx_data->msg_info.from->uri);
+    if (name_addr->display.slen <= 0) {
+        return {};
+    }
+    return {name_addr->display.ptr, static_cast<std::size_t>(name_addr->display.slen)};
+}
+
 std::string extract_uri_user(const std::string& uri) {
     auto scheme_end = uri.find(':');
     auto at_pos = uri.find('@');
