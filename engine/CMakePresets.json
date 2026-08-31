@@ -15,7 +15,8 @@
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
-                "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"
+                "CMAKE_C_COMPILER_LAUNCHER": "env;CCACHE_SLOPPINESS=pch_defines,time_macros;ccache",
+                "CMAKE_CXX_COMPILER_LAUNCHER": "env;CCACHE_SLOPPINESS=pch_defines,time_macros;ccache"
             }
         },
         {
@@ -95,8 +96,8 @@
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/build-cross/portable_cc_toolchain/x86_64-unknown-linux-gnu.cmake",
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_C_COMPILER_LAUNCHER": "ccache",
-                "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"
+                "CMAKE_C_COMPILER_LAUNCHER": "env;CCACHE_SLOPPINESS=pch_defines,time_macros;ccache",
+                "CMAKE_CXX_COMPILER_LAUNCHER": "env;CCACHE_SLOPPINESS=pch_defines,time_macros;ccache"
             }
         },
         {
@@ -108,8 +109,8 @@
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/build-cross-musl/portable_cc_toolchain/x86_64-unknown-linux-musl.cmake",
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_C_COMPILER_LAUNCHER": "ccache",
-                "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"
+                "CMAKE_C_COMPILER_LAUNCHER": "env;CCACHE_SLOPPINESS=pch_defines,time_macros;ccache",
+                "CMAKE_CXX_COMPILER_LAUNCHER": "env;CCACHE_SLOPPINESS=pch_defines,time_macros;ccache"
             }
         },
         {
