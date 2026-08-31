@@ -25,7 +25,7 @@ option(BUILD_TOOLS "Build helper tools" ON)
 option(BUILD_SCHEMA_GENERATOR "Build the schema generator tool" ON)
 
 # Quality Options
-option(ENABLE_ASAN "Enable Address Sanitizer" OFF)
+option(ENABLE_ASAN "Enable Address Sanitizer" ON)
 option(ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
 option(ENABLE_TSAN "Enable Thread Sanitizer" OFF)
 option(ENABLE_LSAN "Enable Leak Sanitizer" OFF)

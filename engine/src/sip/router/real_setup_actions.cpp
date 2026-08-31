@@ -211,8 +211,6 @@ bool RealSetupActions::create_outbound_leg(const std::string& destination) {
         return false;
     }
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-    inv->mod_data[ctx->module_id_] = &session_;
     session_.set_inv_callee(inv);
     session_.set_outbound_destination(destination);
     Log::call()->info("[{}] outbound leg created towards {}", session_.call_id(), destination);

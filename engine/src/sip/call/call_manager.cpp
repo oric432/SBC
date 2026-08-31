@@ -4,7 +4,6 @@
 #include "sip/call/call_session.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/sm/events.hpp"
-#include "core/utils/log.hpp"
 
 namespace SbcEngine {
 
@@ -41,18 +40,21 @@ CallSession* CallManager::find_by_inv(pjsip_inv_session* inv) {
 }
 
 void CallManager::remove_session(const std::string& call_id) {
-    sessions_.erase(call_id);
+    schedule_remove(call_id);
 }
 
 void CallManager::schedule_remove(const std::string& call_id) {
-    pending_remove_.push_back(call_id);
+    auto iter = sessions_.find(call_id);
+    if (iter == sessions_.end()) {
+        return;
+    }
+
+    retired_sessions_.push_back(std::move(iter->second));
+    sessions_.erase(iter);
 }
 
 void CallManager::purge_scheduled() {
-    for (const auto& call_id : pending_remove_) {
-        sessions_.erase(call_id);
-    }
-    pending_remove_.clear();
+    retired_sessions_.clear();
 }
 
 void CallManager::start_rtp_inactivity_timer(
@@ -96,6 +98,7 @@ void CallManager::process_pending_rtp_inactivity() {
 
 void CallManager::terminate_established_calls() {
     for (auto& [call_id, session] : sessions_) {
+        (void)call_id;
         auto& dialog = session->dialog_sm();
         if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
             dialog.process_event(CallError{});
