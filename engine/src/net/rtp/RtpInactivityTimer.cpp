@@ -5,6 +5,13 @@
 
 namespace SbcEngine {
 
+bool is_rtp_inactive(
+    std::chrono::steady_clock::time_point last_packet_time,
+    std::chrono::steady_clock::time_point now,
+    std::chrono::steady_clock::duration interval) {
+    return last_packet_time != std::chrono::steady_clock::time_point{} && now - last_packet_time >= interval;
+}
+
 RtpInactivityTimer::RtpInactivityTimer(
     const boost::asio::any_io_executor& executor,
     std::chrono::steady_clock::duration interval)

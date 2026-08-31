@@ -152,3 +152,21 @@ TEST_CASE("MediaBridge records the last RTP activity time", "[MediaBridge]") {
 
     CHECK(bridge->last_packet_time() >= before_start);
 }
+
+TEST_CASE("is_rtp_inactive gates on elapsed time and a never-started bridge", "[RtpInactivityTimer]") {
+    constexpr auto kInterval = 60s;
+    const auto now = std::chrono::steady_clock::now();
+
+    SECTION("no packet ever recorded is never inactive, no matter how far in the past `now` looks") {
+        CHECK_FALSE(is_rtp_inactive(std::chrono::steady_clock::time_point{}, now, kInterval));
+    }
+
+    SECTION("elapsed time under the interval is not inactive") {
+        CHECK_FALSE(is_rtp_inactive(now - (kInterval - 1s), now, kInterval));
+    }
+
+    SECTION("elapsed time at or over the interval is inactive") {
+        CHECK(is_rtp_inactive(now - kInterval, now, kInterval));
+        CHECK(is_rtp_inactive(now - (kInterval + 1s), now, kInterval));
+    }
+}

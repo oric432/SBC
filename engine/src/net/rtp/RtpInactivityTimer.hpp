@@ -10,6 +10,16 @@
 
 namespace SbcEngine {
 
+// True once `now` is at least `interval` past `last_packet_time`. A
+// default-constructed `last_packet_time` (no packet ever recorded, e.g. media
+// hasn't started yet) is never inactive. Pulled out of CallManager's scan
+// loop so the timeout arithmetic itself is unit-testable without a real
+// CallSession/PJSIP endpoint.
+[[nodiscard]] bool is_rtp_inactive(
+    std::chrono::steady_clock::time_point last_packet_time,
+    std::chrono::steady_clock::time_point now,
+    std::chrono::steady_clock::duration interval);
+
 // One process-wide periodic timer used to request an inactivity scan. It does
 // not own or inspect calls; CallManager performs that work on the SIP thread.
 class RtpInactivityTimer : public std::enable_shared_from_this<RtpInactivityTimer> {

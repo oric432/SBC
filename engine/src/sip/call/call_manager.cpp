@@ -85,7 +85,7 @@ void CallManager::process_pending_rtp_inactivity() {
             }
 
             const auto last_packet = session->media_bridge()->last_packet_time();
-            if (last_packet == std::chrono::steady_clock::time_point{} || now - last_packet < interval) {
+            if (!is_rtp_inactive(last_packet, now, interval)) {
                 continue;
             }
 
