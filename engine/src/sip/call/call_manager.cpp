@@ -3,7 +3,6 @@
 #include "net/rtp/RtpInactivityTimer.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/call/pj_context.hpp"
-#include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/events.hpp"
 #include "core/utils/log.hpp"
 
@@ -105,8 +104,7 @@ void CallManager::process_pending_rtp_inactivity() {
 void CallManager::terminate_established_calls() {
     for (auto& [call_id, session] : sessions_) {
         auto& dialog = session->dialog_sm();
-        if (dialog.is(Sml::state<Active>) || dialog.is(Sml::state<Reinviting>) ||
-            dialog.is(Sml::state<WaitingForReinviteAck>)) {
+        if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
             dialog.process_event(CallError{});
         }
     }

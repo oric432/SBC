@@ -3,7 +3,6 @@
 #include <boost/asio.hpp>
 
 #include <boost/asio/any_io_executor.hpp>
-#include <queue>
 #include <string>
 
 #include <pjsip.h>
@@ -13,9 +12,8 @@
 #include "sip/router/real_dialog_actions.hpp"
 #include "sip/router/real_setup_actions.hpp"
 #include "net/rtp/MediaBridge.hpp"
-#include "sip/sm/dialog_sm.hpp"
-#include "sip/sm/setup_sm.hpp"
-#include "sip/sm/sm_logger.hpp"
+#include "sip/sm/dialog_sm_runner.hpp"
+#include "sip/sm/setup_sm_runner.hpp"
 
 namespace SbcEngine {
 
@@ -27,9 +25,6 @@ class RoutesStore;
 // action objects. Non-copyable/movable — held by CallManager via unique_ptr.
 class CallSession {
 public:
-    using SetupMachine = Sml::sm<SetupSm<RealSetupActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
-    using DialogMachine = Sml::sm<DialogSm<RealDialogActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
-
     // request_uri/caller_offer_sdp are extracted from rdata internally. routes_store
     // is forwarded to RealSetupActions only — CallSession does not retain it.
     CallSession(
@@ -51,8 +46,8 @@ public:
     [[nodiscard]] CallManager* call_manager() const { return call_manager_; }
     [[nodiscard]] pj_pool_t* pool() const { return pool_; }
 
-    SetupMachine& setup_sm() { return setup_sm_; }
-    DialogMachine& dialog_sm() { return dialog_sm_; }
+    SetupSmRunner& setup_sm() { return setup_sm_; }
+    DialogSmRunner& dialog_sm() { return dialog_sm_; }
 
     [[nodiscard]] pjsip_inv_session* inv_caller() const { return inv_caller_; }
     [[nodiscard]] pjsip_inv_session* inv_callee() const { return inv_callee_; }
@@ -94,15 +89,12 @@ private:
     std::string caller_uri_;
     std::string outbound_destination_;
 
+    // Actions must outlive (so precede) the runners whose machines reference them.
     RealSetupActions setup_actions_;
     RealDialogActions dialog_actions_;
 
-    // Loggers must outlive (so precede) the machines that reference them.
-    SmLogger setup_sm_logger_;
-    SmLogger dialog_sm_logger_;
-
-    SetupMachine setup_sm_;
-    DialogMachine dialog_sm_;
+    SetupSmRunner setup_sm_;
+    DialogSmRunner dialog_sm_;
 };
 
 } // namespace SbcEngine

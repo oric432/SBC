@@ -15,3 +15,6 @@
 #include <cstdlib>
 #include <source_location>
 #include <expected>
+
+// Third-party libraries
+#include <boost/asio.hpp>

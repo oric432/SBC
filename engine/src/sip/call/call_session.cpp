@@ -29,10 +29,8 @@ CallSession::CallSession(
     , caller_uri_(extract_from_uri(rdata))
     , setup_actions_(*this, routes_store)
     , dialog_actions_(*this)
-    , setup_sm_logger_("setup", call_id_)
-    , dialog_sm_logger_("dialog", call_id_)
-    , setup_sm_(setup_actions_, setup_sm_logger_)
-    , dialog_sm_(dialog_actions_, dialog_sm_logger_) {
+    , setup_sm_(setup_actions_, call_id_)
+    , dialog_sm_(dialog_actions_, call_id_) {
     // Must be installed before MediaBridge::start_bridge_loop() (see its own
     // thread-safety note) — the constructor body runs before any later action
     // can reach that call, so this satisfies it.
