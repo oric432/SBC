@@ -68,6 +68,10 @@ struct ByeReceived {
     bool from_caller_ = true;
 };
 
+struct UpdateReceived {
+    bool from_caller_ = true;
+};
+
 struct ReinviteReceived {
     std::string sdp_;
 };

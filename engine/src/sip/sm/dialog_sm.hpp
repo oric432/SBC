@@ -43,6 +43,10 @@ struct DialogSm {
             actions.forward_bye_to_other_leg(evt.from_caller_);
         };
 
+        auto handle_update = [](Actions& actions, const UpdateReceived& evt) {
+            actions.handle_update(evt.from_caller_);
+        };
+
         auto handle_reinvite = [](Actions& actions, const ReinviteReceived& evt) {
             actions.forward_reinvite(evt.sdp_);
         };
@@ -71,6 +75,7 @@ struct DialogSm {
         return Sml::make_transition_table(
              // Active state
             *Sml::state<Active>                + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<Terminating>,
+             Sml::state<Active>                + (Sml::event<UpdateReceived>                                                        / handle_update)              = Sml::state<Active>,
              Sml::state<Active>                + (Sml::event<ReinviteReceived>       [is_sdp_valid]                                 / handle_reinvite)            = Sml::state<Reinviting>,
              Sml::state<Active>                + (Sml::event<ReinviteReceived>       [is_sdp_invalid]                               / handle_reinvite_invalid)    = Sml::state<Active>,
              Sml::state<Active>                + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,

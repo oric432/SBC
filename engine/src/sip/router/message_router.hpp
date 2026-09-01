@@ -44,6 +44,10 @@ public:
     // `rdata` is the message that triggered the change (may be null).
     void on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
 
+    // Called after PJSIP accepts an in-dialog UPDATE. PJSIP retains ownership
+    // of RFC 4028 processing and the response; the router maps it to the SM.
+    void on_update_received(pjsip_inv_session* inv);
+
     // Called by the PJSIP event loop so media-thread notifications are handled
     // on the only thread allowed to touch invite sessions and dialog SMs.
     void process_pending_media_events();
@@ -54,6 +58,7 @@ private:
     void process_bye(pjsip_rx_data* rx_data);
     void process_cancel(pjsip_rx_data* rx_data);
     void process_ack(pjsip_rx_data* rx_data);
+    void process_update(pjsip_rx_data* rx_data);
     void process_options(pjsip_rx_data* rx_data);
 
     // Invite-state → SM event mapping per leg

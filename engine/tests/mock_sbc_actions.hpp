@@ -94,6 +94,10 @@ public:
 
     void forward_bye_to_other_leg(bool /*from_caller*/) override { calls_.emplace_back("forward_bye_to_other_leg"); }
 
+    void handle_update(bool from_caller) override {
+        calls_.push_back(std::string{"handle_update:"} + (from_caller ? "caller" : "callee"));
+    }
+
     void forward_reinvite(const std::string& sdp) override {
         calls_.push_back("forward_reinvite:" + std::to_string(sdp.length()) + "B");
     }

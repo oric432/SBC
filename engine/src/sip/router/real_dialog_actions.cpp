@@ -51,6 +51,13 @@ void RealDialogActions::forward_bye_to_other_leg(bool from_caller) {
         recipient_uri);
 }
 
+void RealDialogActions::handle_update(bool from_caller) {
+    Log::call()->debug(
+        "[{}] RFC 4028 session refreshed by UPDATE on {} leg",
+        session_.call_id(),
+        from_caller ? "caller" : "callee");
+}
+
 void RealDialogActions::forward_reinvite([[maybe_unused]] const std::string& sdp) {
     // Out of Stage 1 scope.
     Log::call()->warn("[{}] re-INVITE forwarding not implemented", session_.call_id());
