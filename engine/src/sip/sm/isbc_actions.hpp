@@ -106,6 +106,10 @@ public:
     virtual void send_200_ok_to_bye_sender() = 0;
     virtual void forward_bye_to_other_leg(bool from_caller) = 0;
 
+    // PJSIP validates and responds to RFC 4028 UPDATE session refreshes; this
+    // records which B2BUA leg successfully refreshed its dialog.
+    virtual void handle_update(bool from_caller) = 0;
+
     // re-INVITE handling
     virtual void forward_reinvite(const std::string& sdp) = 0;
     virtual void reject_reinvite_488() = 0;

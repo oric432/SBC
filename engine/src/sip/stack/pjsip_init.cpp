@@ -30,6 +30,18 @@ Error pj_error(const std::string& what, pj_status_t status) {
     return Error("{}: {}", what, pj_status_str(status));
 }
 
+bool is_successful_inbound_update(const pjsip_transaction* tsx, const pjsip_event* event) {
+    // Comparing the method name is required because extension methods such as
+    // UPDATE use PJSIP_OTHER_METHOD; PJSIP_UPDATE_METHOD is not a public ID.
+    
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-union-access) — PJSIP C event API
+    return tsx->role == PJSIP_ROLE_UAS && pj_stricmp2(&tsx->method.name, "UPDATE") == 0 &&
+           tsx->state == PJSIP_TSX_STATE_COMPLETED && tsx->status_code >= PJSIP_SC_OK &&
+           tsx->status_code < PJSIP_SC_MULTIPLE_CHOICES && event->type == PJSIP_EVENT_TSX_STATE &&
+           event->body.tsx_state.type == PJSIP_EVENT_TX_MSG;
+    // NOLINTEND(cppcoreguidelines-pro-type-union-access) — PJSIP C event API
+}
+
 // Application module: receives out-of-dialog requests (initial INVITE, OPTIONS,
 // and anything without a matching dialog). In-dialog traffic is delivered to the
 // invite-session callbacks instead, so this only forwards to the router.
@@ -56,6 +68,17 @@ void on_inv_state_changed(pjsip_inv_session* inv, pjsip_event* event) {
     }
     // NOLINTEND(cppcoreguidelines-pro-type-union-access)
     g_active_stack->router()->on_inv_state_changed(inv, rdata);
+}
+
+void on_inv_tsx_state_changed(pjsip_inv_session* inv, pjsip_transaction* tsx, pjsip_event* event) {
+    if (g_active_stack == nullptr || g_active_stack->router() == nullptr || tsx == nullptr || event == nullptr) {
+        return;
+    }
+
+    // Report a successful inbound UPDATE once, when PJSIP transmits its 2xx.
+    if (is_successful_inbound_update(tsx, event)) {
+        g_active_stack->router()->on_update_received(inv);
+    }
 }
 
 void on_inv_new_session(pjsip_inv_session* /*inv*/, pjsip_event* /*e*/) {}
@@ -124,6 +147,7 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
     pj_bzero(&inv_cb, sizeof(inv_cb));
     inv_cb.on_state_changed = &on_inv_state_changed;
     inv_cb.on_new_session = &on_inv_new_session;
+    inv_cb.on_tsx_state_changed = &on_inv_tsx_state_changed;
     inv_cb.on_media_update = &on_inv_media_update;
 
     status = pjsip_inv_usage_init(endpt_, &inv_cb);

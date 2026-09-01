@@ -17,6 +17,7 @@ public:
 
     void send_200_ok_to_bye_sender() override;
     void forward_bye_to_other_leg(bool from_caller) override;
+    void handle_update(bool from_caller) override;
 
     void forward_reinvite(const std::string& sdp) override;
     void reject_reinvite_488() override;

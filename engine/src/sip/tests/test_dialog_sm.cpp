@@ -44,6 +44,16 @@ TEST_CASE("DialogSm bye from caller", "[dialog_sm]") {
     REQUIRE(actions.was_called("cleanup"));
 }
 
+TEST_CASE("DialogSm UPDATE session refresh", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(UpdateReceived{false});
+
+    REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("handle_update:callee"));
+}
+
 // Test: Happy path for mid-call re-INVITE (e.g., codec renegotiation, hold/resume)
 // Verifies: Dialog SM handles SDP renegotiation and media update successfully
 TEST_CASE("DialogSm reinvite happy path", "[dialog_sm]") {

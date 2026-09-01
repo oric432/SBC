@@ -39,6 +39,9 @@ void MessageRouter::on_rx_request(pjsip_rx_data* rx_data) {
     else if (method == "ACK") {
         process_ack(rx_data);
     }
+    else if (method == "UPDATE") {
+        process_update(rx_data);
+    }
     else if (method == "OPTIONS") {
         process_options(rx_data);
     }
@@ -94,6 +97,15 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
 
     default: break;
     }
+}
+
+void MessageRouter::on_update_received(pjsip_inv_session* inv) {
+    CallSession* session = call_manager_->find_by_inv(inv);
+    if (session == nullptr || !session->setup_sm().is_done()) {
+        return;
+    }
+
+    session->dialog_sm().process_event(UpdateReceived{inv == session->inv_caller()});
 }
 
 void MessageRouter::process_pending_media_events() {
@@ -256,6 +268,12 @@ void MessageRouter::process_cancel(pjsip_rx_data* rx_data) {
 
 void MessageRouter::process_ack([[maybe_unused]] pjsip_rx_data* rx_data) {
     // Stray ACK (no matching dialog): ACK never gets a response; drop it.
+}
+
+void MessageRouter::process_update(pjsip_rx_data* rx_data) {
+    // Matched in-dialog UPDATEs are consumed by PJSIP and reported through
+    // on_update_received(). Reaching here means no matching dialog exists.
+    send_481_call_does_not_exist(rx_data);
 }
 
 void MessageRouter::process_options(pjsip_rx_data* rx_data) {
