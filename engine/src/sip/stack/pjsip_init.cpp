@@ -65,6 +65,16 @@ pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* of
     return g_active_stack->router()->on_rx_reinvite(inv, offer, rdata);
 }
 
+void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
+    if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
+        if (offer != nullptr) {
+            *offer = nullptr;
+        }
+        return;
+    }
+    g_active_stack->router()->on_create_offer(inv, offer);
+}
+
 void on_inv_new_session(pjsip_inv_session* /*inv*/, pjsip_event* /*e*/) {}
 
 void on_inv_media_update(pjsip_inv_session* /*inv*/, pj_status_t /*status*/) {}
@@ -133,6 +143,7 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
     inv_cb.on_new_session = &on_inv_new_session;
     inv_cb.on_media_update = &on_inv_media_update;
     inv_cb.on_rx_reinvite = &on_rx_reinvite;
+    inv_cb.on_create_offer = &on_create_offer;
 
     status = pjsip_inv_usage_init(endpt_, &inv_cb);
     if (status != PJ_SUCCESS) {

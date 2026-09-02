@@ -44,9 +44,14 @@ public:
     // `rdata` is the message that triggered the change (may be null).
     void on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
 
-    // Accepts refresh-only re-INVITEs locally. SDP-changing requests are
-    // rejected until cross-leg renegotiation is implemented.
+    // Handles refresh-only re-INVITEs locally and captures changed-SDP
+    // requests for the application-owned renegotiation flow.
     pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata);
+
+    // Supplies the baseline offer for an offerless re-INVITE. PJSIP fixes the
+    // SDP origin and sends it in the automatic 200 OK; the peer's ACK then
+    // carries the answer.
+    void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer);
 
     // Called by the PJSIP event loop so media-thread notifications are handled
     // on the only thread allowed to touch invite sessions and dialog SMs.

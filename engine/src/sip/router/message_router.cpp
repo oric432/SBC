@@ -112,7 +112,7 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
     }
 
     if (offer == nullptr) {
-        Log::sip()->debug("offerless re-INVITE refresh accepted; PJSIP will use active SDP as offer");
+        Log::sip()->debug("offerless re-INVITE accepted; on_create_offer will supply the active local SDP");
         return PJ_EIGNORED;
     }
 
@@ -180,6 +180,44 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
     }
 
     return PJ_EIGNORED;
+}
+
+void MessageRouter::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
+    if (offer == nullptr) {
+        return;
+    }
+    *offer = nullptr;
+
+    if (inv == nullptr || inv->neg == nullptr) {
+        Log::sip()->warn("cannot create an offer for an invalid invite session");
+        return;
+    }
+
+    CallSession* session = call_manager_->find_by_inv(inv);
+    if (session == nullptr) {
+        Log::sip()->warn("cannot create an offer: call session not found");
+        return;
+    }
+
+    const pjmedia_sdp_session* active_local = nullptr;
+    const pj_status_t status = pjmedia_sdp_neg_get_active_local(inv->neg, &active_local);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->warn("[{}] cannot create an offer: active local SDP unavailable ({})", session->call_id(), status);
+        return;
+    }
+
+    // active_local is borrowed, const negotiator state, while on_create_offer
+    // must return a fresh writable SDP
+    *offer = pjmedia_sdp_session_clone(inv->pool_prov, active_local);
+    if (*offer == nullptr) {
+        Log::sip()->warn("[{}] cannot create an offer: SDP clone allocation failed", session->call_id());
+        return;
+    }
+
+    Log::call()->debug(
+        "[{}] created active-SDP offer for offerless re-INVITE on {} leg",
+        session->call_id(),
+        inv == session->inv_caller() ? "caller" : "callee");
 }
 
 void MessageRouter::process_pending_media_events() {
