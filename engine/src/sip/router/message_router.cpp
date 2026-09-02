@@ -96,6 +96,54 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     }
 }
 
+pj_status_t
+MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata) {
+    if (inv == nullptr || inv->neg == nullptr || rdata == nullptr) {
+        return PJ_EINVAL;
+    }
+
+    if (offer == nullptr) {
+        Log::sip()->debug("offerless re-INVITE refresh accepted; PJSIP will use active SDP as offer");
+        return PJ_EIGNORED;
+    }
+
+    const pjmedia_sdp_session* active_remote = nullptr;
+    pj_status_t status = pjmedia_sdp_neg_get_active_remote(inv->neg, &active_remote);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->warn("re-INVITE refresh rejected: active remote SDP unavailable ({})", status);
+        return status;
+    }
+
+    // A refresh may increment the origin version even though its media has not
+    // changed. Compare a pool-owned copy after normalizing only that field.
+    pjmedia_sdp_session* normalized_offer = pjmedia_sdp_session_clone(inv->pool_prov, offer);
+    if (normalized_offer == nullptr) {
+        return PJ_ENOMEM;
+    }
+    normalized_offer->origin.version = active_remote->origin.version;
+
+    status = pjmedia_sdp_session_cmp(normalized_offer, active_remote, 0);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->warn("re-INVITE rejected: SDP renegotiation is not supported ({})", status);
+        return status;
+    }
+
+    const pjmedia_sdp_session* active_local = nullptr;
+    status = pjmedia_sdp_neg_get_active_local(inv->neg, &active_local);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->warn("re-INVITE refresh rejected: active local SDP unavailable ({})", status);
+        return status;
+    }
+
+    status = pjsip_inv_set_sdp_answer(inv, active_local);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->warn("re-INVITE refresh rejected: failed to set SDP answer ({})", status);
+        return status;
+    }
+
+    return PJ_EIGNORED;
+}
+
 void MessageRouter::process_pending_media_events() {
     call_manager_->process_pending_rtp_inactivity();
     call_manager_->purge_scheduled();

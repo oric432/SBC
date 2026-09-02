@@ -44,6 +44,10 @@ public:
     // `rdata` is the message that triggered the change (may be null).
     void on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
 
+    // Accepts refresh-only re-INVITEs locally. SDP-changing requests are
+    // rejected until cross-leg renegotiation is implemented.
+    pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata);
+
     // Called by the PJSIP event loop so media-thread notifications are handled
     // on the only thread allowed to touch invite sessions and dialog SMs.
     void process_pending_media_events();
