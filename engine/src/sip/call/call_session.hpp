@@ -20,6 +20,15 @@ namespace SbcEngine {
 class CallManager;
 class RoutesStore;
 
+// Identifies the two dialog legs involved in an application-owned re-INVITE.
+// The offer/answer transaction details will be added here as renegotiation is
+// implemented; keeping the direction in CallSession avoids teaching dialog
+// actions how to rediscover it from transient PJSIP callback data.
+struct ReinviteContext {
+    pjsip_inv_session* initiator_ = nullptr;
+    pjsip_inv_session* peer_ = nullptr;
+};
+
 // Owns everything for one B2BUA call: the two PJSIP invite-session legs, the two
 // RTP relay sockets, and the Setup/Dialog state machines with their per-call
 // action objects. Non-copyable/movable — held by CallManager via unique_ptr.
@@ -54,6 +63,13 @@ public:
     void set_inv_caller(pjsip_inv_session* inv) { inv_caller_ = inv; }
     void set_inv_callee(pjsip_inv_session* inv) { inv_callee_ = inv; }
 
+    void begin_reinvite(pjsip_inv_session* initiator) {
+        reinvite_context_.initiator_ = initiator;
+        reinvite_context_.peer_ = initiator == inv_caller_ ? inv_callee_ : inv_caller_;
+    }
+    [[nodiscard]] const ReinviteContext& reinvite_context() const { return reinvite_context_; }
+    void clear_reinvite() { reinvite_context_ = {}; }
+
     std::shared_ptr<MediaBridge> media_bridge() { return media_bridge_; }
 
     // Request-URI and offer SDP of the original inbound INVITE — extracted from
@@ -80,6 +96,7 @@ private:
 
     pjsip_inv_session* inv_caller_ = nullptr;
     pjsip_inv_session* inv_callee_ = nullptr;
+    ReinviteContext reinvite_context_;
 
     std::shared_ptr<MediaBridge> media_bridge_;
 

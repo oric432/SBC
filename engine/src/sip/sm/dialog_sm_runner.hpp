@@ -28,8 +28,9 @@ public:
     DialogSmRunner& operator=(DialogSmRunner&&) = delete;
 
     // Supported events are the ones explicitly instantiated in
-    // dialog_sm_runner.cpp: ByeReceived, CallEnded, CallError. Any other
-    // event fails at link time (undefined reference), not compile time.
+    // dialog_sm_runner.cpp: ByeReceived, ReinviteReceived, CallEnded,
+    // CallError. Any other event fails at link time (undefined reference), not
+    // compile time.
     template <typename Event>
     bool process_event(const Event& event);
 

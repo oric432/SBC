@@ -31,6 +31,7 @@ bool DialogSmRunner::process_event(const Event& event) {
 }
 
 template bool DialogSmRunner::process_event(const ByeReceived&);
+template bool DialogSmRunner::process_event(const ReinviteReceived&);
 template bool DialogSmRunner::process_event(const CallEnded&);
 template bool DialogSmRunner::process_event(const CallError&);
 

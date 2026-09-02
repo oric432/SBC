@@ -17,6 +17,15 @@ constexpr char kSessionTimerExpiredCause[] = "No session refresh received.";
 bool is_session_timer_expiry(const pjsip_inv_session* inv) {
     return inv->cause == PJSIP_SC_REQUEST_TIMEOUT && pj_stricmp2(&inv->cause_text, kSessionTimerExpiredCause) == 0;
 }
+
+pj_status_t send_reinvite_trying(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
+    pjsip_tx_data* response = nullptr;
+    pj_status_t status = pjsip_inv_initial_answer(inv, rdata, PJSIP_SC_TRYING, nullptr, nullptr, &response);
+    if (status != PJ_SUCCESS) {
+        return status;
+    }
+    return pjsip_inv_send_msg(inv, response);
+}
 } // namespace
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -124,8 +133,37 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
 
     status = pjmedia_sdp_session_cmp(normalized_offer, active_remote, 0);
     if (status != PJ_SUCCESS) {
-        Log::sip()->warn("re-INVITE rejected: SDP renegotiation is not supported ({})", status);
-        return status;
+        CallSession* session = call_manager_->find_by_inv(inv);
+        if (session == nullptr) {
+            Log::sip()->warn("re-INVITE renegotiation rejected: call session not found");
+            return PJ_ENOTFOUND;
+        }
+
+        if (!session->dialog_sm().is_active()) {
+            Log::sip()->warn("[{}] overlapping re-INVITE renegotiation rejected", session->call_id());
+            return PJ_EBUSY;
+        }
+
+        // Establish the server transaction before handing control to the
+        // dialog state machine. A later cross-leg implementation can finish
+        // it with pjsip_inv_answer() after receiving the peer's answer.
+        status = send_reinvite_trying(inv, rdata);
+        if (status != PJ_SUCCESS) {
+            Log::sip()->warn("[{}] failed to send 100 for SDP renegotiation ({})", session->call_id(), status);
+            return status;
+        }
+
+        // Returning PJ_SUCCESS makes the application responsible for the
+        // final response. The state-machine action is intentionally still a
+        // stub; this establishes ownership and direction without implementing
+        // cross-leg offer/answer forwarding yet.
+        session->begin_reinvite(inv);
+        session->dialog_sm().process_event(ReinviteReceived{extract_sdp(rdata)});
+        Log::call()->debug(
+            "[{}] re-INVITE SDP renegotiation captured from {} leg",
+            session->call_id(),
+            inv == session->inv_caller() ? "caller" : "callee");
+        return PJ_SUCCESS;
     }
 
     const pjmedia_sdp_session* active_local = nullptr;
@@ -193,8 +231,9 @@ void MessageRouter::handle_dialog_disconnect(CallSession* session, pjsip_inv_ses
             is_caller_leg ? "caller" : "callee");
     }
 
-    if (dialog.is_active()) {
-        // First leg to drop initiates teardown of the other.
+    if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
+        // First leg to drop initiates teardown of the other, including while
+        // an application-owned re-INVITE is pending.
         dialog.process_event(ByeReceived{is_caller_leg});
     }
     else if (dialog.is_terminating()) {

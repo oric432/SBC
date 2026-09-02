@@ -57,6 +57,7 @@ void RealDialogActions::forward_reinvite([[maybe_unused]] const std::string& sdp
 }
 
 void RealDialogActions::reject_reinvite_488() {
+    session_.clear_reinvite();
     Log::call()->warn("[{}] re-INVITE rejected (488): not implemented", session_.call_id());
 }
 
@@ -69,10 +70,12 @@ void RealDialogActions::forward_reinvite_200_ok([[maybe_unused]] const std::stri
 }
 
 void RealDialogActions::forward_reinvite_rejection([[maybe_unused]] int status_code) {
+    session_.clear_reinvite();
     Log::call()->warn("[{}] re-INVITE rejection forwarding not implemented", session_.call_id());
 }
 
 void RealDialogActions::forward_ack_and_commit_media() {
+    session_.clear_reinvite();
     Log::call()->debug("[{}] re-INVITE ACK: media unchanged (Stage 1)", session_.call_id());
 }
 
