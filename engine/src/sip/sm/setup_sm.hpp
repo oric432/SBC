@@ -4,7 +4,7 @@
 
 #include "events.hpp"
 #include "isbc_actions.hpp"
-#include "core/utils/sdp_validator.hpp"
+#include "sip/stack/sdp_validator.hpp"
 
 namespace SbcEngine {
 

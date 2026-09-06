@@ -16,6 +16,16 @@ namespace {
 // DialogSelfFireQueue in dialog_sm.hpp) — exercising that here requires the
 // same process_queue<std::queue> policy the real machine uses.
 using TestMachine = Sml::sm<DialogSm<MockDialogActions>, Sml::process_queue<std::queue>>;
+
+// A structurally valid offer/answer per #121's SdpValidator: parses, has a
+// media line, a non-empty format list and an RTP/AVP transport.
+const std::string kValidSdp = "v=0\r\n"
+                              "o=- 0 0 IN IP4 127.0.0.1\r\n"
+                              "s=-\r\n"
+                              "c=IN IP4 127.0.0.1\r\n"
+                              "t=0 0\r\n"
+                              "m=audio 10000 RTP/AVP 0\r\n"
+                              "a=rtpmap:0 PCMU/8000\r\n";
 } // namespace
 
 // Test: Caller initiates call termination
@@ -52,14 +62,14 @@ TEST_CASE("DialogSm reinvite happy path", "[dialog_sm]") {
 
     // Step 1: Receive re-INVITE from caller with new offer
     // Expected: Transition to Reinviting, forward to callee
-    machine.process_event(ReinviteReceived{"v=0\r\n"});
+    machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
     REQUIRE(actions.was_called("forward_reinvite"));
 
     // Step 2: Receive 200 OK from callee with answer
     // Expected: Transition to WaitingForReinviteAck, forward 200 OK to caller
     actions.reset();
-    machine.process_event(ReinviteAccepted{"v=0\r\n"});
+    machine.process_event(ReinviteAccepted{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForReinviteAck>));
     REQUIRE(actions.was_called("forward_reinvite_200_ok"));
 
@@ -78,7 +88,7 @@ TEST_CASE("DialogSm reinvite rejected", "[dialog_sm]") {
     TestMachine machine{actions};
 
     // Receive re-INVITE from caller
-    machine.process_event(ReinviteReceived{"v=0\r\n"});
+    machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     // Callee rejects re-INVITE (480 Temporarily Unavailable)
@@ -109,13 +119,13 @@ TEST_CASE("DialogSm reinvite collision", "[dialog_sm]") {
     TestMachine machine{actions};
 
     // First re-INVITE received
-    machine.process_event(ReinviteReceived{"v=0\r\n"});
+    machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     // Second re-INVITE arrives while first is still pending
     // Expected: Remain in Reinviting, reject with 491 Request Pending
     actions.reset();
-    machine.process_event(ReinviteReceived{"v=0\r\n"});
+    machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
     REQUIRE(actions.was_called("reject_reinvite_491_request_pending"));
 }
@@ -127,7 +137,7 @@ TEST_CASE("DialogSm bye during reinvite", "[dialog_sm]") {
     TestMachine machine{actions};
 
     // Re-INVITE pending (waiting for response)
-    machine.process_event(ReinviteReceived{"v=0\r\n"});
+    machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     // BYE arrives from caller before re-INVITE completes
@@ -146,8 +156,8 @@ TEST_CASE("DialogSm reinvite ACK timeout", "[dialog_sm]") {
     TestMachine machine{actions};
 
     // Re-INVITE succeeded (200 OK sent to caller)
-    machine.process_event(ReinviteReceived{"v=0\r\n"});
-    machine.process_event(ReinviteAccepted{"v=0\r\n"});
+    machine.process_event(ReinviteReceived{kValidSdp});
+    machine.process_event(ReinviteAccepted{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForReinviteAck>));
 
     // ACK timeout - no ACK received within timeout period
@@ -181,7 +191,7 @@ TEST_CASE("DialogSm reinvite accepted with invalid SDP", "[dialog_sm]") {
     TestMachine machine{actions};
 
     // Re-INVITE pending
-    machine.process_event(ReinviteReceived{"v=0\r\n"});
+    machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     // Callee sends 200 OK but with malformed/incompatible answer SDP

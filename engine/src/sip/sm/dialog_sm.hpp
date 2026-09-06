@@ -3,7 +3,7 @@
 #include <boost/sml.hpp>
 
 #include "events.hpp"
-#include "core/utils/sdp_validator.hpp"
+#include "sip/stack/sdp_validator.hpp"
 
 namespace SbcEngine {
 

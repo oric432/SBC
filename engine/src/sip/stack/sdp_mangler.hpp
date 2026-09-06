@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include <pjlib.h>
@@ -14,6 +15,16 @@ struct RtpEndpoint {
     uint16_t port_ = 0;
 };
 
+// A negotiated audio codec, identified by its RTP payload type. clock_rate_ is
+// 0 when the payload type is one of RFC 3551's static types carried without an
+// explicit a=rtpmap line (its rate is implied by the static type, not restated
+// in the SDP).
+struct AudioCodecInfo {
+    uint8_t payload_type_ = 0;
+    std::string name_;
+    unsigned clock_rate_ = 0;
+};
+
 // Parse a raw SDP body into PJMEDIA's model. Returns nullptr on parse failure.
 // All allocations come from `pool`, which must outlive the returned session.
 pjmedia_sdp_session* parse(pj_pool_t* pool, const std::string& sdp_str);
@@ -23,13 +34,33 @@ std::string serialize(const pjmedia_sdp_session* sdp);
 
 // B2BUA mangling: replace the connection address (session + media level) and
 // every media port with the SBC's relay address/port so media is anchored.
+// Covers every media line, not just the first — a call offering more than one
+// m= line (e.g. audio + video) gets each of its streams anchored.
 void rewrite_connection_and_port(
     pj_pool_t* pool,
     pjmedia_sdp_session* sdp,
     const std::string& relay_ip,
     uint16_t relay_port);
 
-// Read the remote RTP endpoint (first media stream) the far side will listen on.
+// Read the remote RTP endpoint the far side expects audio on: the first
+// non-declined ("port != 0") audio (m=audio) media line. MediaBridge relays a
+// single audio stream, so a video/fax line offered alongside audio is
+// structurally validated/rewritten (see has_valid_media()) but never bridged.
 RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
+
+// Issue #121: structural validity for both offers and answers. An SDP is
+// valid iff it has at least one media line, and every non-declined media line
+// ("port != 0") both has a non-empty format list and uses a transport this
+// relay can actually carry (RTP/AVP or RTP/AVPF — plain RTP; MediaBridge has
+// no SRTP support). A declined line (port == 0, RFC 3264's way of saying "no
+// thanks" to an offered stream) is exempt from both checks — it isn't
+// malformed SDP, it's the protocol working as designed.
+bool has_valid_media(const pjmedia_sdp_session* sdp);
+
+// The active/negotiated audio codec on an SDP already produced by offer/answer
+// negotiation (e.g. pjmedia_sdp_neg_get_active_local()/get_active_remote()):
+// the first payload type of the first non-declined audio media line. Returns
+// nullopt if there is no active audio stream.
+std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp);
 
 } // namespace SbcEngine::Sdp
