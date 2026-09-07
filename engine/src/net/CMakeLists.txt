@@ -1,4 +1,5 @@
 add_library(net STATIC
+    PjStatusError.cpp
     rtp/RtpCpp.cpp
     rtp/MediaBridge.cpp
     rtp/RtpInactivityTimer.cpp
