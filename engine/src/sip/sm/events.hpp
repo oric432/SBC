@@ -1,6 +1,9 @@
 #pragma once
 
+#include <optional>
 #include <string>
+
+#include "protocols/SupportedCodecs.hpp"
 
 namespace SbcEngine {
 
@@ -20,11 +23,16 @@ struct OfferInvalid {};
 
 struct RouteFound {
     std::string destination_;
+    std::optional<Protocols::SupportedCodec> required_codec_;
 };
 
 struct RouteFailed {};
 
 struct LoopDetected {};
+
+// Self-fired when the matched route has a strict codec requirement the
+// caller's offer can't satisfy — see RouteResolution::Kind::kCodecMismatch.
+struct CodecMismatch {};
 
 struct InviteSent {};
 

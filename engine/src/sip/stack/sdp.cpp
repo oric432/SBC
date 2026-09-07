@@ -192,30 +192,104 @@ RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp) {
     return endpoint;
 }
 
-std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp) {
+namespace {
+
+// First non-declined ("port != 0") audio media line, or nullptr.
+pjmedia_sdp_media* find_active_audio_media(pjmedia_sdp_session* sdp) {
     if (sdp == nullptr) {
-        return std::nullopt;
+        return nullptr;
     }
     for (unsigned i = 0; i < sdp->media_count; ++i) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-        const pjmedia_sdp_media* media = sdp->media[i];
-        if (!is_media_type(media, "audio") || media->desc.port == 0 || media->desc.fmt_count == 0) {
+        pjmedia_sdp_media* media = sdp->media[i];
+        if (is_media_type(media, "audio") && media->desc.port != 0) {
+            return media;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+namespace {
+
+AudioCodecInfo make_codec_info(const pjmedia_sdp_media* media, const pj_str_t& payload_type_str) {
+    AudioCodecInfo info;
+    info.payload_type_ = static_cast<uint8_t>(pj_strtoul(&payload_type_str));
+    if (auto rtpmap = find_rtpmap(media, payload_type_str)) {
+        info.name_ = std::string(rtpmap->enc_name.ptr, static_cast<std::size_t>(rtpmap->enc_name.slen));
+        info.clock_rate_ = rtpmap->clock_rate;
+    }
+    else {
+        info.name_ = std::string(RtpCpp::audio_pt_tostring(info.payload_type_));
+    }
+    return info;
+}
+
+} // namespace
+
+std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp) {
+    // find_active_audio_media() only reads through the returned pointer here
+    // (restrict_audio_codecs() below is the only mutator) — const_cast is
+    // safe and avoids duplicating the media-line search for every accessor.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    const pjmedia_sdp_media* media = find_active_audio_media(const_cast<pjmedia_sdp_session*>(sdp));
+    if (media == nullptr || media->desc.fmt_count == 0) {
+        return std::nullopt;
+    }
+    return make_codec_info(media, media->desc.fmt[0]);
+}
+
+std::vector<AudioCodecInfo> extract_all_audio_codecs(const pjmedia_sdp_session* sdp) {
+    std::vector<AudioCodecInfo> result;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    const pjmedia_sdp_media* media = find_active_audio_media(const_cast<pjmedia_sdp_session*>(sdp));
+    if (media == nullptr) {
+        return result;
+    }
+    result.reserve(media->desc.fmt_count);
+    for (unsigned i = 0; i < media->desc.fmt_count; ++i) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        result.push_back(make_codec_info(media, media->desc.fmt[i]));
+    }
+    return result;
+}
+
+void restrict_audio_codecs(
+    pj_pool_t* pool,
+    pjmedia_sdp_session* sdp,
+    std::span<const Protocols::SupportedCodec> allowed) {
+    pjmedia_sdp_media* media = find_active_audio_media(sdp);
+    if (media == nullptr) {
+        return;
+    }
+
+    // Drop existing rtpmap/fmtp attrs — none of `allowed`'s codecs need one
+    // (all are RFC 3551 static types), and stale ones referencing formats no
+    // longer offered would be invalid SDP. Every other attribute (direction,
+    // ptime, ...) is kept as-is.
+    unsigned kept = 0;
+    for (unsigned i = 0; i < media->attr_count; ++i) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        pjmedia_sdp_attr* attr = media->attr[i];
+        if (pj_stricmp2(&attr->name, "rtpmap") == 0 || pj_stricmp2(&attr->name, "fmtp") == 0) {
             continue;
         }
-
-        const pj_str_t& payload_type_str = media->desc.fmt[0];
-        AudioCodecInfo info;
-        info.payload_type_ = static_cast<uint8_t>(pj_strtoul(&payload_type_str));
-        if (auto rtpmap = find_rtpmap(media, payload_type_str)) {
-            info.name_ = std::string(rtpmap->enc_name.ptr, static_cast<std::size_t>(rtpmap->enc_name.slen));
-            info.clock_rate_ = rtpmap->clock_rate;
-        }
-        else {
-            info.name_ = std::string(RtpCpp::audio_pt_tostring(info.payload_type_));
-        }
-        return info;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        media->attr[kept++] = attr;
     }
-    return std::nullopt;
+    media->attr_count = kept;
+
+    constexpr std::size_t kMaxPtDigits = 4; // 3 digits + spare byte, PT is 0-127
+    media->desc.fmt_count = static_cast<unsigned>(allowed.size());
+    for (std::size_t i = 0; i < allowed.size(); ++i) {
+        char* buf = static_cast<char*>(pj_pool_alloc(pool, kMaxPtDigits));
+        const int len = pj_utoa(allowed[i].payload_type_, buf);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        media->desc.fmt[i].ptr = buf;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        media->desc.fmt[i].slen = len;
+    }
 }
 
 } // namespace SbcEngine::Sdp

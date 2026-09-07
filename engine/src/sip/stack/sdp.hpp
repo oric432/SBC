@@ -2,10 +2,14 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <vector>
 
 #include <pjlib.h>
 #include <pjmedia/sdp.h>
+
+#include "protocols/SupportedCodecs.hpp"
 
 namespace SbcEngine::Sdp {
 
@@ -62,5 +66,24 @@ RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 // it the decided offer/answer body directly (not necessarily one read back
 // out of pjmedia_sdp_neg — see RealSetupActions::forward_200_ok for why).
 std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp);
+
+// Every format offered on the first non-declined audio media line, in the
+// order they appear — unlike extract_active_audio_codec (which returns only
+// the first, i.e. the active/negotiated choice), this is for inspecting a
+// full offer's candidate list (e.g. "does the caller support codec X at
+// all?"). Empty if there is no active audio stream.
+std::vector<AudioCodecInfo> extract_all_audio_codecs(const pjmedia_sdp_session* sdp);
+
+// Rewrites the first non-declined audio media line's format list to exactly
+// `allowed`, in that order, dropping any now-stale rtpmap/fmtp attributes
+// (none of `allowed`'s codecs need one — all are RFC 3551 static types).
+// Every other line/attribute is left untouched. A single-element `allowed`
+// produces a valid SDP *answer* for that media line; multiple elements
+// produce an *offer* candidate list for the far end to choose from. No-op if
+// the session has no active audio media line.
+void restrict_audio_codecs(
+    pj_pool_t* pool,
+    pjmedia_sdp_session* sdp,
+    std::span<const Protocols::SupportedCodec> allowed);
 
 } // namespace SbcEngine::Sdp

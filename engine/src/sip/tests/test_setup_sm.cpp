@@ -94,7 +94,7 @@ TEST_CASE("SetupSm invalid offer SDP", "[setup_sm]") {
 // Verifies: resolve_route()'s canned RouteResolution drives the SM straight to Done.
 TEST_CASE("SetupSm route failed", "[setup_sm]") {
     MockSetupActions actions;
-    actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};
+    actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
     TestMachine machine{actions};
 
     machine.process_event(InviteReceived{kValidSdp});
@@ -109,13 +109,32 @@ TEST_CASE("SetupSm route failed", "[setup_sm]") {
 // (github issue #39 — an unbounded loop would otherwise exhaust ports)
 TEST_CASE("SetupSm loop detected", "[setup_sm]") {
     MockSetupActions actions;
-    actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}};
+    actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}, .required_codec_ = {}};
     TestMachine machine{actions};
 
     machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("send_loop_detected_response"));
     REQUIRE(actions.was_called("cleanup"));
+}
+
+// Test: Matched route has a strict codec requirement the caller's offer can't
+// satisfy (see issue #128 — resolve_route() checks this before ever dialing
+// the callee).
+// Verifies: SM rejects with 488 up front, never attempts create_outbound_leg.
+TEST_CASE("SetupSm codec mismatch", "[setup_sm]") {
+    MockSetupActions actions;
+    actions.route_resolution_ = {
+        .kind_ = RouteResolution::Kind::kCodecMismatch,
+        .destination_ = {},
+        .required_codec_ = {}};
+    TestMachine machine{actions};
+
+    machine.process_event(InviteReceived{kValidSdp});
+    REQUIRE(machine.is(Sml::state<Done>));
+    REQUIRE(actions.was_called("send_488_not_acceptable"));
+    REQUIRE(actions.was_called("cleanup"));
+    REQUIRE_FALSE(actions.was_called("create_outbound_leg"));
 }
 
 // Test: Caller cancels call before receiving answer

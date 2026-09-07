@@ -15,7 +15,10 @@ public:
 
     // Canned outcome resolve_route() returns; tests configure this before firing
     // InviteReceived to steer the SM's self-driven routing cascade.
-    RouteResolution route_resolution_{.kind_ = RouteResolution::Kind::kFound, .destination_ = "sip:callee@example.com"};
+    RouteResolution route_resolution_{
+        .kind_ = RouteResolution::Kind::kFound,
+        .destination_ = "sip:callee@example.com",
+        .required_codec_ = {}};
 
     // Canned outcomes for the fallible actions; tests configure these to steer
     // the SM's self-driven OutboundLegFailed/AcceptForwardFailed paths.
@@ -42,7 +45,8 @@ public:
 
     void send_loop_detected_response() override { calls_.emplace_back("send_loop_detected_response"); }
 
-    bool create_outbound_leg(const std::string& destination) override {
+    bool create_outbound_leg(const std::string& destination, std::optional<Protocols::SupportedCodec> /*required_codec*/)
+        override {
         calls_.push_back("create_outbound_leg:" + destination);
         return create_outbound_leg_result_;
     }
