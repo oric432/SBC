@@ -12,6 +12,7 @@ add_library(sip STATIC
     routes/routes_manager.cpp
     sm/setup_sm_runner.cpp
     sm/dialog_sm_runner.cpp
+    sm/offer_answer_sm_runner.cpp
     sm/options_sm_runner.cpp
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
