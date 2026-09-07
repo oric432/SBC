@@ -1,7 +1,10 @@
 add_library(net STATIC
+    PjStatusError.cpp
     rtp/RtpCpp.cpp
     rtp/MediaBridge.cpp
     rtp/RtpInactivityTimer.cpp
+    rtp/PjmediaEndpoint.cpp
+    rtp/CodecSession.cpp
 )
 target_compile_definitions(net PRIVATE RTPCPP_USE_BOOST_ASIO)
 
@@ -10,6 +13,7 @@ target_link_libraries(net PUBLIC
     project_options
     third_party::boost_asio
     third_party::spdlog
+    third_party::pjsip
 )
 target_precompile_headers(net PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
 

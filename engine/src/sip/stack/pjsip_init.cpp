@@ -7,6 +7,7 @@
 
 #include "sip/router/message_router.hpp"
 #include "core/utils/log.hpp"
+#include "net/PjStatusError.hpp"
 
 namespace SbcEngine {
 
@@ -19,16 +20,6 @@ constexpr unsigned kEventPollMs = 10;
 // through this pointer.
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 PjsipStack* g_active_stack = nullptr;
-
-std::string pj_status_str(pj_status_t status) {
-    std::array<char, PJ_ERR_MSG_SIZE> buf{};
-    pj_strerror(status, buf.data(), buf.size());
-    return {buf.data()};
-}
-
-Error pj_error(const std::string& what, pj_status_t status) {
-    return Error("{}: {}", what, pj_status_str(status));
-}
 
 // Application module: receives out-of-dialog requests (initial INVITE, OPTIONS,
 // and anything without a matching dialog). In-dialog traffic is delivered to the
