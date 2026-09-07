@@ -2,14 +2,13 @@
 
 #include <format>
 
-#include <pjmedia/sdp_neg.h>
 #include <pjsip_ua.h>
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/routes/routes_store.hpp"
-#include "sip/stack/sdp_mangler.hpp"
+#include "sip/stack/sdp.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
@@ -304,29 +303,18 @@ bool RealSetupActions::forward_200_ok(const std::string& sdp) {
 
     send_subsequent_response(PJSIP_SC_OK, answer);
 
-    // Issue #121: both legs' SDP negotiators are done by this point —
-    // inv_caller's synchronously inside the pjsip_inv_answer() call just
-    // above, inv_callee's already, as part of PJSIP processing the incoming
-    // 200 OK before this handler ever ran. Record each leg's actual
-    // negotiated audio codec for later consumers (e.g. a future transcoder);
-    // this ticket does not act on it. Use the SDP that represents the
-    // *decided* answer on each leg: our own answer (active local) for
-    // inv_caller, the callee's actual answer (active remote) for inv_callee —
-    // the other side of each negotiator still holds the untrimmed offer.
-    if (const pjsip_inv_session* inv_caller = session_.inv_caller();
-        inv_caller != nullptr && inv_caller->neg != nullptr) {
-        const pjmedia_sdp_session* active = nullptr;
-        if (pjmedia_sdp_neg_get_active_local(inv_caller->neg, &active) == PJ_SUCCESS) {
-            session_.set_caller_leg_codec(Sdp::extract_active_audio_codec(active));
-        }
-    }
-    if (const pjsip_inv_session* inv_callee = session_.inv_callee();
-        inv_callee != nullptr && inv_callee->neg != nullptr) {
-        const pjmedia_sdp_session* active = nullptr;
-        if (pjmedia_sdp_neg_get_active_remote(inv_callee->neg, &active) == PJ_SUCCESS) {
-            session_.set_callee_leg_codec(Sdp::extract_active_audio_codec(active));
-        }
-    }
+    // Issue #121: groundwork for future codec-aware work (e.g. a transcoder) —
+    // nothing consumes it yet. `answer` here IS the callee's decided codec:
+    // mangling only ever touches conn/port, never the format lines, and this
+    // exact object is what both legs end up carrying (we relay it to the
+    // caller verbatim above). Reading it directly avoids depending on
+    // pjmedia_sdp_neg's internal timing — on the inv_callee leg in particular,
+    // PJSIP fires this very callback *before* it negotiates the incoming
+    // answer (see PJSIP_TSX_STATE_TERMINATED in sip_inv.c), so querying
+    // pjmedia_sdp_neg_get_active_remote() here reads uninitialized state.
+    auto codec = Sdp::extract_active_audio_codec(answer);
+    session_.set_caller_leg_codec(codec);
+    session_.set_callee_leg_codec(std::move(codec));
 
     session_.media_bridge()->start_bridge_loop();
     Log::call()->info(

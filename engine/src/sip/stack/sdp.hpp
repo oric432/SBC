@@ -32,6 +32,14 @@ pjmedia_sdp_session* parse(pj_pool_t* pool, const std::string& sdp_str);
 // Serialize a PJMEDIA SDP session back to a string.
 std::string serialize(const pjmedia_sdp_session* sdp);
 
+// An SDP is valid iff it has at least one media line, and every
+// non-declined media line ("port != 0") both has a non-empty format list and
+// uses a transport this relay can actually carry (RTP/AVP or RTP/AVPF — plain
+// RTP; MediaBridge has no SRTP support). A declined line (port == 0, RFC
+// 3264's way of saying "no thanks" to an offered stream) is exempt from both
+// checks — it isn't malformed SDP, it's the protocol working as designed.
+bool is_valid_sdp(const std::string& sdp);
+
 // B2BUA mangling: replace the connection address (session + media level) and
 // every media port with the SBC's relay address/port so media is anchored.
 // Covers every media line, not just the first — a call offering more than one
@@ -45,22 +53,14 @@ void rewrite_connection_and_port(
 // Read the remote RTP endpoint the far side expects audio on: the first
 // non-declined ("port != 0") audio (m=audio) media line. MediaBridge relays a
 // single audio stream, so a video/fax line offered alongside audio is
-// structurally validated/rewritten (see has_valid_media()) but never bridged.
+// structurally validated/rewritten but never bridged.
 RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 
-// Issue #121: structural validity for both offers and answers. An SDP is
-// valid iff it has at least one media line, and every non-declined media line
-// ("port != 0") both has a non-empty format list and uses a transport this
-// relay can actually carry (RTP/AVP or RTP/AVPF — plain RTP; MediaBridge has
-// no SRTP support). A declined line (port == 0, RFC 3264's way of saying "no
-// thanks" to an offered stream) is exempt from both checks — it isn't
-// malformed SDP, it's the protocol working as designed.
-bool has_valid_media(const pjmedia_sdp_session* sdp);
-
-// The active/negotiated audio codec on an SDP already produced by offer/answer
-// negotiation (e.g. pjmedia_sdp_neg_get_active_local()/get_active_remote()):
-// the first payload type of the first non-declined audio media line. Returns
-// nullopt if there is no active audio stream.
+// The audio codec carried on an SDP: the first payload type of its first
+// non-declined audio media line. Returns nullopt if there is no active audio
+// stream. Groundwork for future codec-aware work (e.g. a transcoder) — pass
+// it the decided offer/answer body directly (not necessarily one read back
+// out of pjmedia_sdp_neg — see RealSetupActions::forward_200_ok for why).
 std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp);
 
 } // namespace SbcEngine::Sdp

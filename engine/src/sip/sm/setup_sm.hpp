@@ -4,7 +4,7 @@
 
 #include "events.hpp"
 #include "isbc_actions.hpp"
-#include "sip/stack/sdp_validator.hpp"
+#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
@@ -40,14 +40,14 @@ struct SetupSm {
     auto operator()() const {
         // Guards - SM validates SDP content directly, PJSIP just supplies raw data
         auto is_valid_invite = [](const InviteReceived& evt) {
-            return !evt.sdp_.empty() && SdpValidator::is_valid_offer(evt.sdp_);
+            return !evt.sdp_.empty() && Sdp::is_valid_sdp(evt.sdp_);
         };
         auto is_invalid_sip_invite = [](const InviteReceived& evt) { return evt.sdp_.empty(); };
         auto is_invalid_offer_invite = [](const InviteReceived& evt) {
-            return !evt.sdp_.empty() && !SdpValidator::is_valid_offer(evt.sdp_);
+            return !evt.sdp_.empty() && !Sdp::is_valid_sdp(evt.sdp_);
         };
-        auto is_sdp_valid = [](const CallAccepted& evt) { return SdpValidator::is_valid_answer(evt.answer_sdp_); };
-        auto is_sdp_invalid = [](const CallAccepted& evt) { return !SdpValidator::is_valid_answer(evt.answer_sdp_); };
+        auto is_sdp_valid = [](const CallAccepted& evt) { return Sdp::is_valid_sdp(evt.answer_sdp_); };
+        auto is_sdp_invalid = [](const CallAccepted& evt) { return !Sdp::is_valid_sdp(evt.answer_sdp_); };
 
         // Actions
         //
@@ -112,8 +112,7 @@ struct SetupSm {
         auto handle_forward_ringing = [](Context& actions) { actions.forward_180_ringing(); };
 
         // forward_200_ok() can itself fail to relay the callee's answer as 200
-        // OK (e.g. it passed the shallow SdpValidator guard but the real SDP
-        // parse inside forward_200_ok failed) — it has already sent a failure
+        // OK (e.g. some other part of it fails) — it has already sent a failure
         // response to the caller and ended the callee leg in that case, so self-fire
         // AcceptForwardFailed instead of settling in WaitingForAck as if 200 OK went out.
         auto handle_accept_valid = [](Context& actions, const CallAccepted& evt, SetupSelfFireQueue result) {

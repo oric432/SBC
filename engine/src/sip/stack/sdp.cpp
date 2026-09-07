@@ -1,4 +1,4 @@
-#include "sdp_mangler.hpp"
+#include "sdp.hpp"
 
 #include <array>
 #include <cstring>
@@ -14,6 +14,8 @@ namespace SbcEngine::Sdp {
 namespace {
 
 constexpr pj_size_t kSdpPrintBufSize = 4096;
+constexpr pj_size_t kValidatePoolInitial = 2048;
+constexpr pj_size_t kValidatePoolIncrement = 2048;
 
 // Point a connection line at the SBC relay address (IN IP4 <relay_ip>).
 void set_conn_addr(pj_pool_t* pool, pjmedia_sdp_conn* conn, const std::string& relay_ip) {
@@ -53,6 +55,49 @@ std::optional<pjmedia_sdp_rtpmap> find_rtpmap(const pjmedia_sdp_media* media, co
     return std::nullopt;
 }
 
+bool has_valid_media(const pjmedia_sdp_session* sdp) {
+    if (sdp == nullptr || sdp->media_count == 0) {
+        return false;
+    }
+    for (unsigned i = 0; i < sdp->media_count; ++i) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        const pjmedia_sdp_media* media = sdp->media[i];
+        if (media->desc.port == 0) {
+            continue; // declined stream (RFC 3264) — exempt, not malformed
+        }
+        if (media->desc.fmt_count == 0 || !is_supported_transport(media)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Lazily bootstraps just enough of PJLIB to run pjmedia_sdp_parse() outside of
+// any live PjsipStack. pj_init() is refcounted (safe alongside the real
+// stack's own call, or a test binary's), and SDP parsing never touches
+// pjsip_endpt's header-parser tables the way pjsip_parse_rdata() does, so no
+// pjsip_endpoint is needed here at all — just a pool factory.
+class ScopedPjInit {
+public:
+    ScopedPjInit() noexcept {
+        pj_init();
+        pj_caching_pool_init(&caching_pool_, &pj_pool_factory_default_policy, 0);
+    }
+    ~ScopedPjInit() {
+        pj_caching_pool_destroy(&caching_pool_);
+        pj_shutdown();
+    }
+    ScopedPjInit(const ScopedPjInit&) = delete;
+    ScopedPjInit& operator=(const ScopedPjInit&) = delete;
+    ScopedPjInit(ScopedPjInit&&) = delete;
+    ScopedPjInit& operator=(ScopedPjInit&&) = delete;
+
+    [[nodiscard]] pj_pool_factory* factory() const { return &caching_pool_.factory; }
+
+private:
+    mutable pj_caching_pool caching_pool_{};
+};
+
 } // namespace
 
 pjmedia_sdp_session* parse(pj_pool_t* pool, const std::string& sdp_str) {
@@ -83,6 +128,19 @@ std::string serialize(const pjmedia_sdp_session* sdp) {
         return {};
     }
     return {buf.data(), static_cast<std::size_t>(len)};
+}
+
+bool is_valid_sdp(const std::string& sdp) {
+    static const ScopedPjInit init;
+    // One pool for the process lifetime, reset (not recreated) on every call —
+    // validation runs on PJSIP's single event-loop thread, so reuse is safe,
+    // and pj_pool_reset() just rewinds the existing blocks instead of paying
+    // for a fresh allocate/free pair per offer or answer.
+    static pj_pool_t* pool =
+        pj_pool_create(init.factory(), "sdp_validate", kValidatePoolInitial, kValidatePoolIncrement, nullptr);
+
+    pj_pool_reset(pool);
+    return has_valid_media(parse(pool, sdp));
 }
 
 void rewrite_connection_and_port(
@@ -132,23 +190,6 @@ RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp) {
         return endpoint;
     }
     return endpoint;
-}
-
-bool has_valid_media(const pjmedia_sdp_session* sdp) {
-    if (sdp == nullptr || sdp->media_count == 0) {
-        return false;
-    }
-    for (unsigned i = 0; i < sdp->media_count; ++i) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-        const pjmedia_sdp_media* media = sdp->media[i];
-        if (media->desc.port == 0) {
-            continue; // declined stream (RFC 3264) — exempt, not malformed
-        }
-        if (media->desc.fmt_count == 0 || !is_supported_transport(media)) {
-            return false;
-        }
-    }
-    return true;
 }
 
 std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp) {

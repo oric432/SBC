@@ -17,8 +17,8 @@ namespace {
 // that here requires the same process_queue<std::queue> policy the real machine uses.
 using TestMachine = Sml::sm<SetupSm<MockSetupActions>, Sml::process_queue<std::queue>>;
 
-// A structurally valid offer/answer per #121's SdpValidator: parses, has a
-// media line, a non-empty format list and an RTP/AVP transport.
+// A structurally valid offer/answer per #121's Sdp::is_valid_offer/answer:
+// parses, has a media line, a non-empty format list and an RTP/AVP transport.
 const std::string kValidSdp = "v=0\r\n"
                               "o=- 0 0 IN IP4 127.0.0.1\r\n"
                               "s=-\r\n"
@@ -176,7 +176,7 @@ TEST_CASE("SetupSm outbound invite send fails", "[setup_sm]") {
     REQUIRE(actions.was_called("cleanup"));
 }
 
-// Test: CallAccepted passes the SdpValidator guard, but forward_200_ok()
+// Test: CallAccepted passes the Sdp::is_valid_answer guard, but forward_200_ok()
 // itself fails to relay the answer (e.g. some other part of it fails)
 // Verifies: SM self-fires AcceptForwardFailed instead of settling in
 // WaitingForAck as if 200 OK had actually gone out (issue #87 / #2). Unlike

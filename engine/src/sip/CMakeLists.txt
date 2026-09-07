@@ -1,7 +1,6 @@
 add_library(sip STATIC
     stack/pjsip_init.cpp
-    stack/sdp_mangler.cpp
-    stack/sdp_validator.cpp
+    stack/sdp.cpp
     call/call_manager.cpp
     call/call_session.cpp
     router/message_router.cpp

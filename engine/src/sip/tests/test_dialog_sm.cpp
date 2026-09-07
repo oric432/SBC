@@ -17,8 +17,8 @@ namespace {
 // same process_queue<std::queue> policy the real machine uses.
 using TestMachine = Sml::sm<DialogSm<MockDialogActions>, Sml::process_queue<std::queue>>;
 
-// A structurally valid offer/answer per #121's SdpValidator: parses, has a
-// media line, a non-empty format list and an RTP/AVP transport.
+// A structurally valid offer/answer per #121's Sdp::is_valid_offer/answer:
+// parses, has a media line, a non-empty format list and an RTP/AVP transport.
 const std::string kValidSdp = "v=0\r\n"
                               "o=- 0 0 IN IP4 127.0.0.1\r\n"
                               "s=-\r\n"

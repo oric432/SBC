@@ -15,7 +15,7 @@
 #include "net/rtp/MediaBridge.hpp"
 #include "sip/sm/dialog_sm_runner.hpp"
 #include "sip/sm/setup_sm_runner.hpp"
-#include "sip/stack/sdp_mangler.hpp"
+#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
