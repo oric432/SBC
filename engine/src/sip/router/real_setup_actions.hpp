@@ -28,8 +28,7 @@ public:
     void send_route_failure_response() override;
     void send_loop_detected_response() override;
 
-    bool create_outbound_leg(const std::string& destination, std::optional<Protocols::SupportedCodec> required_codec)
-        override;
+    bool create_outbound_leg(const std::string& destination) override;
     bool send_outbound_invite() override;
 
     void forward_180_ringing() override;

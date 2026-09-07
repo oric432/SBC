@@ -1,10 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <optional>
 #include <string>
-
-#include "protocols/SupportedCodecs.hpp"
 
 namespace SbcEngine {
 
@@ -32,19 +29,10 @@ public:
 // Outcome of a synchronous routing lookup, returned by ISetupContext::resolve_route()
 // so the SM's own transition table can decide which follow-up event to self-fire.
 struct RouteResolution {
-    // kCodecMismatch: the matched route has a strict SipRouteRule.codec
-    // requirement the caller's offer doesn't include (or that this build
-    // doesn't have compiled in at all) — rejected before the callee is ever
-    // dialed, no transcoding used to route around a route-level requirement.
-    enum class Kind : std::uint8_t { kFound, kFailed, kLoop, kCodecMismatch };
+    enum class Kind : std::uint8_t { kFound, kFailed, kLoop };
 
     Kind kind_ = Kind::kFailed;
     std::string destination_; // only meaningful when kind_ == kFound
-    // The matched route's strict codec requirement, already resolved to a
-    // real supported codec (SipRouteRule.codec's free-text name looked up
-    // against kSupportedCodecs) — nullopt if the route has none, only
-    // meaningful when kind_ == kFound.
-    std::optional<Protocols::SupportedCodec> required_codec_;
 };
 
 class ISetupContext : public IContext {
@@ -74,12 +62,7 @@ public:
     // actually stood up/dispatched (RTP bind failure, SDP parse failure, PJSIP
     // dialog/invite/send failure) so the SM can self-fire OutboundLegFailed
     // instead of proceeding as though the outbound INVITE was sent.
-    // required_codec is RouteResolution::required_codec_ carried forward from
-    // resolve_route() — the callee-facing offer is restricted to exactly that
-    // one codec when set, or the SBC's full supported list otherwise.
-    virtual bool create_outbound_leg(
-        const std::string& destination,
-        std::optional<Protocols::SupportedCodec> required_codec) = 0;
+    virtual bool create_outbound_leg(const std::string& destination) = 0;
     virtual bool send_outbound_invite() = 0;
 
     // Response forwarding (setup phase)

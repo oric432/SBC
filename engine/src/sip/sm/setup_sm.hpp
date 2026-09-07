@@ -32,15 +32,8 @@ struct Done {};
 // boost::sml recognizes the bare back::process<...> parameter type and
 // substitutes a live instance wired to the sm's own internal queue at dispatch
 // time (see Sml::process_queue<std::queue>), no constructor wiring needed.
-using SetupSelfFireQueue = Sml::back::process<
-    RouteFound,
-    RouteFailed,
-    LoopDetected,
-    CodecMismatch,
-    InviteSent,
-    OutboundLegFailed,
-    AcceptForwardFailed,
-    Cleanup>;
+using SetupSelfFireQueue = Sml::back::
+    process<RouteFound, RouteFailed, LoopDetected, InviteSent, OutboundLegFailed, AcceptForwardFailed, Cleanup>;
 
 template <typename Context>
 struct SetupSm {
@@ -68,12 +61,9 @@ struct SetupSm {
             actions.send_100_trying();
             const RouteResolution resolution = actions.resolve_route();
             switch (resolution.kind_) {
-            case RouteResolution::Kind::kFound:
-                route_result(RouteFound{resolution.destination_, resolution.required_codec_});
-                break;
+            case RouteResolution::Kind::kFound: route_result(RouteFound{resolution.destination_}); break;
             case RouteResolution::Kind::kLoop: route_result(LoopDetected{}); break;
             case RouteResolution::Kind::kFailed: route_result(RouteFailed{}); break;
-            case RouteResolution::Kind::kCodecMismatch: route_result(CodecMismatch{}); break;
             }
         };
         auto handle_invite_invalid = [](Context& actions, SetupSelfFireQueue cleanup_event) {
@@ -96,20 +86,13 @@ struct SetupSm {
             cleanup_event(Cleanup{});
         };
 
-        // The matched route requires a codec the caller's offer can't satisfy —
-        // reject up front rather than dialing the callee at all.
-        auto handle_codec_mismatch = [](Context& actions, SetupSelfFireQueue cleanup_event) {
-            actions.send_488_not_acceptable();
-            cleanup_event(Cleanup{});
-        };
-
         // create_outbound_leg()/send_outbound_invite() can each fail to actually
         // stand up the callee leg (RTP bind failure, SDP parse failure, PJSIP
         // dialog/invite/send failure) — self-fire OutboundLegFailed instead of
         // InviteSent in that case, so the SM doesn't sit in WaitingForAnswer
         // waiting for events a nonexistent callee session can never send.
         auto handle_route_found = [](Context& actions, const RouteFound& evt, SetupSelfFireQueue result) {
-            const bool leg_created = actions.create_outbound_leg(evt.destination_, evt.required_codec_);
+            const bool leg_created = actions.create_outbound_leg(evt.destination_);
             const bool invite_sent = leg_created && actions.send_outbound_invite();
             if (invite_sent) {
                 result(InviteSent{});
@@ -185,7 +168,6 @@ struct SetupSm {
              Sml::state<Routing>           + (Sml::event<RouteFound>                              / handle_route_found)         = Sml::state<Calling>,
              Sml::state<Routing>           + (Sml::event<RouteFailed>                             / handle_route_failed)        = Sml::state<Failed>,
              Sml::state<Routing>           + (Sml::event<LoopDetected>                            / handle_loop_detected)       = Sml::state<Failed>,
-             Sml::state<Routing>           + (Sml::event<CodecMismatch>                           / handle_codec_mismatch)      = Sml::state<Failed>,
 
              // Calling state
              Sml::state<Calling>           +  Sml::event<InviteSent>                                                            = Sml::state<WaitingForAnswer>,

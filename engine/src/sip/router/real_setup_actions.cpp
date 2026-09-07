@@ -1,7 +1,5 @@
 #include "real_setup_actions.hpp"
 
-#include <algorithm>
-#include <array>
 #include <format>
 
 #include <pjsip_ua.h>
@@ -113,7 +111,7 @@ RouteResolution RealSetupActions::resolve_route() {
     auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
     if (!route) {
         Log::sip()->warn("[{}] no route found for {}", session_.call_id(), request_uri);
-        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
+        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};
     }
 
     if (route->sip_address == ctx->config_.local_ip_ && route->port == static_cast<int>(ctx->config_.sip_port_)) {
@@ -129,42 +127,14 @@ RouteResolution RealSetupActions::resolve_route() {
             request_uri,
             route->sip_address,
             route->port);
-        return {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}, .required_codec_ = {}};
-    }
-
-    std::optional<Protocols::SupportedCodec> required_codec;
-    if (route->codec.has_value()) {
-        const Protocols::SupportedCodec* required = Protocols::find_supported_codec_by_name(*route->codec);
-        if (required == nullptr) {
-            Log::sip()->warn(
-                "[{}] route for {} requires codec '{}', which this build doesn't support",
-                session_.call_id(),
-                request_uri,
-                *route->codec);
-            return {.kind_ = RouteResolution::Kind::kCodecMismatch, .destination_ = {}, .required_codec_ = {}};
-        }
-
-        const pjmedia_sdp_session* offer = Sdp::parse(session_.pool(), session_.caller_offer_sdp());
-        auto offered = Sdp::extract_all_audio_codecs(offer);
-        const bool caller_supports_it = std::ranges::any_of(offered, [required](const Sdp::AudioCodecInfo& codec) {
-            return codec.payload_type_ == required->payload_type_;
-        });
-        if (!caller_supports_it) {
-            Log::sip()->warn(
-                "[{}] route for {} strictly requires '{}', caller's offer doesn't include it",
-                session_.call_id(),
-                request_uri,
-                *route->codec);
-            return {.kind_ = RouteResolution::Kind::kCodecMismatch, .destination_ = {}, .required_codec_ = {}};
-        }
-        required_codec = *required;
+        return {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}};
     }
 
     std::string user = extract_uri_user(route->uri);
     const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
                                           : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
     Log::sip()->info("Found route for request uri {}, route uri : {}:{}", request_uri, route->sip_address, route->port);
-    return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest, .required_codec_ = required_codec};
+    return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest};
 }
 
 void RealSetupActions::send_route_failure_response() {
@@ -175,9 +145,7 @@ void RealSetupActions::send_loop_detected_response() {
     send_subsequent_response(PJSIP_SC_LOOP_DETECTED);
 }
 
-bool RealSetupActions::create_outbound_leg(
-    const std::string& destination,
-    std::optional<Protocols::SupportedCodec> required_codec) {
+bool RealSetupActions::create_outbound_leg(const std::string& destination) {
     const PjContext* ctx = session_.ctx();
     const PjsipConfig& cfg = ctx->config_;
 
@@ -217,19 +185,6 @@ bool RealSetupActions::create_outbound_leg(
         offer,
         cfg.local_ip_,
         session_.media_bridge()->leg_b_port().value());
-
-    // 3b. Build the callee-facing offer from the SBC's own codec policy (see
-    // issue #128) rather than forwarding the caller's raw format list —
-    // negotiating independently per leg is what makes transcoding possible at
-    // all. A route-level codec requirement restricts to exactly that one
-    // codec; otherwise offer the SBC's full supported list, priority order.
-    if (required_codec) {
-        const std::array<Protocols::SupportedCodec, 1> forced{*required_codec};
-        Sdp::restrict_audio_codecs(session_.pool(), offer, forced);
-    }
-    else {
-        Sdp::restrict_audio_codecs(session_.pool(), offer, Protocols::kSupportedCodecs);
-    }
 
     // 4. Create the UAC dialog + invite session towards the destination.
     // From carries the caller's real identity (name + number) so the SBC stays
@@ -327,7 +282,7 @@ bool RealSetupActions::forward_200_ok(const std::string& sdp) {
     const PjContext* ctx = session_.ctx();
 
     // Parse the callee's answer; point the callee-facing socket at their RTP address.
-    const pjmedia_sdp_session* answer = Sdp::parse(session_.pool(), sdp);
+    pjmedia_sdp_session* answer = Sdp::parse(session_.pool(), sdp);
     if (answer == nullptr) {
         Log::call()->error("[{}] cannot parse callee answer SDP", session_.call_id());
         end_session(session_.inv_callee(), PJSIP_SC_NOT_ACCEPTABLE_HERE, "forward_200_ok");
@@ -339,76 +294,27 @@ bool RealSetupActions::forward_200_ok(const std::string& sdp) {
         session_.media_bridge()->set_remote_leg_b(callee_rtp.ip_, callee_rtp.port_);
     }
 
-    // Issue #121/#128: `answer` here IS the callee's decided codec — mangling
-    // only ever touches conn/port, never the format lines. Reading it
-    // directly avoids depending on pjmedia_sdp_neg's internal timing — on the
-    // inv_callee leg in particular, PJSIP fires this very callback *before*
-    // it negotiates the incoming answer (see PJSIP_TSX_STATE_TERMINATED in
-    // sip_inv.c), so querying pjmedia_sdp_neg_get_active_remote() here reads
-    // uninitialized state.
-    auto callee_codec = Sdp::extract_active_audio_codec(answer);
-
-    // Issue #128: the caller's answer is negotiated independently from the
-    // callee's, not relayed verbatim — re-parse the caller's ORIGINAL offer
-    // fresh (the copy mangled in create_outbound_leg() was restricted for the
-    // callee-facing leg specifically, already consumed, not reusable here).
-    pjmedia_sdp_session* caller_answer = Sdp::parse(session_.pool(), session_.caller_offer_sdp());
-    if (caller_answer == nullptr) {
-        Log::call()->error("[{}] cannot re-parse caller offer SDP", session_.call_id());
-        end_session(session_.inv_callee(), PJSIP_SC_NOT_ACCEPTABLE_HERE, "forward_200_ok");
-        send_subsequent_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
-        return false;
-    }
-    auto caller_offered = Sdp::extract_all_audio_codecs(caller_answer);
-
-    // Prefer matching the callee's already-known pick — zero transcoding
-    // whenever the caller already supports it, strictly better than picking
-    // independently (which can only tie or lose on quality when they differ).
-    const Protocols::SupportedCodec* chosen = nullptr;
-    if (callee_codec) {
-        const bool caller_supports_callees_codec = std::ranges::any_of(
-            caller_offered,
-            [&](const Sdp::AudioCodecInfo& codec) { return codec.payload_type_ == callee_codec->payload_type_; });
-        if (caller_supports_callees_codec) {
-            chosen = Protocols::find_supported_codec_by_payload_type(callee_codec->payload_type_);
-        }
-    }
-    // Fall back to the SBC's own independent pick: first of its priority
-    // list the caller also offered.
-    if (chosen == nullptr) {
-        for (const auto& candidate : Protocols::kSupportedCodecs) {
-            const bool caller_offers_it = std::ranges::any_of(caller_offered, [&](const Sdp::AudioCodecInfo& codec) {
-                return codec.payload_type_ == candidate.payload_type_;
-            });
-            if (caller_offers_it) {
-                chosen = &candidate;
-                break;
-            }
-        }
-    }
-    if (chosen == nullptr) {
-        Log::call()->error(
-            "[{}] no codec shared between caller's offer and the SBC's supported set",
-            session_.call_id());
-        end_session(session_.inv_callee(), PJSIP_SC_NOT_ACCEPTABLE_HERE, "forward_200_ok");
-        send_subsequent_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
-        return false;
-    }
-
-    const std::array<Protocols::SupportedCodec, 1> caller_answer_codec{*chosen};
-    Sdp::restrict_audio_codecs(session_.pool(), caller_answer, caller_answer_codec);
-
-    // Mangle the caller's answer: media anchored at our caller-facing socket.
+    // Mangle the answer towards the caller: media anchored at our caller-facing socket.
     Sdp::rewrite_connection_and_port(
         session_.pool(),
-        caller_answer,
+        answer,
         ctx->config_.local_ip_,
         session_.media_bridge()->leg_a_port().value());
 
-    send_subsequent_response(PJSIP_SC_OK, caller_answer);
+    send_subsequent_response(PJSIP_SC_OK, answer);
 
-    session_.set_caller_leg_codec(Sdp::extract_active_audio_codec(caller_answer));
-    session_.set_callee_leg_codec(std::move(callee_codec));
+    // Issue #121: groundwork for future codec-aware work (e.g. a transcoder) —
+    // nothing consumes it yet. `answer` here IS the callee's decided codec:
+    // mangling only ever touches conn/port, never the format lines, and this
+    // exact object is what both legs end up carrying (we relay it to the
+    // caller verbatim above). Reading it directly avoids depending on
+    // pjmedia_sdp_neg's internal timing — on the inv_callee leg in particular,
+    // PJSIP fires this very callback *before* it negotiates the incoming
+    // answer (see PJSIP_TSX_STATE_TERMINATED in sip_inv.c), so querying
+    // pjmedia_sdp_neg_get_active_remote() here reads uninitialized state.
+    auto codec = Sdp::extract_active_audio_codec(answer);
+    session_.set_caller_leg_codec(codec);
+    session_.set_callee_leg_codec(std::move(codec));
 
     session_.media_bridge()->start_bridge_loop();
     Log::call()->info(
