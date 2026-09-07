@@ -3,7 +3,7 @@
 #include <boost/sml.hpp>
 
 #include "events.hpp"
-#include "core/utils/sdp_validator.hpp"
+#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
@@ -28,13 +28,13 @@ template <typename Actions>
 struct DialogSm {
     auto operator()() const {
         // Guards - SM validates SDP content directly
-        auto is_sdp_valid = [](const ReinviteReceived& evt) { return SdpValidator::is_valid_offer(evt.sdp_); };
-        auto is_sdp_invalid = [](const ReinviteReceived& evt) { return !SdpValidator::is_valid_offer(evt.sdp_); };
+        auto is_sdp_valid = [](const ReinviteReceived& evt) { return Sdp::is_valid_sdp(evt.sdp_); };
+        auto is_sdp_invalid = [](const ReinviteReceived& evt) { return !Sdp::is_valid_sdp(evt.sdp_); };
         auto is_reinvite_accepted_valid = [](const ReinviteAccepted& evt) {
-            return SdpValidator::is_valid_answer(evt.answer_sdp_);
+            return Sdp::is_valid_sdp(evt.answer_sdp_);
         };
         auto is_reinvite_accepted_invalid = [](const ReinviteAccepted& evt) {
-            return !SdpValidator::is_valid_answer(evt.answer_sdp_);
+            return !Sdp::is_valid_sdp(evt.answer_sdp_);
         };
 
         // Actions

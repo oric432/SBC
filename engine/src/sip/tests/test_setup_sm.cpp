@@ -16,6 +16,16 @@ namespace {
 // Cleanup) via an injected SetupSelfFireQueue — see setup_sm.hpp. Exercising
 // that here requires the same process_queue<std::queue> policy the real machine uses.
 using TestMachine = Sml::sm<SetupSm<MockSetupActions>, Sml::process_queue<std::queue>>;
+
+// A structurally valid offer/answer per #121's Sdp::is_valid_offer/answer:
+// parses, has a media line, a non-empty format list and an RTP/AVP transport.
+const std::string kValidSdp = "v=0\r\n"
+                              "o=- 0 0 IN IP4 127.0.0.1\r\n"
+                              "s=-\r\n"
+                              "c=IN IP4 127.0.0.1\r\n"
+                              "t=0 0\r\n"
+                              "m=audio 10000 RTP/AVP 0\r\n"
+                              "a=rtpmap:0 PCMU/8000\r\n";
 } // namespace
 
 // Test: Happy path from initial INVITE through dialog establishment
@@ -30,7 +40,7 @@ TEST_CASE("SetupSm happy path", "[setup_sm]") {
     // Step 1: Valid INVITE — SM validates SDP, sends 100 Trying, resolves routing,
     // creates the outbound leg, sends the outbound INVITE, and lands in
     // WaitingForAnswer, all off this single call — no external .is()/process_event driving.
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
     REQUIRE(actions.was_called("send_100_trying"));
     REQUIRE(actions.was_called("resolve_route"));
@@ -45,7 +55,7 @@ TEST_CASE("SetupSm happy path", "[setup_sm]") {
 
     // Step 3: Receive 200 OK from callee with valid answer SDP
     actions.reset();
-    machine.process_event(CallAccepted{"v=0\r\n"});
+    machine.process_event(CallAccepted{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForAck>));
     REQUIRE(actions.was_called("forward_200_ok"));
 
@@ -87,7 +97,7 @@ TEST_CASE("SetupSm route failed", "[setup_sm]") {
     actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("resolve_route"));
     REQUIRE(actions.was_called("send_route_failure_response"));
@@ -102,7 +112,7 @@ TEST_CASE("SetupSm loop detected", "[setup_sm]") {
     actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}};
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("send_loop_detected_response"));
     REQUIRE(actions.was_called("cleanup"));
@@ -114,7 +124,7 @@ TEST_CASE("SetupSm cancel before answer", "[setup_sm]") {
     MockSetupActions actions;
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     machine.process_event(RingingReceived{});
     REQUIRE(machine.is(Sml::state<Ringing>));
 
@@ -142,7 +152,7 @@ TEST_CASE("SetupSm outbound leg creation fails", "[setup_sm]") {
     actions.create_outbound_leg_result_ = false;
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("create_outbound_leg"));
     REQUIRE_FALSE(actions.was_called("send_outbound_invite"));
@@ -158,7 +168,7 @@ TEST_CASE("SetupSm outbound invite send fails", "[setup_sm]") {
     actions.send_outbound_invite_result_ = false;
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("create_outbound_leg"));
     REQUIRE(actions.was_called("send_outbound_invite"));
@@ -166,8 +176,8 @@ TEST_CASE("SetupSm outbound invite send fails", "[setup_sm]") {
     REQUIRE(actions.was_called("cleanup"));
 }
 
-// Test: CallAccepted passes the shallow SdpValidator guard, but forward_200_ok()
-// itself fails to relay the answer (e.g. its real SDP parse fails)
+// Test: CallAccepted passes the Sdp::is_valid_answer guard, but forward_200_ok()
+// itself fails to relay the answer (e.g. some other part of it fails)
 // Verifies: SM self-fires AcceptForwardFailed instead of settling in
 // WaitingForAck as if 200 OK had actually gone out (issue #87 / #2). Unlike
 // "invalid answer SDP" above, forward_200_ok is responsible for its own
@@ -177,11 +187,11 @@ TEST_CASE("SetupSm forward_200_ok fails despite valid-looking SDP", "[setup_sm]"
     actions.forward_200_ok_result_ = false;
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
 
     actions.reset();
-    machine.process_event(CallAccepted{"v=0\r\n"});
+    machine.process_event(CallAccepted{kValidSdp});
     REQUIRE(machine.is(Sml::state<Done>));
     REQUIRE(actions.was_called("forward_200_ok"));
     REQUIRE(actions.was_called("cleanup"));
@@ -193,7 +203,7 @@ TEST_CASE("SetupSm invalid answer SDP", "[setup_sm]") {
     MockSetupActions actions;
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     machine.process_event(RingingReceived{});
     REQUIRE(machine.is(Sml::state<Ringing>));
 
@@ -211,7 +221,7 @@ TEST_CASE("SetupSm call rejected", "[setup_sm]") {
     MockSetupActions actions;
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
 
     actions.reset();
@@ -227,7 +237,7 @@ TEST_CASE("SetupSm call timeout", "[setup_sm]") {
     MockSetupActions actions;
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
 
     actions.reset();
@@ -243,8 +253,8 @@ TEST_CASE("SetupSm ACK timeout", "[setup_sm]") {
     MockSetupActions actions;
     TestMachine machine{actions};
 
-    machine.process_event(InviteReceived{"v=0\r\n"});
-    machine.process_event(CallAccepted{"v=0\r\n"});
+    machine.process_event(InviteReceived{kValidSdp});
+    machine.process_event(CallAccepted{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForAck>));
 
     actions.reset();

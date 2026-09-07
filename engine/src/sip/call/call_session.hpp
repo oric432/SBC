@@ -3,6 +3,7 @@
 #include <boost/asio.hpp>
 
 #include <boost/asio/any_io_executor.hpp>
+#include <optional>
 #include <string>
 
 #include <pjsip.h>
@@ -14,6 +15,7 @@
 #include "net/rtp/MediaBridge.hpp"
 #include "sip/sm/dialog_sm_runner.hpp"
 #include "sip/sm/setup_sm_runner.hpp"
+#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
@@ -72,6 +74,16 @@ public:
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
     void clear_rdata() { current_rdata_ = nullptr; }
 
+    // Issue #121: each leg's actual negotiated audio codec, read from that
+    // leg's own pjmedia_sdp_neg once its offer/answer completes (see
+    // RealSetupActions::forward_200_ok). nullopt until then, or if the leg
+    // never negotiated an audio stream. Groundwork for future consumers (a
+    // transcoder, call-history codec display) — nothing reads these yet.
+    [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& caller_leg_codec() const { return caller_leg_codec_; }
+    [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& callee_leg_codec() const { return callee_leg_codec_; }
+    void set_caller_leg_codec(std::optional<Sdp::AudioCodecInfo> codec) { caller_leg_codec_ = std::move(codec); }
+    void set_callee_leg_codec(std::optional<Sdp::AudioCodecInfo> codec) { callee_leg_codec_ = std::move(codec); }
+
 private:
     std::string call_id_;
     PjContext* ctx_;
@@ -90,6 +102,9 @@ private:
     std::string caller_uri_;
     std::string caller_display_name_;
     std::string outbound_destination_;
+
+    std::optional<Sdp::AudioCodecInfo> caller_leg_codec_;
+    std::optional<Sdp::AudioCodecInfo> callee_leg_codec_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.
     RealSetupActions setup_actions_;

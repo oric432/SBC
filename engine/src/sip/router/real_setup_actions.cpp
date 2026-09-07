@@ -8,7 +8,7 @@
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/routes/routes_store.hpp"
-#include "sip/stack/sdp_mangler.hpp"
+#include "sip/stack/sdp.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
@@ -302,6 +302,20 @@ bool RealSetupActions::forward_200_ok(const std::string& sdp) {
         session_.media_bridge()->leg_a_port().value());
 
     send_subsequent_response(PJSIP_SC_OK, answer);
+
+    // Issue #121: groundwork for future codec-aware work (e.g. a transcoder) —
+    // nothing consumes it yet. `answer` here IS the callee's decided codec:
+    // mangling only ever touches conn/port, never the format lines, and this
+    // exact object is what both legs end up carrying (we relay it to the
+    // caller verbatim above). Reading it directly avoids depending on
+    // pjmedia_sdp_neg's internal timing — on the inv_callee leg in particular,
+    // PJSIP fires this very callback *before* it negotiates the incoming
+    // answer (see PJSIP_TSX_STATE_TERMINATED in sip_inv.c), so querying
+    // pjmedia_sdp_neg_get_active_remote() here reads uninitialized state.
+    auto codec = Sdp::extract_active_audio_codec(answer);
+    session_.set_caller_leg_codec(codec);
+    session_.set_callee_leg_codec(std::move(codec));
+
     session_.media_bridge()->start_bridge_loop();
     Log::call()->info(
         "[{}] received 200 OK from callee ({}), forwarded to caller ({}); RTP relay armed",
