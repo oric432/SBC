@@ -5,6 +5,7 @@
 #include <string>
 #include <glaze/glaze.hpp>
 #include "Api.hpp"
+#include "SupportedCodecs.hpp"
 
 // NOLINTBEGIN(readability-identifier-naming)
 
@@ -19,7 +20,9 @@ struct SipRouteRule {
         glz::schema uri{.description = "The matching SIP URI"};
         glz::schema sip_address{.description = "Destination SIP proxy or next-hop IP"};
         glz::schema port{.description = "Destination SIP signaling port"};
-        glz::schema codec{.description = "Optional strict media codec requirement"};
+        glz::schema codec{
+            .description = "Optional strict media codec requirement",
+            .enumeration = supported_codec_names()};
     };
 };
 

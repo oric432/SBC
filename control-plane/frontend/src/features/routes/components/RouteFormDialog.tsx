@@ -15,22 +15,28 @@ import {
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateRouteMutation, useGetRoutesQuery, useUpdateRouteMutation } from "@/features/routes/api";
 import { SwapPriorityAlert } from "@/features/routes/components/SwapPriorityAlert";
+import { SUPPORTED_CODECS } from "@/features/routes/types";
 import type { RouteRuleWithKey, SwapRoutePayload } from "@/features/routes/types";
 import { getApiErrorMessage } from "@/lib/api";
+
+// Radix Select items can't have an empty-string value, so "no requirement" is
+// represented by this sentinel in the form and mapped to null on submit.
+const NO_CODEC = "none" as const;
 
 const routeFormSchema = z.object({
     priority: z.coerce.number().int().min(1, "Priority must be a positive integer"),
     uri: z.string().min(1, "URI is required"),
     sip_address: z.string().min(1, "SIP address is required"),
     port: z.coerce.number().int().min(1, "Port must be between 1-65535").max(65535, "Port must be between 1-65535"),
-    codec: z.string().optional(),
+    codec: z.enum([NO_CODEC, ...SUPPORTED_CODECS]),
 });
 
 type RouteFormValues = z.infer<typeof routeFormSchema>;
 
-const emptyValues: RouteFormValues = { priority: 1, uri: "", sip_address: "", port: 5060, codec: "" };
+const emptyValues: RouteFormValues = { priority: 1, uri: "", sip_address: "", port: 5060, codec: NO_CODEC };
 
 interface RouteFormDialogProps {
     open: boolean;
@@ -62,7 +68,7 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
     useEffect(() => {
         if (!open) return;
         if (route) {
-            form.reset({ ...route, codec: route.codec ?? "" });
+            form.reset({ ...route, codec: route.codec ?? NO_CODEC });
         } else {
             const priorities = dataRef.current ? Object.keys(dataRef.current.routes).map(Number) : [];
             const nextPriority = priorities.length > 0 ? Math.max(...priorities) + 1 : 1;
@@ -73,7 +79,7 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
     }, [open, route, form]);
 
     const onSubmit = async (values: RouteFormValues) => {
-        const payload = { ...values, codec: values.codec ? values.codec : null };
+        const payload = { ...values, codec: values.codec === NO_CODEC ? null : values.codec };
 
         if (isEdit && route && payload.priority !== route.priority) {
             const collision = data?.routes[String(payload.priority)];
@@ -188,9 +194,21 @@ export function RouteFormDialog({ open, onOpenChange, route }: RouteFormDialogPr
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Codec (optional)</FormLabel>
-                                        <FormControl>
-                                            <Input {...field} placeholder="PCMU" className="font-mono" />
-                                        </FormControl>
+                                        <Select onValueChange={field.onChange} value={field.value}>
+                                            <FormControl>
+                                                <SelectTrigger className="font-mono">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent>
+                                                <SelectItem value={NO_CODEC}>No requirement</SelectItem>
+                                                {SUPPORTED_CODECS.map((codec) => (
+                                                    <SelectItem key={codec} value={codec} className="font-mono">
+                                                        {codec}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
                                         <FormMessage />
                                     </FormItem>
                                 )}
