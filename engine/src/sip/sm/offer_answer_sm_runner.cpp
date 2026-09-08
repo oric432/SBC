@@ -20,49 +20,22 @@ OfferAnswerSmRunner::OfferAnswerSmRunner(IOfferAnswerActions& actions, std::stri
     : impl_(std::make_unique<Impl>(actions, exchange_id)) {}
 OfferAnswerSmRunner::~OfferAnswerSmRunner() = default;
 
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::OfferReceived& event) {
+template <typename Event>
+bool OfferAnswerSmRunner::process_event(const Event& event) {
     return impl_->sm_.process_event(event);
 }
 
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerReceived& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::OfferRelayFailed& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerRelaySucceeded& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerRelayFailed& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerRejected& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerTimeout& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::AckReceived& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::AckTimeout& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::StopExchange& event) {
-    return impl_->sm_.process_event(event);
-}
-
-bool OfferAnswerSmRunner::process_event(const OfferAnswer::Cleanup& event) {
-    return impl_->sm_.process_event(event);
-}
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::OfferReceived&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerReceived&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::OfferRelayFailed&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerRelaySucceeded&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerRelayFailed&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerRejected&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::AnswerTimeout&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::AckReceived&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::AckTimeout&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::StopExchange&);
+template bool OfferAnswerSmRunner::process_event(const OfferAnswer::Cleanup&);
 
 bool OfferAnswerSmRunner::is_idle() const {
     return impl_->sm_.is(Sml::state<OfferAnswer::Idle>);
