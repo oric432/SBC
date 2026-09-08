@@ -1,0 +1,64 @@
+name: Control Plane CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["control-plane/**", ".github/workflows/control-plane-ci.yml"]
+  push:
+    branches: [main]
+    paths: ["control-plane/**", ".github/workflows/control-plane-ci.yml"]
+
+concurrency:
+  group: control-plane-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: control-plane/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: control-plane/backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  frontend:
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: control-plane/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: control-plane/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

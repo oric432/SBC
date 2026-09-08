@@ -25,4 +25,13 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // shadcn/ui primitives are CLI-generated and routinely export a small
+    // helper (e.g. a cva variant fn) alongside the component -- that's the
+    // upstream shadcn pattern, not something to restructure per-file.
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 )
