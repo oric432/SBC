@@ -1,9 +1,16 @@
 # CodeRabbit config: https://docs.coderabbit.ai/reference/configuration
 #
-# Goal: one automatic, low-noise AI pass on every PR. Style/naming/formatting
-# are already gated by clang-tidy, eslint, and format-check in CI -- this
-# should stay quiet about those and focus on things CI can't catch: bugs,
-# security, concurrency, and lifetime/ownership correctness.
+# Goal: one low-noise AI pass, focused on things CI can't catch (bugs,
+# security, concurrency, lifetime/ownership correctness) rather than
+# style/naming/formatting, which clang-tidy/eslint/format-check already gate.
+#
+# NOTE: CodeRabbit's free OSS tier doesn't auto-review repos with fewer than
+# 10 GitHub stars (oric432/SBC currently has fewer) -- confirmed by
+# CodeRabbit's own comment on the PR that added this file. auto_review below
+# stays enabled so this starts working automatically the moment that
+# threshold is crossed; until then, trigger it deliberately per PR with
+# `@coderabbitai review` (same "you decide when" pattern as the on-demand
+# Gemini review) rather than expecting it on every PR.
 
 reviews:
   profile: chill
