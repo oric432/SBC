@@ -44,3 +44,28 @@ jobs:
 
       - name: Check formatting (non-mutating)
         run: just format-check
+
+  asan-ubsan:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build just ccache
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: engine/build/_deps
+          key: deps-${{ runner.os }}-asan-ubsan-${{ hashFiles('engine/third_party/**/declare.cmake', 'engine/third_party/**/configure.cmake') }}
+          restore-keys: |
+            deps-${{ runner.os }}-asan-ubsan-
+
+      - name: Build (ASan + UBSan)
+        run: just build-asan
+
+      - name: Run unit tests under ASan + UBSan
+        run: just test-asan
