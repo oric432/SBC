@@ -1,5 +1,9 @@
 #include "real_offer_answer_actions.hpp"
 
+#include <algorithm>
+#include <array>
+#include <string_view>
+#include <vector>
 #include <pjsip_ua.h>
 
 #include "sip/call/call_session.hpp"
@@ -17,6 +21,40 @@ bool send_inv_msg(pjsip_inv_session* inv, pjsip_tx_data* data) {
         Log::sip()->error("Offer-answer send failed ({})", status);
     }
     return status == PJ_SUCCESS && inv->state != PJSIP_INV_STATE_DISCONNECTED;
+}
+
+std::optional<std::uint8_t> find_telephone_event_pt(const std::vector<Sdp::AudioCodecInfo>& codecs) {
+    for (const auto& codec : codecs) {
+        if (codec.name_ == "telephone-event") {
+            return codec.payload_type_;
+        }
+    }
+    return std::nullopt;
+}
+
+// Which codec the caller-facing answer should use: the callee's already-known
+// pick if the caller also offered it (zero transcoding, strictly no worse
+// than picking independently), else the SBC's own priority pick intersected
+// with the caller's offer. std::nullopt if neither exists in the caller's
+// offer at all (caller and callee share no codec the SBC could bridge with).
+std::optional<Protocols::SupportedCodec> pick_caller_answer_codec(
+    const std::optional<Sdp::AudioCodecInfo>& callee_codec,
+    const std::vector<Sdp::AudioCodecInfo>& caller_offered) {
+    const auto caller_offers = [&](std::string_view name) {
+        return std::ranges::any_of(caller_offered, [name](const auto& codec) { return codec.name_ == name; });
+    };
+    if (callee_codec) {
+        if (const auto* supported = Protocols::find_supported_codec_by_name(callee_codec->name_);
+            supported != nullptr && caller_offers(supported->name_)) {
+            return *supported;
+        }
+    }
+    for (const auto& supported : Protocols::kSupportedCodecs) {
+        if (caller_offers(supported.name_)) {
+            return supported;
+        }
+    }
+    return std::nullopt;
 }
 } // namespace
 
@@ -66,6 +104,21 @@ bool RealOfferAnswerActions::create_outbound_leg(const std::string& destination)
     auto caller_rtp = Sdp::extract_rtp_endpoint(offer);
     if (!caller_rtp.ip_.empty()) {
         session_.media_bridge()->set_remote_leg_a(caller_rtp.ip_, caller_rtp.port_);
+    }
+
+    // 2b. Offer the callee our own codec policy independently of what the
+    // caller offered, rather than relaying the caller's raw format list — the
+    // route's single forced codec if set (strict, whole-call requirement),
+    // else the SBC's full priority list (G722 > PCMU > PCMA). Whether the two
+    // legs end up choosing the same codec is decided once the callee answers
+    // (see relay_answer()); telephone-event (DTMF) survives the narrowing
+    // untouched either way.
+    if (required_codec_) {
+        const std::array<Protocols::SupportedCodec, 1> forced{*required_codec_};
+        Sdp::restrict_audio_codecs(session_.pool(), offer, forced);
+    }
+    else {
+        Sdp::restrict_audio_codecs(session_.pool(), offer, Protocols::kSupportedCodecs);
     }
 
     // 3. Mangle the offer towards the callee: media anchored at our callee-facing socket.
@@ -175,28 +228,54 @@ bool RealOfferAnswerActions::send_response(int code, const pjmedia_sdp_session* 
 
 void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     answer_ = sdp;
-    auto* answer = Sdp::parse(session_.pool(), answer_);
-    if (answer == nullptr) {
+    auto* callee_answer = Sdp::parse(session_.pool(), answer_);
+    if (callee_answer == nullptr) {
         return;
     }
-    const auto endpoint = Sdp::extract_rtp_endpoint(answer);
+    const auto endpoint = Sdp::extract_rtp_endpoint(callee_answer);
     if (!endpoint.ip_.empty()) {
         session_.media_bridge()->set_remote_leg_b(endpoint.ip_, endpoint.port_);
     }
     // Read the decided codec directly: PJSIP's active SDP may not yet be set
-    // during its CONNECTING callback. Rewriting only changes addresses/ports.
-    codec_ = Sdp::extract_active_audio_codec(answer);
+    // during its CONNECTING callback.
+    callee_leg_codec_ = Sdp::extract_active_audio_codec(callee_answer);
+    callee_leg_dtmf_pt_ = find_telephone_event_pt(Sdp::extract_all_audio_codecs(callee_answer));
+
+    // The caller-facing answer is negotiated independently from the callee's:
+    // re-parse the caller's own original offer (not the copy create_outbound_leg()
+    // already mangled/restricted for the callee specifically) and pick a codec
+    // biased toward the callee's choice, falling back to the SBC's own
+    // priority pick intersected with what the caller actually offered.
+    auto* caller_answer = Sdp::parse(session_.pool(), offer_);
+    if (caller_answer == nullptr) {
+        Log::call()->error("[{}] cannot re-parse caller's original offer for answer", session_.call_id());
+        return;
+    }
+    const auto caller_offered = Sdp::extract_all_audio_codecs(caller_answer);
+    const auto chosen = pick_caller_answer_codec(callee_leg_codec_, caller_offered);
+    if (!chosen) {
+        Log::call()->error(
+            "[{}] no codec in common between caller's offer and callee's answer ({})",
+            session_.call_id(),
+            callee_leg_codec_ ? callee_leg_codec_->name_ : "none");
+        return;
+    }
+    const std::array<Protocols::SupportedCodec, 1> allowed{*chosen};
+    Sdp::restrict_audio_codecs(session_.pool(), caller_answer, allowed);
+    caller_leg_codec_ = Sdp::extract_active_audio_codec(caller_answer);
+    caller_leg_dtmf_pt_ = find_telephone_event_pt(Sdp::extract_all_audio_codecs(caller_answer));
+
     Sdp::rewrite_connection_and_port(
         session_.pool(),
-        answer,
+        caller_answer,
         session_.ctx()->config_.local_ip_,
         session_.media_bridge()->leg_a_port().value());
-    answer_sent_ = send_response(PJSIP_SC_OK, answer);
+    answer_sent_ = send_response(PJSIP_SC_OK, caller_answer);
     if (!answer_sent_) {
         return;
     }
     // Preserve existing media timing: arm relay on the answer, publish committed
-    // session descriptions/codec only when the exchange is confirmed.
+    // session descriptions/codecs only when the exchange is confirmed.
     session_.media_bridge()->start_bridge_loop();
 }
 
@@ -216,7 +295,13 @@ void RealOfferAnswerActions::relay_rejection(int status_code) {
 }
 
 void RealOfferAnswerActions::commit() {
-    session_.commit_offer_answer(std::move(offer_), std::move(answer_), std::move(codec_));
+    session_.commit_offer_answer(
+        std::move(offer_),
+        std::move(answer_),
+        std::move(caller_leg_codec_),
+        std::move(callee_leg_codec_),
+        caller_leg_dtmf_pt_,
+        callee_leg_dtmf_pt_);
 }
 
 void RealOfferAnswerActions::rollback([[maybe_unused]] OfferAnswer::Reason reason) {
@@ -235,7 +320,10 @@ void RealOfferAnswerActions::fail(OfferAnswer::Reason reason) {
 void RealOfferAnswerActions::cleanup() {
     offer_.clear();
     answer_.clear();
-    codec_.reset();
+    caller_leg_codec_.reset();
+    callee_leg_codec_.reset();
+    caller_leg_dtmf_pt_.reset();
+    callee_leg_dtmf_pt_.reset();
     // The session releases the slot after this runner's dispatch returns.
 }
 

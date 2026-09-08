@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
+#include "protocols/SupportedCodecs.hpp"
 #include "sip/sm/offer_answer_events.hpp"
 #include "events.hpp"
 
@@ -32,10 +34,11 @@ public:
 // Outcome of a synchronous routing lookup, returned by ISetupContext::resolve_route()
 // so the SM's own transition table can decide which follow-up event to self-fire.
 struct RouteResolution {
-    enum class Kind : std::uint8_t { kFound, kFailed, kLoop };
+    enum class Kind : std::uint8_t { kFound, kFailed, kLoop, kCodecMismatch };
 
     Kind kind_ = Kind::kFailed;
     std::string destination_; // only meaningful when kind_ == kFound
+    std::optional<Protocols::SupportedCodec> required_codec_; // only meaningful when kind_ == kFound
 };
 
 class ISetupContext : public IContext {
@@ -51,8 +54,11 @@ public:
     virtual RouteResolution resolve_route() = 0;
     virtual void route_failed() = 0;
     virtual void routing_loop_detected() = 0;
+    virtual void codec_mismatch_detected() = 0;
     // Starts a fresh exchange. Completion is delivered as a logical setup event.
-    virtual ExchangeOutcome start_exchange(const std::string& destination) = 0;
+    virtual ExchangeOutcome start_exchange(
+        const std::string& destination,
+        std::optional<Protocols::SupportedCodec> required_codec) = 0;
     virtual void report_progress() = 0;
     // Returns true if cancellation has already completed.
     virtual bool cancel_call() = 0;

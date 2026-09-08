@@ -54,11 +54,13 @@ CallSession::~CallSession() {
     }
 }
 
-bool CallSession::create_exchange(const std::string& destination) {
+bool CallSession::create_exchange(
+    const std::string& destination,
+    std::optional<Protocols::SupportedCodec> required_codec) {
     if (exchange_) {
         return false;
     }
-    exchange_ = std::make_unique<OfferAnswerExchange>(*this, destination);
+    exchange_ = std::make_unique<OfferAnswerExchange>(*this, destination, required_codec);
     return true;
 }
 
@@ -66,11 +68,19 @@ void CallSession::release_exchange() {
     exchange_.reset();
 }
 
-void CallSession::commit_offer_answer(std::string offer, std::string answer, std::optional<Sdp::AudioCodecInfo> codec) {
+void CallSession::commit_offer_answer(
+    std::string offer,
+    std::string answer,
+    std::optional<Sdp::AudioCodecInfo> caller_codec,
+    std::optional<Sdp::AudioCodecInfo> callee_codec,
+    std::optional<std::uint8_t> caller_dtmf_pt,
+    std::optional<std::uint8_t> callee_dtmf_pt) {
     negotiated_offer_ = std::move(offer);
     negotiated_answer_ = std::move(answer);
-    caller_leg_codec_ = codec;
-    callee_leg_codec_ = std::move(codec);
+    caller_leg_codec_ = std::move(caller_codec);
+    callee_leg_codec_ = std::move(callee_codec);
+    caller_leg_dtmf_pt_ = caller_dtmf_pt;
+    callee_leg_dtmf_pt_ = callee_dtmf_pt;
 }
 
 } // namespace SbcEngine

@@ -3,6 +3,7 @@
 #include <boost/asio.hpp>
 
 #include <boost/asio/any_io_executor.hpp>
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -57,11 +58,17 @@ public:
 
     // One temporary exchange slot. The caller performs an exchange operation,
     // releases a finished exchange, then notifies the setup machine once.
-    bool create_exchange(const std::string& destination);
+    bool create_exchange(const std::string& destination, std::optional<Protocols::SupportedCodec> required_codec);
     OfferAnswerExchange* exchange() { return exchange_.get(); }
     void release_exchange();
     [[nodiscard]] bool has_exchange() const { return exchange_ != nullptr; }
-    void commit_offer_answer(std::string offer, std::string answer, std::optional<Sdp::AudioCodecInfo> codec);
+    void commit_offer_answer(
+        std::string offer,
+        std::string answer,
+        std::optional<Sdp::AudioCodecInfo> caller_codec,
+        std::optional<Sdp::AudioCodecInfo> callee_codec,
+        std::optional<std::uint8_t> caller_dtmf_pt,
+        std::optional<std::uint8_t> callee_dtmf_pt);
     [[nodiscard]] const std::string& negotiated_offer() const { return negotiated_offer_; }
     [[nodiscard]] const std::string& negotiated_answer() const { return negotiated_answer_; }
 
@@ -88,11 +95,13 @@ public:
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
     void clear_rdata() { current_rdata_ = nullptr; }
 
-    // Negotiated codec metadata is published with the exchange commit.
+    // Negotiated codec/DTMF metadata is published with the exchange commit.
+    // The two legs may differ — see issue #128: the SBC negotiates each leg
+    // independently rather than relaying one leg's answer to the other.
     [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& caller_leg_codec() const { return caller_leg_codec_; }
     [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& callee_leg_codec() const { return callee_leg_codec_; }
-    void set_caller_leg_codec(std::optional<Sdp::AudioCodecInfo> codec) { caller_leg_codec_ = std::move(codec); }
-    void set_callee_leg_codec(std::optional<Sdp::AudioCodecInfo> codec) { callee_leg_codec_ = std::move(codec); }
+    [[nodiscard]] std::optional<std::uint8_t> caller_leg_dtmf_pt() const { return caller_leg_dtmf_pt_; }
+    [[nodiscard]] std::optional<std::uint8_t> callee_leg_dtmf_pt() const { return callee_leg_dtmf_pt_; }
 
 private:
     std::string call_id_;
@@ -115,6 +124,8 @@ private:
 
     std::optional<Sdp::AudioCodecInfo> caller_leg_codec_;
     std::optional<Sdp::AudioCodecInfo> callee_leg_codec_;
+    std::optional<std::uint8_t> caller_leg_dtmf_pt_;
+    std::optional<std::uint8_t> callee_leg_dtmf_pt_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.
     RealSetupActions setup_actions_;

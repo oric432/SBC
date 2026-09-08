@@ -1,5 +1,6 @@
 #include "real_setup_actions.hpp"
 
+#include <algorithm>
 #include <format>
 #include <pjsip_ua.h>
 
@@ -7,6 +8,7 @@
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/routes/routes_store.hpp"
+#include "sip/stack/sdp.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
@@ -72,7 +74,7 @@ RouteResolution RealSetupActions::resolve_route() {
     auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
     if (!route) {
         Log::sip()->warn("[{}] no route found for {}", session_.call_id(), request_uri);
-        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};
+        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
     }
 
     if (route->sip_address == ctx->config_.local_ip_ && route->port == static_cast<int>(ctx->config_.sip_port_)) {
@@ -88,14 +90,45 @@ RouteResolution RealSetupActions::resolve_route() {
             request_uri,
             route->sip_address,
             route->port);
-        return {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}};
+        return {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}, .required_codec_ = {}};
+    }
+
+    std::optional<Protocols::SupportedCodec> required_codec;
+    if (route->codec) {
+        const auto* supported = Protocols::find_supported_codec_by_name(*route->codec);
+        if (supported == nullptr) {
+            // Configured with a codec name this build doesn't have compiled
+            // in at all. Same strict semantics as "caller doesn't offer it"
+            // below: this route requires exactly this codec end-to-end, and
+            // that's unsatisfiable — reject rather than silently ignore the
+            // constraint.
+            Log::sip()->warn(
+                "[{}] route for {} requires unrecognized codec '{}'",
+                session_.call_id(),
+                request_uri,
+                *route->codec);
+            return {.kind_ = RouteResolution::Kind::kCodecMismatch, .destination_ = {}, .required_codec_ = {}};
+        }
+        const pjmedia_sdp_session* caller_offer = Sdp::parse(session_.pool(), session_.caller_offer_sdp());
+        const auto offered = Sdp::extract_all_audio_codecs(caller_offer);
+        const bool caller_offers_it =
+            std::ranges::any_of(offered, [supported](const auto& codec) { return codec.name_ == supported->name_; });
+        if (!caller_offers_it) {
+            Log::sip()->warn(
+                "[{}] caller's offer for {} doesn't include route-required codec '{}'",
+                session_.call_id(),
+                request_uri,
+                supported->name_);
+            return {.kind_ = RouteResolution::Kind::kCodecMismatch, .destination_ = {}, .required_codec_ = {}};
+        }
+        required_codec = *supported;
     }
 
     std::string user = extract_uri_user(route->uri);
     const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
                                           : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
     Log::sip()->info("Found route for request uri {}, route uri : {}:{}", request_uri, route->sip_address, route->port);
-    return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest};
+    return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest, .required_codec_ = required_codec};
 }
 
 void RealSetupActions::route_failed() {
@@ -104,8 +137,13 @@ void RealSetupActions::route_failed() {
 void RealSetupActions::routing_loop_detected() {
     send_response(PJSIP_SC_LOOP_DETECTED);
 }
-ExchangeOutcome RealSetupActions::start_exchange(const std::string& destination) {
-    if (!session_.create_exchange(destination)) {
+void RealSetupActions::codec_mismatch_detected() {
+    send_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
+}
+ExchangeOutcome RealSetupActions::start_exchange(
+    const std::string& destination,
+    std::optional<Protocols::SupportedCodec> required_codec) {
+    if (!session_.create_exchange(destination, required_codec)) {
         return ExchangeOutcome::kFailed;
     }
     const auto outcome = session_.exchange()->start(session_.caller_offer_sdp());
