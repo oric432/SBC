@@ -4,17 +4,26 @@ updates:
     directory: "/control-plane/backend"
     schedule:
       interval: "weekly"
+    rebase-strategy: "disabled"
 
   - package-ecosystem: "npm"
     directory: "/control-plane/frontend"
     schedule:
       interval: "weekly"
+    rebase-strategy: "disabled"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    rebase-strategy: "disabled"
 
+# rebase-strategy: disabled -- without this, Dependabot auto-rebases every
+# open PR each time main changes (fires on every merge, not just weekly),
+# which got noisy fast. Now it opens each PR once on schedule and leaves it
+# alone; if main moves enough to conflict, it just closes and re-opens a
+# fresh PR on the next scheduled run instead of continuously rebasing.
+#
 # Not covered: engine/ C++ dependencies. They come through CMake FetchContent
 # (engine/third_party/*/declare.cmake), which Dependabot has no ecosystem
 # support for -- those still need manual version bumps.
