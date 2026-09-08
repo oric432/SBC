@@ -1,0 +1,3 @@
+# Every PR auto-requests the project lead as reviewer. Split this by path later
+# if/when ownership of engine/ vs control-plane/ diverges between teammates.
+* @oric432
