@@ -228,6 +228,39 @@ AudioCodecInfo make_codec_info(const pjmedia_sdp_media* media, const pj_str_t& p
 
 } // namespace
 
+namespace {
+
+// The active audio media line's telephone-event (RFC 2833 DTMF) rtpmap
+// payload type, if one of its formats declares it. std::nullopt if the line
+// has no telephone-event format at all.
+std::optional<pj_str_t> find_telephone_event_pt(const pjmedia_sdp_media* media) {
+    for (unsigned i = 0; i < media->attr_count; ++i) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        const pjmedia_sdp_attr* attr = media->attr[i];
+        if (pj_stricmp2(&attr->name, "rtpmap") != 0) {
+            continue;
+        }
+        pjmedia_sdp_rtpmap rtpmap;
+        if (pjmedia_sdp_attr_get_rtpmap(attr, &rtpmap) == PJ_SUCCESS &&
+            pj_stricmp2(&rtpmap.enc_name, "telephone-event") == 0) {
+            return rtpmap.pt;
+        }
+    }
+    return std::nullopt;
+}
+
+bool is_dtmf_rtpmap(const pjmedia_sdp_attr* attr, const pj_str_t& dtmf_pt) {
+    pjmedia_sdp_rtpmap rtpmap;
+    return pjmedia_sdp_attr_get_rtpmap(attr, &rtpmap) == PJ_SUCCESS && pj_strcmp(&rtpmap.pt, &dtmf_pt) == 0;
+}
+
+bool is_dtmf_fmtp(const pjmedia_sdp_attr* attr, const pj_str_t& dtmf_pt) {
+    pjmedia_sdp_fmtp fmtp;
+    return pjmedia_sdp_attr_get_fmtp(attr, &fmtp) == PJ_SUCCESS && pj_strcmp(&fmtp.fmt, &dtmf_pt) == 0;
+}
+
+} // namespace
+
 std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp) {
     // find_active_audio_media() only reads through the returned pointer here
     // (restrict_audio_codecs() below is the only mutator) — const_cast is
@@ -264,15 +297,22 @@ void restrict_audio_codecs(
         return;
     }
 
+    const std::optional<pj_str_t> dtmf_pt = find_telephone_event_pt(media);
+
     // Drop existing rtpmap/fmtp attrs — none of `allowed`'s codecs need one
     // (all are RFC 3551 static types), and stale ones referencing formats no
-    // longer offered would be invalid SDP. Every other attribute (direction,
-    // ptime, ...) is kept as-is.
+    // longer offered would be invalid SDP. telephone-event's rtpmap/fmtp
+    // survive verbatim (see dtmf_pt above) so narrowing the codec set doesn't
+    // silently kill DTMF signaling. Every other attribute (direction, ptime,
+    // ...) is kept as-is.
     unsigned kept = 0;
     for (unsigned i = 0; i < media->attr_count; ++i) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         pjmedia_sdp_attr* attr = media->attr[i];
-        if (pj_stricmp2(&attr->name, "rtpmap") == 0 || pj_stricmp2(&attr->name, "fmtp") == 0) {
+        const bool is_rtpmap = pj_stricmp2(&attr->name, "rtpmap") == 0;
+        const bool is_fmtp = !is_rtpmap && pj_stricmp2(&attr->name, "fmtp") == 0;
+        if ((is_rtpmap || is_fmtp) &&
+            !(dtmf_pt.has_value() && (is_rtpmap ? is_dtmf_rtpmap(attr, *dtmf_pt) : is_dtmf_fmtp(attr, *dtmf_pt)))) {
             continue;
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
@@ -281,7 +321,8 @@ void restrict_audio_codecs(
     media->attr_count = kept;
 
     constexpr std::size_t kMaxPtDigits = 4; // 3 digits + spare byte, PT is 0-127
-    media->desc.fmt_count = static_cast<unsigned>(allowed.size());
+    const std::size_t dtmf_slot = dtmf_pt.has_value() ? 1 : 0;
+    media->desc.fmt_count = static_cast<unsigned>(allowed.size() + dtmf_slot);
     for (std::size_t i = 0; i < allowed.size(); ++i) {
         char* buf = static_cast<char*>(pj_pool_alloc(pool, kMaxPtDigits));
         const int len = pj_utoa(allowed[i].payload_type_, buf);
@@ -289,6 +330,12 @@ void restrict_audio_codecs(
         media->desc.fmt[i].ptr = buf;
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         media->desc.fmt[i].slen = len;
+    }
+    if (dtmf_pt.has_value()) {
+        // Reuse the original pj_str_t verbatim — it's pool-allocated memory
+        // already reachable from this session, no copy needed.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        media->desc.fmt[allowed.size()] = *dtmf_pt;
     }
 }
 

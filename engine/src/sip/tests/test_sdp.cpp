@@ -89,7 +89,7 @@ TEST_CASE("extract_all_audio_codecs returns empty for SDP with no active audio",
     CHECK(codecs.empty());
 }
 
-TEST_CASE("restrict_audio_codecs narrows to a single codec for an answer", "[sdp]") {
+TEST_CASE("restrict_audio_codecs narrows to a single codec for an answer, preserving telephone-event", "[sdp]") {
     ScopedPjPool pj;
     pjmedia_sdp_session* sdp = Sdp::parse(pj.pool(), kMultiCodecOffer);
     REQUIRE(sdp != nullptr);
@@ -98,17 +98,21 @@ TEST_CASE("restrict_audio_codecs narrows to a single codec for an answer", "[sdp
     Sdp::restrict_audio_codecs(pj.pool(), sdp, chosen);
 
     auto codecs = Sdp::extract_all_audio_codecs(sdp);
-    REQUIRE(codecs.size() == 1);
+    REQUIRE(codecs.size() == 2);
     CHECK(codecs[0].payload_type_ == 9);
     CHECK(codecs[0].name_ == "G722");
+    CHECK(codecs[1].payload_type_ == 101);
+    CHECK(codecs[1].name_ == "telephone-event");
 
-    // The telephone-event rtpmap/fmtp must be gone too, not just the fmt entry.
+    // telephone-event's own rtpmap/fmtp must survive verbatim, not just the
+    // fmt entry — narrowing the codec set must not silently kill DTMF.
     const std::string serialized = Sdp::serialize(sdp);
-    CHECK(serialized.find("telephone-event") == std::string::npos);
+    CHECK(serialized.find("a=rtpmap:101 telephone-event/8000") != std::string::npos);
+    CHECK(serialized.find("a=fmtp:101 0-15") != std::string::npos);
     CHECK(serialized.find("a=sendrecv") != std::string::npos);
 }
 
-TEST_CASE("restrict_audio_codecs builds a multi-format offer in priority order", "[sdp]") {
+TEST_CASE("restrict_audio_codecs builds a multi-format offer in priority order, preserving telephone-event", "[sdp]") {
     ScopedPjPool pj;
     pjmedia_sdp_session* sdp = Sdp::parse(pj.pool(), kMultiCodecOffer);
     REQUIRE(sdp != nullptr);
@@ -116,10 +120,34 @@ TEST_CASE("restrict_audio_codecs builds a multi-format offer in priority order",
     Sdp::restrict_audio_codecs(pj.pool(), sdp, Protocols::kSupportedCodecs);
 
     auto codecs = Sdp::extract_all_audio_codecs(sdp);
-    REQUIRE(codecs.size() == Protocols::kSupportedCodecs.size());
-    for (std::size_t i = 0; i < codecs.size(); ++i) {
+    REQUIRE(codecs.size() == Protocols::kSupportedCodecs.size() + 1);
+    for (std::size_t i = 0; i < Protocols::kSupportedCodecs.size(); ++i) {
         CHECK(codecs[i].payload_type_ == Protocols::kSupportedCodecs[i].payload_type_);
     }
+    CHECK(codecs.back().payload_type_ == 101);
+    CHECK(codecs.back().name_ == "telephone-event");
+}
+
+TEST_CASE("restrict_audio_codecs doesn't invent a telephone-event entry when the original offer had none", "[sdp]") {
+    ScopedPjPool pj;
+    // clang-format off
+    const std::string noDtmf =
+        "v=0\r\n"
+        "o=- 123 456 IN IP4 127.0.0.1\r\n"
+        "s=-\r\n"
+        "c=IN IP4 127.0.0.1\r\n"
+        "t=0 0\r\n"
+        "m=audio 10000 RTP/AVP 0 8\r\n"
+        "a=sendrecv\r\n";
+    // clang-format on
+    pjmedia_sdp_session* sdp = Sdp::parse(pj.pool(), noDtmf);
+    REQUIRE(sdp != nullptr);
+
+    Sdp::restrict_audio_codecs(pj.pool(), sdp, Protocols::kSupportedCodecs);
+
+    auto codecs = Sdp::extract_all_audio_codecs(sdp);
+    REQUIRE(codecs.size() == Protocols::kSupportedCodecs.size());
+    CHECK(Sdp::serialize(sdp).find("telephone-event") == std::string::npos);
 }
 
 TEST_CASE("restrict_audio_codecs is a no-op without an active audio line", "[sdp]") {
