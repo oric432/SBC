@@ -12,6 +12,7 @@ Guidance for coding agents (any LLM tool) working in the `engine` component of t
 - **File Creation Pre-check**: Before creating any new file, you MUST first perform a thorough search for existing files that can be modified or extended. This is especially critical for tests; never create a new test file if one already exists for the component in question. Always add new tests to the existing test file.
 - **Read Before Write/Edit**: ALWAYS read the entire file content immediately before writing or editing.
 - **File Deletion**: NEVER perform actions that might delete files (either directly via e.g., `rm` or indirectly via e.g., `git clean`) without first asking the user for permission.
+- **Commit/PR Attribution**: Commit messages and PR descriptions carry no AI attribution — no `Co-Authored-By` trailer, no "Generated with Claude Code" (or similar) footer. Write them as if authored solely by the developer.
 
 ### Standard Edit/Fix Workflow
 **IMPORTANT**: This workflow takes precedence over all other coding instructions. Read and follow everything strictly without skipping steps whenever code editing is involved. Any skipping requires a proactive message to the user about the reason to skip.
@@ -70,6 +71,7 @@ After making any code changes, you MUST complete the following checklist before 
     - Centralize type aliases in a file within a subcomponent ONLY when the alias is used across multiple components or files. Otherwise, keep them local to where they are defined.
     - Type alias naming should use `CamelCase` as defined in the `.clang-tidy` configuration.
 - **Namespaces**: All newly defined types (classes, structs, type aliases) and functions MUST be placed inside the `SbcEngine` namespace. Do not pollute the global namespace.
+- **Comments**: One short line, only when the WHY is non-obvious (a hidden constraint, a workaround for a specific bug, a surprising invariant). Never restate what the code already says via naming, and never write multi-line or paragraph comment blocks.
 
 ## Error Handling Guidelines
 
