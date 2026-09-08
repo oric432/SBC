@@ -29,6 +29,16 @@ run-dev:
 run-release:
     cd build && ./SbcEngine
 
+# Configure and build in debug mode with ASan+UBSan on (required CI check)
+build-asan:
+    cmake --preset asan-ubsan
+    cmake --build --preset build-asan-ubsan
+
+# Configure and build in debug mode with TSan on (weekly scheduled check)
+build-tsan:
+    cmake --preset tsan
+    cmake --build --preset build-tsan
+
 # Run standard C++ tests
 test:
     ctest --preset test-debug
@@ -36,6 +46,14 @@ test:
 # Run standard C++ tests (CI only, matches build-ci preset)
 test-ci:
     ctest --preset test-ci-debug --output-on-failure
+
+# Run tests under ASan+UBSan (CI only, matches build-asan preset)
+test-asan:
+    ctest --preset test-asan-ubsan --output-on-failure
+
+# Run tests under TSan (weekly scheduled CI only, matches build-tsan preset)
+test-tsan:
+    ctest --preset test-tsan --output-on-failure
 
 # Check formatting without modifying files (CI-safe)
 format-check:

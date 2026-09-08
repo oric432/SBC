@@ -72,6 +72,23 @@
             }
         },
         {
+            "name": "asan-ubsan",
+            "inherits": "debug",
+            "description": "Debug build with AddressSanitizer + UndefinedBehaviorSanitizer (required CI check)",
+            "cacheVariables": {
+                "ENABLE_ASAN": true,
+                "ENABLE_UBSAN": true
+            }
+        },
+        {
+            "name": "tsan",
+            "inherits": "debug",
+            "description": "Debug build with ThreadSanitizer (weekly scheduled check, not required per-PR -- see root AGENTS.md threading model notes)",
+            "cacheVariables": {
+                "ENABLE_TSAN": true
+            }
+        },
+        {
             "name": "release",
             "inherits": "default",
             "description": "Release build with optimizations",
@@ -157,6 +174,14 @@
             "configurePreset": "ci-debug"
         },
         {
+            "name": "build-asan-ubsan",
+            "configurePreset": "asan-ubsan"
+        },
+        {
+            "name": "build-tsan",
+            "configurePreset": "tsan"
+        },
+        {
             "name": "build-release",
             "configurePreset": "release"
         },
@@ -189,6 +214,14 @@
         {
             "name": "test-ci-debug",
             "configurePreset": "ci-debug"
+        },
+        {
+            "name": "test-asan-ubsan",
+            "configurePreset": "asan-ubsan"
+        },
+        {
+            "name": "test-tsan",
+            "configurePreset": "tsan"
         },
         {
             "name": "test-cross-linux-gnu",
