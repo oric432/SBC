@@ -5,25 +5,32 @@ updates:
     schedule:
       interval: "weekly"
     rebase-strategy: "disabled"
+    open-pull-requests-limit: 0
 
   - package-ecosystem: "npm"
     directory: "/control-plane/frontend"
     schedule:
       interval: "weekly"
     rebase-strategy: "disabled"
+    open-pull-requests-limit: 0
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     rebase-strategy: "disabled"
+    open-pull-requests-limit: 0
 
-# rebase-strategy: disabled -- without this, Dependabot auto-rebases every
-# open PR each time main changes (fires on every merge, not just weekly),
-# which got noisy fast. Now it opens each PR once on schedule and leaves it
-# alone; if main moves enough to conflict, it just closes and re-opens a
-# fresh PR on the next scheduled run instead of continuously rebasing.
+# open-pull-requests-limit: 0 -- PAUSED. The first real run cascaded into
+# 30+ PRs across several rounds (each merge unblocked the next round of
+# transitive/peer bumps), most of them major-version breaking changes
+# needing real migration work, not something to churn through as drive-by
+# dependency bumps. This keeps the config (and Dependabot security alerts,
+# which are separate from this file) intact, but stops it from opening any
+# more version-update PRs until someone deliberately sets a real limit again
+# and works through the backlog on purpose.
 #
-# Not covered: engine/ C++ dependencies. They come through CMake FetchContent
-# (engine/third_party/*/declare.cmake), which Dependabot has no ecosystem
-# support for -- those still need manual version bumps.
+# Not covered even when re-enabled: engine/ C++ dependencies. They come
+# through CMake FetchContent (engine/third_party/*/declare.cmake), which
+# Dependabot has no ecosystem support for -- those still need manual version
+# bumps.
