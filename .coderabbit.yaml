@@ -1,0 +1,72 @@
+# CodeRabbit config: https://docs.coderabbit.ai/reference/configuration
+#
+# Goal: one automatic, low-noise AI pass on every PR. Style/naming/formatting
+# are already gated by clang-tidy, eslint, and format-check in CI -- this
+# should stay quiet about those and focus on things CI can't catch: bugs,
+# security, concurrency, and lifetime/ownership correctness.
+
+reviews:
+  profile: chill
+
+  path_filters:
+    - "!**/build/**"
+    - "!**/build-cross/**"
+    - "!**/build-cross-musl/**"
+    - "!**/_deps/**"
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/*.lock"
+    - "!**/package-lock.json"
+    - "!**/schemas/**/*.json"
+
+  path_instructions:
+    - path: "engine/src/sip/sm/**"
+      instructions: >
+        Boost.SML state machines. Flag any action that calls process_event()
+        re-entrantly instead of using the machine's self-fire
+        Sml::back::process<...> queue (see root AGENTS.md "Self-fire
+        pattern"). Flag new states/transitions that don't have a
+        Failed/terminal off-ramp.
+
+    - path: "engine/src/sip/call/**"
+      instructions: >
+        CallManager/CallSession lifetime code. A CallSession must never be
+        deleted from inside its own SM action -- only via
+        CallManager::schedule_remove()/purge_scheduled(). Flag any reordering
+        of actions-before-runners member declarations in CallSession (actions
+        must outlive the runners referencing them). See root AGENTS.md
+        "Ownership & lifetime".
+
+    - path: "engine/src/net/rtp/**"
+      instructions: >
+        MediaBridge and the RTP relay. This is the one place with genuine
+        cross-thread shared state (SIP thread + RTP io_context thread) --
+        flag any new shared mutable state that isn't atomic/mutex-protected,
+        and any call into MediaBridge's setup methods (bind_leg_*,
+        set_remote_leg_*, set_error_handler) after start_bridge_loop() has
+        been called. This directory also has no unit test coverage yet
+        (see root AGENTS.md) -- weight correctness review here accordingly.
+
+    - path: "engine/src/sip/stack/**"
+      instructions: >
+        SDP parsing/validation and the PJSIP integration layer. No unit test
+        coverage yet (see root AGENTS.md) -- flag anything that looks
+        unverified against malformed/adversarial SIP input.
+
+    - path: "control-plane/backend/**"
+      instructions: >
+        Express API owning the SIP route table. Flag any endpoint that
+        bypasses the shared sendSuccess/sendError response envelope
+        (src/utils/apiResponse.ts), or that skips validation on
+        externally-supplied input before it reaches the route table.
+
+    - path: "control-plane/frontend/**"
+      instructions: >
+        React/RTK Query SPA. Don't comment on files under
+        src/components/ui/** for the react-refresh/only-export-components
+        pattern -- that's the standard shadcn/ui generated-component shape,
+        already accepted project-wide.
+
+  auto_review:
+    enabled: true
+    drafts: false
