@@ -22,7 +22,7 @@ jobs:
           sudo apt-get install -y clang ninja-build just ccache
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: engine/build/_deps
           key: deps-${{ runner.os }}-tsan-${{ hashFiles('engine/third_party/**/declare.cmake', 'engine/third_party/**/configure.cmake') }}
