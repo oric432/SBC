@@ -4,6 +4,7 @@
 #include <string>
 
 #include "sip/sm/offer_answer_events.hpp"
+#include "events.hpp"
 
 namespace SbcEngine {
 
@@ -46,48 +47,16 @@ public:
     ISetupContext& operator=(ISetupContext&&) = delete;
     ~ISetupContext() override = default;
 
-    // Provisional responses (1xx)
-    virtual void send_100_trying() = 0;
-    virtual void send_400_bad_request() = 0;
-    virtual void send_488_not_acceptable() = 0;
-
-    // Policy denial responses (4xx)
-    virtual void send_403_forbidden() = 0; // policy check failed (auth, trunk, tenant, etc.)
-    virtual void send_429_too_many_requests() = 0; // rate limit exceeded
-
-    // Routing operations
+    virtual void begin_setup() = 0;
     virtual RouteResolution resolve_route() = 0;
-    virtual void send_route_failure_response() = 0;
-    virtual void send_loop_detected_response() = 0;
-
-    // Outbound leg management. Both return false if the callee leg was not
-    // actually stood up/dispatched (RTP bind failure, SDP parse failure, PJSIP
-    // dialog/invite/send failure) so the SM can self-fire OutboundLegFailed
-    // instead of proceeding as though the outbound INVITE was sent.
-    virtual bool create_outbound_leg(const std::string& destination) = 0;
-    virtual bool send_outbound_invite() = 0;
-
-    // Response forwarding (setup phase)
-    virtual void forward_180_ringing() = 0;
-    // Returns false if the callee's answer could not actually be relayed as
-    // 200 OK (e.g. SDP parse failure) — forward_200_ok has already sent a
-    // failure response to the caller and ended the callee leg itself in that
-    // case, so the SM must self-fire AcceptForwardFailed rather than settle
-    // in WaitingForAck as if 200 OK had gone out.
-    virtual bool forward_200_ok(const std::string& sdp) = 0;
-    virtual void forward_rejection(int status_code) = 0;
-    virtual void forward_timeout() = 0;
-
-    // Cancel flow
-    virtual void send_cancel() = 0;
-    virtual void forward_final_response() = 0;
-
-    // ACK handling (setup phase)
-    virtual void send_ack_then_bye_to_callee() = 0;
-    virtual void send_failure_to_caller() = 0;
-    virtual void forward_ack_and_start_dialog() = 0;
-
-    // Call termination
+    virtual void route_failed() = 0;
+    virtual void routing_loop_detected() = 0;
+    // Starts a fresh exchange. Completion is delivered as a logical setup event.
+    virtual ExchangeOutcome start_exchange(const std::string& destination) = 0;
+    virtual void report_progress() = 0;
+    // Returns true if cancellation has already completed.
+    virtual bool cancel_call() = 0;
+    virtual void establish_call() = 0;
     virtual void terminate_call() = 0;
 };
 

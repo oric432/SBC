@@ -3,10 +3,13 @@ add_library(sip STATIC
     stack/sdp.cpp
     call/call_manager.cpp
     call/call_session.cpp
+    call/offer_answer_exchange.cpp
     router/message_router.cpp
+    router/sip_request_actions.cpp
     router/options_actions.cpp
     router/real_dialog_actions.cpp
     router/real_setup_actions.cpp
+    router/real_offer_answer_actions.cpp
     router/extract_utils.cpp
     routes/routes_store.cpp
     routes/routes_manager.cpp

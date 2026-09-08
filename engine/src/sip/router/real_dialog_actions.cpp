@@ -9,6 +9,10 @@
 namespace SbcEngine {
 
 namespace {
+constexpr char kSessionTimerExpiredCause[] = "No session refresh received.";
+bool is_session_timer_expiry(const pjsip_inv_session* inv) {
+    return inv->cause == PJSIP_SC_REQUEST_TIMEOUT && pj_stricmp2(&inv->cause_text, kSessionTimerExpiredCause) == 0;
+}
 
 void end_session(pjsip_inv_session* inv, int code, const char* what) {
     if (inv == nullptr) {
@@ -90,5 +94,32 @@ void RealDialogActions::cleanup() {
     session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] dialog cleanup complete", session_.call_id());
 }
+
+void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv) {
+    if (inv->state != PJSIP_INV_STATE_DISCONNECTED) {
+        return;
+    }
+    auto& dialog = session_.dialog_sm();
+    const bool is_caller_leg = inv == session_.inv_caller();
+
+    if (is_session_timer_expiry(inv)) {
+        Log::call()->warn(
+            "[{}] RFC 4028 session timer expired on {} leg; PJSIP sent BYE because the session refresh was missing "
+            "or unanswered",
+            session_.call_id(),
+            is_caller_leg ? "caller" : "callee");
+    }
+
+    if (dialog.is_active()) {
+        // First leg to drop initiates teardown of the other.
+        dialog.process_event(ByeReceived{is_caller_leg});
+    }
+    else if (dialog.is_terminating()) {
+        // Second leg finished → the call is fully over. Cleanup{} self-fires
+        // from DialogSm's own action once Terminated is reached.
+        dialog.process_event(CallEnded{});
+    }
+}
+
 
 } // namespace SbcEngine

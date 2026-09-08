@@ -1,107 +1,68 @@
 #include "real_setup_actions.hpp"
 
 #include <format>
-
 #include <pjsip_ua.h>
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/routes/routes_store.hpp"
-#include "sip/stack/sdp.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
-
 namespace {
-
-// Not present in this PJSIP version's pjsip_status_code enum (RFC 6585).
-constexpr int kScTooManyRequests = 429;
-
-// Send a tx_data on an invite session, logging (not throwing) on failure —
-// SM actions must not propagate errors upward.
-void send_inv_msg(pjsip_inv_session* inv, pjsip_tx_data* tdata, const char* what) {
-    if (tdata == nullptr) {
+constexpr int kMinFinalErrorCode = 300;
+void finish_exchange(CallSession& session, ExchangeOutcome outcome) {
+    if (outcome == ExchangeOutcome::kPending) {
         return;
     }
-    pj_status_t status = pjsip_inv_send_msg(inv, tdata);
+    session.release_exchange();
+    session.setup_sm().process_event(Setup::ExchangeFinished{outcome});
+}
+void end_session(pjsip_inv_session* inv, int code) {
+    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
+        return;
+    }
+    pjsip_tx_data* data = nullptr;
+    pj_status_t status = pjsip_inv_end_session(inv, code, nullptr, &data);
+    if (status == PJ_SUCCESS && data != nullptr) {
+        status = pjsip_inv_send_msg(inv, data);
+    }
     if (status != PJ_SUCCESS) {
-        Log::sip()->error("{}: pjsip_inv_send_msg failed ({})", what, status);
+        Log::sip()->warn("Ending setup leg failed ({})", status);
     }
 }
-
-void end_session(pjsip_inv_session* inv, int code, const char* what) {
-    if (inv == nullptr) {
-        Log::sip()->warn("{}: no invite session to end", what);
-        return;
-    }
-    pjsip_tx_data* tdata = nullptr;
-    pj_status_t status = pjsip_inv_end_session(inv, code, nullptr, &tdata);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("{}: pjsip_inv_end_session failed ({})", what, status);
-        return;
-    }
-    send_inv_msg(inv, tdata, what);
-}
-
 } // namespace
 
-void RealSetupActions::send_initial_response(int code, const pjmedia_sdp_session* sdp) {
-    pjsip_inv_session* inv = session_.inv_caller();
-    if (inv == nullptr) {
-        Log::sip()->error("send_initial_response({}): no caller invite session", code);
+void RealSetupActions::begin_setup() {
+    pjsip_tx_data* data = nullptr;
+    auto* inv = session_.inv_caller();
+    auto* request = session_.current_rdata();
+    if (inv == nullptr || request == nullptr) {
         return;
     }
-
-    pjsip_rx_data* rdata = session_.current_rdata();
-    if (rdata == nullptr) {
-        Log::sip()->error("send_initial_response({}): no rx_data for initial answer", code);
-        return;
+    pj_status_t status = pjsip_inv_initial_answer(inv, request, PJSIP_SC_TRYING, nullptr, nullptr, &data);
+    if (status == PJ_SUCCESS) {
+        status = pjsip_inv_send_msg(inv, data);
     }
-
-    pjsip_tx_data* tdata = nullptr;
-    pj_status_t status = pjsip_inv_initial_answer(inv, rdata, code, nullptr, sdp, &tdata);
     if (status != PJ_SUCCESS) {
-        Log::sip()->error("send_initial_response({}): initial answer creation failed ({})", code, status);
-        return;
+        Log::sip()->warn("Initial setup response failed ({})", status);
     }
-    send_inv_msg(inv, tdata, "send_initial_response");
 }
 
-void RealSetupActions::send_subsequent_response(int code, const pjmedia_sdp_session* sdp) {
-    pjsip_inv_session* inv = session_.inv_caller();
-    if (inv == nullptr) {
-        Log::sip()->error("send_subsequent_response({}): no caller invite session", code);
+void RealSetupActions::send_response(int code) {
+    auto* inv = session_.inv_caller();
+    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
         return;
     }
-
-    pjsip_tx_data* tdata = nullptr;
-    pj_status_t status = pjsip_inv_answer(inv, code, nullptr, sdp, &tdata);
+    pjsip_tx_data* data = nullptr;
+    pj_status_t status = pjsip_inv_answer(inv, code, nullptr, nullptr, &data);
+    if (status == PJ_SUCCESS) {
+        status = pjsip_inv_send_msg(inv, data);
+    }
     if (status != PJ_SUCCESS) {
-        Log::sip()->error("send_subsequent_response({}): subsequent answer creation failed ({})", code, status);
-        return;
+        Log::sip()->warn("Setup response {} failed ({})", code, status);
     }
-    send_inv_msg(inv, tdata, "send_subsequent_response");
-}
-
-void RealSetupActions::send_100_trying() {
-    send_initial_response(PJSIP_SC_TRYING);
-}
-
-void RealSetupActions::send_400_bad_request() {
-    send_initial_response(PJSIP_SC_BAD_REQUEST);
-}
-
-void RealSetupActions::send_488_not_acceptable() {
-    send_initial_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
-}
-
-void RealSetupActions::send_403_forbidden() {
-    send_initial_response(PJSIP_SC_FORBIDDEN);
-}
-
-void RealSetupActions::send_429_too_many_requests() {
-    send_initial_response(kScTooManyRequests);
 }
 
 RouteResolution RealSetupActions::resolve_route() {
@@ -137,232 +98,37 @@ RouteResolution RealSetupActions::resolve_route() {
     return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest};
 }
 
-void RealSetupActions::send_route_failure_response() {
-    send_subsequent_response(PJSIP_SC_TEMPORARILY_UNAVAILABLE);
+void RealSetupActions::route_failed() {
+    send_response(PJSIP_SC_TEMPORARILY_UNAVAILABLE);
+}
+void RealSetupActions::routing_loop_detected() {
+    send_response(PJSIP_SC_LOOP_DETECTED);
+}
+ExchangeOutcome RealSetupActions::start_exchange(const std::string& destination) {
+    if (!session_.create_exchange(destination)) {
+        return ExchangeOutcome::kFailed;
+    }
+    const auto outcome = session_.exchange()->start(session_.caller_offer_sdp());
+    if (outcome != ExchangeOutcome::kPending) {
+        session_.release_exchange();
+    }
+    return outcome;
+}
+void RealSetupActions::report_progress() {
+    send_response(PJSIP_SC_RINGING);
 }
 
-void RealSetupActions::send_loop_detected_response() {
-    send_subsequent_response(PJSIP_SC_LOOP_DETECTED);
+bool RealSetupActions::cancel_call() {
+    if (session_.exchange() != nullptr) {
+        session_.exchange()->stop();
+        session_.release_exchange();
+    }
+    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED);
+    return session_.inv_callee() == nullptr || session_.inv_callee()->state == PJSIP_INV_STATE_DISCONNECTED;
 }
 
-bool RealSetupActions::create_outbound_leg(const std::string& destination) {
-    const PjContext* ctx = session_.ctx();
-    const PjsipConfig& cfg = ctx->config_;
-
-    // 1. Bind local sockets for RTP relay
-    auto caller_port = session_.media_bridge()->bind_leg_a();
-    if (!caller_port) {
-        Log::call()->error(
-            "[{}] failed to bind caller RTP port: {}",
-            session_.call_id(),
-            caller_port.error().message());
-        return false;
-    }
-    auto callee_port = session_.media_bridge()->bind_leg_b();
-    if (!callee_port) {
-        Log::call()->error(
-            "[{}] failed to bind callee RTP port: {}",
-            session_.call_id(),
-            callee_port.error().message());
-        return false;
-    }
-
-    // 2. Parse the caller's offer; point the caller-facing socket at their RTP
-    // address (symmetric-RTP latching will correct it if they are NATed).
-    pjmedia_sdp_session* offer = Sdp::parse(session_.pool(), session_.caller_offer_sdp());
-    if (offer == nullptr) {
-        Log::call()->error("[{}] cannot parse caller offer SDP", session_.call_id());
-        return false;
-    }
-    auto caller_rtp = Sdp::extract_rtp_endpoint(offer);
-    if (!caller_rtp.ip_.empty()) {
-        session_.media_bridge()->set_remote_leg_a(caller_rtp.ip_, caller_rtp.port_);
-    }
-
-    // 3. Mangle the offer towards the callee: media anchored at our callee-facing socket.
-    Sdp::rewrite_connection_and_port(
-        session_.pool(),
-        offer,
-        cfg.local_ip_,
-        session_.media_bridge()->leg_b_port().value());
-
-    // 4. Create the UAC dialog + invite session towards the destination.
-    // From carries the caller's real identity (name + number) so the SBC stays
-    // transparent about who is calling; Contact stays the SBC's own address so
-    // in-dialog requests (re-INVITE/BYE/UPDATE) keep routing through it.
-    const std::string caller_user = extract_uri_user(session_.caller_uri());
-    if (caller_user.empty()) {
-        Log::sip()->error(
-            "[{}] create_outbound_leg: caller From header has no user part, cannot build outbound From",
-            session_.call_id());
-        return false;
-    }
-    std::string local_uri_s = cfg.caller_facing_from_uri(session_.caller_display_name(), caller_user);
-    std::string local_contact_s = cfg.own_contact_uri();
-    std::string dest_s = destination;
-
-    const pj_str_t local_uri = pj_str(local_uri_s.data());
-    const pj_str_t local_contact = pj_str(local_contact_s.data());
-    const pj_str_t remote_uri = pj_str(dest_s.data());
-
-    pjsip_dialog* dlg = nullptr;
-    pj_status_t status =
-        pjsip_dlg_create_uac(pjsip_ua_instance(), &local_uri, &local_contact, &remote_uri, &remote_uri, &dlg);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->error("[{}] pjsip_dlg_create_uac failed ({})", session_.call_id(), status);
-        return false;
-    }
-
-    pjsip_inv_session* inv = nullptr;
-    // This is an independent RFC 4028 negotiation from the caller-facing
-    // leg. PJSIP refreshes with UPDATE when the callee advertises UPDATE in
-    // Allow, otherwise it uses re-INVITE.
-    status = pjsip_inv_create_uac(dlg, offer, PJSIP_INV_SUPPORT_TIMER, &inv);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->error("[{}] pjsip_inv_create_uac failed ({})", session_.call_id(), status);
-        return false;
-    }
-
-    session_.set_inv_callee(inv);
-    session_.set_outbound_destination(destination);
-    Log::call()->info("[{}] outbound leg created towards {}", session_.call_id(), destination);
-    return true;
-}
-
-bool RealSetupActions::send_outbound_invite() {
-    pjsip_inv_session* inv = session_.inv_callee();
-    if (inv == nullptr) {
-        Log::sip()->error("[{}] send_outbound_invite: no callee leg", session_.call_id());
-        return false;
-    }
-    pjsip_tx_data* tdata = nullptr;
-    pj_status_t status = pjsip_inv_invite(inv, &tdata);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->error("[{}] pjsip_inv_invite failed ({})", session_.call_id(), status);
-        return false;
-    }
-
-    // pjsip_inv_invite() does not carry over or insert a Max-Forwards header on
-    // the new leg's request, so left alone every hop this B2BUA originates
-    // would reset to no limit — a self-routing loop would spin forever, never
-    // getting rejected, exhausting sockets/ports. Stamp inbound-1 (or the
-    // RFC 3261 default of 70-1 if the inbound request had no header of its
-    // own) so the hop count still bounds the loop.
-    pj_uint32_t inbound_max_fwd = PJSIP_MAX_FORWARDS_VALUE;
-    const pjsip_rx_data* rdata = session_.current_rdata();
-    if (rdata != nullptr && rdata->msg_info.max_fwd != nullptr) {
-        inbound_max_fwd = rdata->msg_info.max_fwd->ivalue;
-    }
-    const pj_uint32_t outbound_max_fwd = inbound_max_fwd > 0 ? inbound_max_fwd - 1 : 0;
-
-    auto* max_fwd_hdr = static_cast<pjsip_max_fwd_hdr*>(pjsip_msg_find_hdr(tdata->msg, PJSIP_H_MAX_FORWARDS, nullptr));
-    if (max_fwd_hdr != nullptr) {
-        max_fwd_hdr->ivalue = outbound_max_fwd;
-    }
-    else {
-        pjsip_max_fwd_hdr* new_hdr = pjsip_max_fwd_hdr_create(tdata->pool, outbound_max_fwd);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
-        pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(new_hdr));
-    }
-
-    send_inv_msg(inv, tdata, "send_outbound_invite");
-    return true;
-}
-
-void RealSetupActions::forward_180_ringing() {
-    send_subsequent_response(PJSIP_SC_RINGING);
-    Log::call()->info(
-        "[{}] received 180 Ringing from callee ({}), forwarded to caller ({})",
-        session_.call_id(),
-        session_.outbound_destination(),
-        session_.caller_uri());
-}
-
-bool RealSetupActions::forward_200_ok(const std::string& sdp) {
-    const PjContext* ctx = session_.ctx();
-
-    // Parse the callee's answer; point the callee-facing socket at their RTP address.
-    pjmedia_sdp_session* answer = Sdp::parse(session_.pool(), sdp);
-    if (answer == nullptr) {
-        Log::call()->error("[{}] cannot parse callee answer SDP", session_.call_id());
-        end_session(session_.inv_callee(), PJSIP_SC_NOT_ACCEPTABLE_HERE, "forward_200_ok");
-        send_subsequent_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
-        return false;
-    }
-    auto callee_rtp = Sdp::extract_rtp_endpoint(answer);
-    if (!callee_rtp.ip_.empty()) {
-        session_.media_bridge()->set_remote_leg_b(callee_rtp.ip_, callee_rtp.port_);
-    }
-
-    // Mangle the answer towards the caller: media anchored at our caller-facing socket.
-    Sdp::rewrite_connection_and_port(
-        session_.pool(),
-        answer,
-        ctx->config_.local_ip_,
-        session_.media_bridge()->leg_a_port().value());
-
-    send_subsequent_response(PJSIP_SC_OK, answer);
-
-    // Issue #121: groundwork for future codec-aware work (e.g. a transcoder) —
-    // nothing consumes it yet. `answer` here IS the callee's decided codec:
-    // mangling only ever touches conn/port, never the format lines, and this
-    // exact object is what both legs end up carrying (we relay it to the
-    // caller verbatim above). Reading it directly avoids depending on
-    // pjmedia_sdp_neg's internal timing — on the inv_callee leg in particular,
-    // PJSIP fires this very callback *before* it negotiates the incoming
-    // answer (see PJSIP_TSX_STATE_TERMINATED in sip_inv.c), so querying
-    // pjmedia_sdp_neg_get_active_remote() here reads uninitialized state.
-    auto codec = Sdp::extract_active_audio_codec(answer);
-    session_.set_caller_leg_codec(codec);
-    session_.set_callee_leg_codec(std::move(codec));
-
-    session_.media_bridge()->start_bridge_loop();
-    Log::call()->info(
-        "[{}] received 200 OK from callee ({}), forwarded to caller ({}); RTP relay armed",
-        session_.call_id(),
-        session_.outbound_destination(),
-        session_.caller_uri());
-    return true;
-}
-
-void RealSetupActions::forward_rejection(int status_code) {
-    Log::call()->warn("[{}] call rejected by callee ({})", session_.call_id(), status_code);
-    send_subsequent_response(status_code);
-}
-
-void RealSetupActions::forward_timeout() {
-    Log::call()->warn(
-        "[{}] call timeout, target-uri {}, route {}",
-        session_.call_id(),
-        session_.request_uri(),
-        session_.outbound_destination());
-    send_subsequent_response(PJSIP_SC_REQUEST_TIMEOUT);
-}
-
-void RealSetupActions::send_cancel() {
-    Log::call()->warn("[{}] call cancelled by caller", session_.call_id());
-    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED, "send_cancel");
-}
-
-void RealSetupActions::forward_final_response() {
-    // PJSIP already answers the caller's CANCEL and terminates the caller-side
-    // INVITE with 487 internally; nothing to forward manually.
-    Log::call()->info("[{}] invite terminated after cancel", session_.call_id());
-}
-
-void RealSetupActions::send_ack_then_bye_to_callee() {
-    Log::call()->info("[{}] callee answer SDP invalid, rejecting call", session_.call_id());
-    // ACK for the callee's 200 OK is sent automatically by the invite session;
-    // ending the session now issues the BYE.
-    end_session(session_.inv_callee(), PJSIP_SC_OK, "send_ack_then_bye_to_callee");
-}
-
-void RealSetupActions::send_failure_to_caller() {
-    send_subsequent_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
-}
-
-void RealSetupActions::forward_ack_and_start_dialog() {
-    // ACK absorption is handled by PJSIP; the router fires DialogStarted next.
+void RealSetupActions::establish_call() {
+    // The exchange has committed; the permanent lifecycle is now established.
     const auto caller_relay_port = session_.media_bridge()->leg_a_port();
     const auto callee_relay_port = session_.media_bridge()->leg_b_port();
     const auto caller_rtp = session_.media_bridge()->remote_leg_a();
@@ -380,8 +146,12 @@ void RealSetupActions::forward_ack_and_start_dialog() {
 }
 
 void RealSetupActions::terminate_call() {
-    end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT, "terminate_call caller");
-    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT, "terminate_call callee");
+    if (session_.exchange() != nullptr) {
+        session_.exchange()->stop();
+        session_.release_exchange();
+    }
+    end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
+    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);
 }
 
 void RealSetupActions::cleanup() {
@@ -392,6 +162,103 @@ void RealSetupActions::cleanup() {
 
     session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] setup cleanup complete", session_.call_id());
+}
+
+void RealSetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
+    const bool is_callee_leg = (inv == session_.inv_callee());
+    auto& setup = session_.setup_sm();
+    // PJSIP reports local state changes synchronously during sends/termination.
+    // Those operations inspect the send result and leg state before returning;
+    // only independent incoming callbacks should drive another SM operation.
+    if (setup.is_processing() || ((session_.exchange() != nullptr) && session_.exchange()->is_processing())) {
+        return;
+    }
+
+    switch (inv->state) {
+    case PJSIP_INV_STATE_EARLY:
+        // 180 from the callee → forward ringing to the caller.
+        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_EARLY", session_.call_id());
+        if (is_callee_leg) {
+            setup.process_event(Setup::ProgressReceived{});
+        }
+        break;
+
+    case PJSIP_INV_STATE_CONNECTING:
+        // 200 OK from the callee (ACK auto-sent by PJSIP) → forward answer.
+        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_CONNECTING", session_.call_id());
+        if (is_callee_leg) {
+            if (setup.is_cancelling()) {
+                // A success raced with cancellation: end the now-accepted leg.
+                setup.process_event(Setup::CancelRequested{});
+            }
+            else {
+                if (session_.exchange() != nullptr) {
+                    finish_exchange(session_, session_.exchange()->receive_answer(extract_sdp(rdata)));
+                }
+            }
+        }
+        break;
+
+    case PJSIP_INV_STATE_CONFIRMED:
+        // ACK from the caller → dialog established.
+        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_CONFIRMED", session_.call_id());
+        if (!is_callee_leg) {
+            if (session_.exchange() != nullptr) {
+                finish_exchange(session_, session_.exchange()->confirm());
+            }
+        }
+        break;
+
+    case PJSIP_INV_STATE_DISCONNECTED:
+        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
+
+        if (!setup.is_done()) {
+            handle_disconnect(inv);
+        }
+        break;
+
+    default: break;
+    }
+}
+
+void RealSetupActions::handle_disconnect(pjsip_inv_session* inv) {
+    auto& setup = session_.setup_sm();
+    const bool is_callee_leg = (inv == session_.inv_callee());
+    const int cause = static_cast<int>(inv->cause);
+
+    if (setup.is_cancelling()) {
+        if (is_callee_leg) {
+            setup.process_event(Setup::CancellationCompleted{});
+        }
+        return;
+    }
+    if ((session_.exchange() != nullptr) && session_.exchange()->awaiting_confirmation()) {
+        if (!is_callee_leg && cause == PJSIP_SC_REQUEST_TIMEOUT) {
+            finish_exchange(session_, session_.exchange()->confirmation_timeout());
+        }
+        else {
+            setup.process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed});
+        }
+        return;
+    }
+    if (is_callee_leg) {
+        if (cause == PJSIP_SC_REQUEST_TIMEOUT) {
+            if (session_.exchange() != nullptr) {
+                finish_exchange(session_, session_.exchange()->answer_timeout());
+            }
+        }
+        else if (cause >= kMinFinalErrorCode) {
+            if (session_.exchange() != nullptr) {
+                finish_exchange(session_, session_.exchange()->reject(cause));
+            }
+        }
+        else {
+            setup.process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed});
+        }
+    }
+    else {
+        setup.process_event(Setup::CancelRequested{});
+    }
 }
 
 } // namespace SbcEngine
