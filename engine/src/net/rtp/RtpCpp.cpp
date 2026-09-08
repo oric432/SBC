@@ -281,8 +281,11 @@ std::expected<asio::ip::udp::endpoint, std::error_code> BasicRawRtpSender::local
 }
 
 std::expected<void, std::error_code> BasicRawRtpSender::close() {
+    // A socket that was never bound is equivalently "not open" — closing it
+    // is a no-op, not an error (e.g. a call rejected before ever dialing out
+    // never binds its RTP sockets, and its teardown still closes them).
     if (socket_ == nullptr) {
-        return std::unexpected(to_error_code(asio::error::bad_descriptor));
+        return {};
     }
 
     if (socket_->is_open()) {
@@ -520,8 +523,11 @@ std::expected<asio::ip::udp::endpoint, std::error_code> RtpReceiver::local_endpo
 }
 
 std::expected<void, std::error_code> RtpReceiver::close() {
+    // A socket that was never bound is equivalently "not open" — closing it
+    // is a no-op, not an error (e.g. a call rejected before ever dialing out
+    // never binds its RTP sockets, and its teardown still closes them).
     if (socket_ == nullptr) {
-        return std::unexpected(to_error_code(asio::error::bad_descriptor));
+        return {};
     }
 
     if (socket_->is_open()) {

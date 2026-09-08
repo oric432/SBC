@@ -71,6 +71,18 @@ TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
     REQUIRE(received == true);
 }
 
+TEST_CASE("MediaBridge close() succeeds even when neither leg was ever bound", "[MediaBridge]") {
+    // A call rejected before ever dialing out (no route, routing loop, codec
+    // mismatch) tears down its MediaBridge without either bind_leg_* ever
+    // having been called — close() must still succeed, not report a
+    // bad-file-descriptor error for a socket that was simply never opened.
+    io_context ioc;
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+
+    auto result = bridge->close();
+    REQUIRE(result.has_value());
+}
+
 // A destination address of a different family than the bound socket (IPv4)
 // fails the underlying async_send_to deterministically and portably — no
 // real network I/O or timing dependency, unlike most other ways to induce a
