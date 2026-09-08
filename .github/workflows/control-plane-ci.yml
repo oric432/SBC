@@ -3,17 +3,42 @@ name: Control Plane CI
 on:
   pull_request:
     branches: [main]
-    paths: ["control-plane/**", ".github/workflows/control-plane-ci.yml"]
   push:
     branches: [main]
-    paths: ["control-plane/**", ".github/workflows/control-plane-ci.yml"]
 
 concurrency:
   group: control-plane-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Required status checks must always report *something*, or a PR that never
+  # touches control-plane/ leaves backend/frontend stuck "Expected — waiting"
+  # forever (path-filtering the whole workflow's `on:` trigger, as this used
+  # to do, means no run — and no status — ever gets created at all). Gating
+  # each job's own `if:` on this job's output instead means an untouched job
+  # still runs (trivially) and reports "skipped", which branch protection
+  # accepts as passing.
+  changes:
+    runs-on: ubuntu-26.04
+    outputs:
+      control_plane: ${{ steps.filter.outputs.control_plane }}
+    steps:
+      # Full history: push events diff locally against the prior commit, and
+      # a shallow (default depth-1) checkout wouldn't have it to diff against.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            control_plane:
+              - 'control-plane/**'
+              - '.github/workflows/control-plane-ci.yml'
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.control_plane == 'true'
     runs-on: ubuntu-26.04
     defaults:
       run:
@@ -39,6 +64,8 @@ jobs:
         run: npm run build
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.control_plane == 'true'
     runs-on: ubuntu-26.04
     defaults:
       run:
