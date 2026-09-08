@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/control-plane/backend"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/control-plane/frontend"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+# Not covered: engine/ C++ dependencies. They come through CMake FetchContent
+# (engine/third_party/*/declare.cmake), which Dependabot has no ecosystem
+# support for -- those still need manual version bumps.
