@@ -4,6 +4,7 @@ add_executable(sip_tests
     test_setup_sm.cpp
     test_dialog_sm.cpp
     test_options_sm.cpp
+    test_sdp.cpp
 )
 
 # Enable template instantiations for test types in state machine implementations
