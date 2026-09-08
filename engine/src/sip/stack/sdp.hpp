@@ -76,11 +76,14 @@ std::vector<AudioCodecInfo> extract_all_audio_codecs(const pjmedia_sdp_session* 
 
 // Rewrites the first non-declined audio media line's format list to exactly
 // `allowed`, in that order, dropping any now-stale rtpmap/fmtp attributes
-// (none of `allowed`'s codecs need one — all are RFC 3551 static types).
-// Every other line/attribute is left untouched. A single-element `allowed`
-// produces a valid SDP *answer* for that media line; multiple elements
-// produce an *offer* candidate list for the far end to choose from. No-op if
-// the session has no active audio media line.
+// (none of `allowed`'s codecs need one — all are RFC 3551 static types). If
+// the original format list included telephone-event (RFC 2833 DTMF), it is
+// carried through verbatim (same payload type, rtpmap, fmtp) appended after
+// `allowed` — narrowing the audio codec set must not silently drop DTMF
+// signaling. Every other line/attribute is left untouched. A single-element
+// `allowed` produces a valid SDP *answer* for that media line; multiple
+// elements produce an *offer* candidate list for the far end to choose from.
+// No-op if the session has no active audio media line.
 void restrict_audio_codecs(
     pj_pool_t* pool,
     pjmedia_sdp_session* sdp,

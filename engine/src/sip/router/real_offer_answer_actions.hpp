@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
+#include "protocols/SupportedCodecs.hpp"
 #include "sip/sm/isbc_actions.hpp"
 #include "sip/stack/sdp.hpp"
 
@@ -13,9 +15,13 @@ class CallSession;
 // alongside its temporary runner; neither survives exchange cleanup.
 class RealOfferAnswerActions : public IOfferAnswerActions {
 public:
-    RealOfferAnswerActions(CallSession& session, std::string destination)
+    RealOfferAnswerActions(
+        CallSession& session,
+        std::string destination,
+        std::optional<Protocols::SupportedCodec> required_codec)
         : session_(session)
-        , destination_(std::move(destination)) {}
+        , destination_(std::move(destination))
+        , required_codec_(required_codec) {}
 
     [[nodiscard]] bool offer_usable(const std::string& sdp) const override;
     [[nodiscard]] bool answer_usable(const std::string& sdp) const override;
@@ -38,9 +44,13 @@ private:
 
     CallSession& session_;
     std::string destination_;
+    std::optional<Protocols::SupportedCodec> required_codec_;
     std::string offer_;
     std::string answer_;
-    std::optional<Sdp::AudioCodecInfo> codec_;
+    std::optional<Sdp::AudioCodecInfo> caller_leg_codec_;
+    std::optional<Sdp::AudioCodecInfo> callee_leg_codec_;
+    std::optional<std::uint8_t> caller_leg_dtmf_pt_;
+    std::optional<std::uint8_t> callee_leg_dtmf_pt_;
     bool offer_sent_ = false;
     bool answer_sent_ = false;
 };

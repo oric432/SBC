@@ -30,19 +30,25 @@ TEST_CASE("Setup starts an exchange and establishes only on commit", "[setup_sm]
 
 TEST_CASE("Setup routing failures never allocate an exchange", "[setup_sm]") {
     MockSetupActions actions;
+    std::string_view expected_call;
     SECTION("No route") {
         actions.route_resolution_.kind_ = RouteResolution::Kind::kFailed;
+        expected_call = "route_failed";
     }
     SECTION("Routing loop") {
         actions.route_resolution_.kind_ = RouteResolution::Kind::kLoop;
+        expected_call = "routing_loop_detected";
+    }
+    SECTION("Codec mismatch") {
+        actions.route_resolution_.kind_ = RouteResolution::Kind::kCodecMismatch;
+        expected_call = "codec_mismatch_detected";
     }
     SetupSmRunner runner(actions, "setup");
     REQUIRE(runner.process_event(Setup::Requested{}));
     REQUIRE(runner.is_done());
     REQUIRE_FALSE(runner.is_established());
     REQUIRE_FALSE(actions.was_called("start_exchange"));
-    REQUIRE(actions.was_called(
-        actions.route_resolution_.kind_ == RouteResolution::Kind::kFailed ? "route_failed" : "routing_loop_detected"));
+    REQUIRE(actions.was_called(expected_call));
     REQUIRE(actions.was_called("terminate_call"));
     REQUIRE(actions.was_called("cleanup"));
 }

@@ -3,8 +3,11 @@
 #include "sip/call/call_session.hpp"
 
 namespace SbcEngine {
-OfferAnswerExchange::OfferAnswerExchange(CallSession& session, const std::string& destination)
-    : actions_(session, destination)
+OfferAnswerExchange::OfferAnswerExchange(
+    CallSession& session,
+    const std::string& destination,
+    std::optional<Protocols::SupportedCodec> required_codec)
+    : actions_(session, destination, required_codec)
     , runner_(actions_, session.call_id()) {}
 
 ExchangeOutcome OfferAnswerExchange::start(const std::string& offer) {

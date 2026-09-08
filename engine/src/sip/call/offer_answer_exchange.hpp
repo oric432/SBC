@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+
+#include "protocols/SupportedCodecs.hpp"
 #include "sip/router/real_offer_answer_actions.hpp"
 #include "sip/sm/offer_answer_sm_runner.hpp"
 
@@ -10,7 +13,10 @@ class CallSession;
 // return one logical result. No operation calls setup or destroys this object.
 class OfferAnswerExchange {
 public:
-    OfferAnswerExchange(CallSession& session, const std::string& destination);
+    OfferAnswerExchange(
+        CallSession& session,
+        const std::string& destination,
+        std::optional<Protocols::SupportedCodec> required_codec);
     ExchangeOutcome start(const std::string& offer);
     ExchangeOutcome receive_answer(const std::string& answer);
     ExchangeOutcome reject(int status_code);

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <optional>
+
 #include <pjsip_ua.h>
 
+#include "protocols/SupportedCodecs.hpp"
 #include "sip/sm/isbc_actions.hpp"
 
 namespace SbcEngine {
@@ -21,7 +24,10 @@ public:
     RouteResolution resolve_route() override;
     void route_failed() override;
     void routing_loop_detected() override;
-    ExchangeOutcome start_exchange(const std::string& destination) override;
+    void codec_mismatch_detected() override;
+    ExchangeOutcome start_exchange(
+        const std::string& destination,
+        std::optional<Protocols::SupportedCodec> required_codec) override;
     void report_progress() override;
     bool cancel_call() override;
     void establish_call() override;

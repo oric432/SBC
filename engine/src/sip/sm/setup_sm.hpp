@@ -23,6 +23,7 @@ using SetupSelfFireQueue = Sml::back::process<
     Setup::RouteFound,
     Setup::RouteFailed,
     Setup::LoopDetected,
+    Setup::CodecMismatch,
     Setup::ExchangeFinished,
     Setup::CancellationCompleted,
     Setup::Cleanup>;
@@ -34,9 +35,12 @@ struct SetupSm {
             actions.begin_setup();
             const RouteResolution route = actions.resolve_route();
             switch (route.kind_) {
-            case RouteResolution::Kind::kFound: result(Setup::RouteFound{route.destination_}); break;
+            case RouteResolution::Kind::kFound:
+                result(Setup::RouteFound{route.destination_, route.required_codec_});
+                break;
             case RouteResolution::Kind::kFailed: result(Setup::RouteFailed{}); break;
             case RouteResolution::Kind::kLoop: result(Setup::LoopDetected{}); break;
+            case RouteResolution::Kind::kCodecMismatch: result(Setup::CodecMismatch{}); break;
             }
         };
         const auto route_failed = [](Context& actions, SetupSelfFireQueue result) {
@@ -49,8 +53,13 @@ struct SetupSm {
             actions.terminate_call();
             result(Setup::Cleanup{});
         };
+        const auto codec_mismatch = [](Context& actions, SetupSelfFireQueue result) {
+            actions.codec_mismatch_detected();
+            actions.terminate_call();
+            result(Setup::Cleanup{});
+        };
         const auto start = [](Context& actions, const Setup::RouteFound& event, SetupSelfFireQueue result) {
-            const auto outcome = actions.start_exchange(event.destination_);
+            const auto outcome = actions.start_exchange(event.destination_, event.required_codec_);
             if (outcome != ExchangeOutcome::kPending) {
                 result(Setup::ExchangeFinished{outcome});
             }
@@ -84,6 +93,7 @@ struct SetupSm {
              Sml::state<Setup::Routing> + Sml::event<Setup::RouteFound> / start = Sml::state<Setup::Negotiating>,
              Sml::state<Setup::Routing> + Sml::event<Setup::RouteFailed> / route_failed = Sml::state<Setup::Failed>,
              Sml::state<Setup::Routing> + Sml::event<Setup::LoopDetected> / loop = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Routing> + Sml::event<Setup::CodecMismatch> / codec_mismatch = Sml::state<Setup::Failed>,
              Sml::state<Setup::Negotiating> + Sml::event<Setup::ProgressReceived> / progress = Sml::state<Setup::Ringing>,
              Sml::state<Setup::Ringing> + (Sml::event<Setup::ProgressReceived> / progress),
              Sml::state<Setup::Negotiating> + Sml::event<Setup::ExchangeFinished>[committed] / established = Sml::state<Setup::Established>,

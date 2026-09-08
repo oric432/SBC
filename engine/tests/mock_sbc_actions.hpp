@@ -4,7 +4,9 @@
 #include <string>
 #include <string_view>
 #include <algorithm>
+#include <optional>
 
+#include "protocols/SupportedCodecs.hpp"
 #include "sm/isbc_actions.hpp"
 
 namespace SbcEngine {
@@ -13,7 +15,8 @@ class MockSetupActions : public ISetupContext {
 public:
     std::vector<std::string> calls_;
 
-    RouteResolution route_resolution_{.kind_ = RouteResolution::Kind::kFound, .destination_ = "callee"};
+    RouteResolution route_resolution_{
+        .kind_ = RouteResolution::Kind::kFound, .destination_ = "callee", .required_codec_ = {}};
 
     ExchangeOutcome exchange_result_ = ExchangeOutcome::kPending;
     bool cancellation_complete_ = false;
@@ -25,7 +28,10 @@ public:
     }
     void route_failed() override { calls_.emplace_back("route_failed"); }
     void routing_loop_detected() override { calls_.emplace_back("routing_loop_detected"); }
-    ExchangeOutcome start_exchange(const std::string& destination) override {
+    void codec_mismatch_detected() override { calls_.emplace_back("codec_mismatch_detected"); }
+    ExchangeOutcome start_exchange(
+        const std::string& destination, [[maybe_unused]] std::optional<Protocols::SupportedCodec> required_codec)
+        override {
         calls_.push_back("start_exchange:" + destination);
         return exchange_result_;
     }

@@ -8,7 +8,7 @@ TEST_CASE("Mock setup actions record calls and reset", "[sbc_mock]") {
     MockSetupActions actions;
 
     REQUIRE(actions.resolve_route().kind_ == RouteResolution::Kind::kFound);
-    actions.start_exchange("callee");
+    actions.start_exchange("callee", std::nullopt);
     REQUIRE(actions.was_called("resolve_route"));
     REQUIRE(actions.was_called("start_exchange:callee"));
 

@@ -2,6 +2,9 @@
 
 #include <string>
 #include <cstdint>
+#include <optional>
+
+#include "protocols/SupportedCodecs.hpp"
 
 namespace SbcEngine {
 
@@ -16,9 +19,11 @@ namespace Setup {
 struct Requested {};
 struct RouteFound {
     std::string destination_;
+    std::optional<Protocols::SupportedCodec> required_codec_;
 };
 struct RouteFailed {};
 struct LoopDetected {};
+struct CodecMismatch {};
 struct ProgressReceived {};
 struct ExchangeFinished {
     ExchangeOutcome outcome_;
