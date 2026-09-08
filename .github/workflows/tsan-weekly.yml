@@ -1,0 +1,38 @@
+name: Engine TSan (weekly)
+
+# Not a required per-PR check: the SIP/call-management path is single-threaded
+# by construction (see root AGENTS.md "Threading model"). TSan's only real
+# surface is src/net/rtp/ and src/sip/routes/, so it runs weekly to catch
+# regressions there without doubling per-PR CI time.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  tsan:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build just ccache
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: engine/build/_deps
+          key: deps-${{ runner.os }}-tsan-${{ hashFiles('engine/third_party/**/declare.cmake', 'engine/third_party/**/configure.cmake') }}
+          restore-keys: |
+            deps-${{ runner.os }}-tsan-
+
+      - name: Build (TSan)
+        working-directory: engine
+        run: just build-tsan
+
+      - name: Run unit tests under TSan
+        working-directory: engine
+        run: just test-tsan
