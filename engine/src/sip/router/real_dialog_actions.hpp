@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <pjsip_ua.h>
 
 #include "sip/sm/isbc_actions.hpp"
 
@@ -14,6 +15,8 @@ class RealDialogActions : public IDialogContext {
 public:
     explicit RealDialogActions(CallSession& session)
         : session_(session) {}
+
+    void on_leg_state_changed(pjsip_inv_session* inv);
 
     void send_200_ok_to_bye_sender() override;
     void forward_bye_to_other_leg(bool from_caller) override;

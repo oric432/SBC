@@ -15,6 +15,7 @@
 #include "net/rtp/MediaBridge.hpp"
 #include "sip/sm/dialog_sm_runner.hpp"
 #include "sip/sm/setup_sm_runner.hpp"
+#include "sip/call/offer_answer_exchange.hpp"
 #include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
@@ -48,8 +49,21 @@ public:
     [[nodiscard]] CallManager* call_manager() const { return call_manager_; }
     [[nodiscard]] pj_pool_t* pool() const { return pool_; }
 
+    RealSetupActions& setup_actions() { return setup_actions_; }
+    RealDialogActions& dialog_actions() { return dialog_actions_; }
+
     SetupSmRunner& setup_sm() { return setup_sm_; }
     DialogSmRunner& dialog_sm() { return dialog_sm_; }
+
+    // One temporary exchange slot. The caller performs an exchange operation,
+    // releases a finished exchange, then notifies the setup machine once.
+    bool create_exchange(const std::string& destination);
+    OfferAnswerExchange* exchange() { return exchange_.get(); }
+    void release_exchange();
+    [[nodiscard]] bool has_exchange() const { return exchange_ != nullptr; }
+    void commit_offer_answer(std::string offer, std::string answer, std::optional<Sdp::AudioCodecInfo> codec);
+    [[nodiscard]] const std::string& negotiated_offer() const { return negotiated_offer_; }
+    [[nodiscard]] const std::string& negotiated_answer() const { return negotiated_answer_; }
 
     [[nodiscard]] pjsip_inv_session* inv_caller() const { return inv_caller_; }
     [[nodiscard]] pjsip_inv_session* inv_callee() const { return inv_callee_; }
@@ -74,11 +88,7 @@ public:
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
     void clear_rdata() { current_rdata_ = nullptr; }
 
-    // Issue #121: each leg's actual negotiated audio codec, read from that
-    // leg's own pjmedia_sdp_neg once its offer/answer completes (see
-    // RealSetupActions::forward_200_ok). nullopt until then, or if the leg
-    // never negotiated an audio stream. Groundwork for future consumers (a
-    // transcoder, call-history codec display) — nothing reads these yet.
+    // Negotiated codec metadata is published with the exchange commit.
     [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& caller_leg_codec() const { return caller_leg_codec_; }
     [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& callee_leg_codec() const { return callee_leg_codec_; }
     void set_caller_leg_codec(std::optional<Sdp::AudioCodecInfo> codec) { caller_leg_codec_ = std::move(codec); }
@@ -112,6 +122,10 @@ private:
 
     SetupSmRunner setup_sm_;
     DialogSmRunner dialog_sm_;
+
+    std::unique_ptr<OfferAnswerExchange> exchange_;
+    std::string negotiated_offer_;
+    std::string negotiated_answer_;
 };
 
 } // namespace SbcEngine

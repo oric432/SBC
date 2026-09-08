@@ -6,6 +6,9 @@
 #include <pjsip.h>
 
 #include "sip/router/extract_utils.hpp"
+#include "sip/call/call_manager.hpp"
+#include "sip/call/call_session.hpp"
+#include "sip/routes/routes_store.hpp"
 
 namespace SbcEngine {
 
@@ -213,6 +216,38 @@ TEST_CASE("extract_uri_user returns empty when '@' precedes the scheme separator
 
 TEST_CASE("extract_uri_user returns empty for an empty string", "[extract_utils]") {
     CHECK(extract_uri_user("").empty());
+}
+
+TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][call_session]") {
+    boost::asio::io_context io;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    RoutesStore routes;
+    Protocols::SipRouteSnapshot snapshot;
+    snapshot.routes.emplace(
+        1,
+        Protocols::SipRouteRule{.uri = "*", .sip_address = "192.0.2.1", .port = 5060, .codec = std::nullopt});
+    routes.set_snapshot(std::move(snapshot));
+    CallManager manager;
+    ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    // No signaling legs are installed: the malformed offer must be rejected
+    // before outbound creation. This exercises the synchronous exchange-result handling,
+    // real exchange actions, both runners, and deferred session retirement.
+    auto* session = manager.create_session("exchange-reject", &context, &routes, io.get_executor(), &request);
+    session->setup_sm().process_event(Setup::Requested{});
+    REQUIRE(session->setup_sm().is_done());
+    REQUIRE_FALSE(session->setup_sm().is_established());
+    REQUIRE_FALSE(session->has_exchange());
+    REQUIRE(session->negotiated_offer().empty());
+    REQUIRE(session->negotiated_answer().empty());
+    REQUIRE(manager.find_by_call_id("exchange-reject") == nullptr);
+    // Retired session remains alive until the event pump purges it. Late
+    // callbacks cannot revive its released exchange or publish a commit.
+    REQUIRE_FALSE(session->setup_sm().process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
+    REQUIRE_FALSE(session->has_exchange());
+    REQUIRE_FALSE(session->setup_sm().is_established());
+    manager.purge_scheduled();
 }
 
 } // namespace SbcEngine

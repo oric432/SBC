@@ -46,11 +46,31 @@ CallSession::CallSession(
 }
 
 CallSession::~CallSession() {
+    exchange_.reset();
     Log::call()->trace("[{}] CallSession destroyed, releasing pool", call_id_);
     if (pool_ != nullptr) {
         pjsip_endpt_release_pool(ctx_->endpt_, pool_);
         pool_ = nullptr;
     }
+}
+
+bool CallSession::create_exchange(const std::string& destination) {
+    if (exchange_) {
+        return false;
+    }
+    exchange_ = std::make_unique<OfferAnswerExchange>(*this, destination);
+    return true;
+}
+
+void CallSession::release_exchange() {
+    exchange_.reset();
+}
+
+void CallSession::commit_offer_answer(std::string offer, std::string answer, std::optional<Sdp::AudioCodecInfo> codec) {
+    negotiated_offer_ = std::move(offer);
+    negotiated_answer_ = std::move(answer);
+    caller_leg_codec_ = codec;
+    callee_leg_codec_ = std::move(codec);
 }
 
 } // namespace SbcEngine

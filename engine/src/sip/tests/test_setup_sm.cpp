@@ -1,266 +1,214 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace)
-#include <queue>
-
 #include <catch2/catch_test_macros.hpp>
-#include <boost/sml.hpp>
 
-#include "../sm/events.hpp"
-#include "../sm/setup_sm.hpp"
+#include "sip/sm/setup_sm_runner.hpp"
+#include "sip/sm/offer_answer_sm_runner.hpp"
 #include "mock_sbc_actions.hpp"
 
-namespace Sml = boost::sml;
-using namespace SbcEngine;
+namespace SbcEngine {
 
-namespace {
-// SetupSm's actions self-fire follow-up events (routing outcome, InviteSent,
-// Cleanup) via an injected SetupSelfFireQueue — see setup_sm.hpp. Exercising
-// that here requires the same process_queue<std::queue> policy the real machine uses.
-using TestMachine = Sml::sm<SetupSm<MockSetupActions>, Sml::process_queue<std::queue>>;
-
-// A structurally valid offer/answer per #121's Sdp::is_valid_offer/answer:
-// parses, has a media line, a non-empty format list and an RTP/AVP transport.
-const std::string kValidSdp = "v=0\r\n"
-                              "o=- 0 0 IN IP4 127.0.0.1\r\n"
-                              "s=-\r\n"
-                              "c=IN IP4 127.0.0.1\r\n"
-                              "t=0 0\r\n"
-                              "m=audio 10000 RTP/AVP 0\r\n"
-                              "a=rtpmap:0 PCMU/8000\r\n";
-} // namespace
-
-// Test: Happy path from initial INVITE through dialog establishment
-// Verifies: One InviteReceived cascades, unaided, all the way to WaitingForAnswer;
-// remaining (genuinely async) stimuli are still driven one at a time.
-TEST_CASE("SetupSm happy path", "[setup_sm]") {
+TEST_CASE("Setup starts an exchange and establishes only on commit", "[setup_sm]") {
     MockSetupActions actions;
-    TestMachine machine{actions};
-
-    REQUIRE(machine.is(Sml::state<Idle>));
-
-    // Step 1: Valid INVITE — SM validates SDP, sends 100 Trying, resolves routing,
-    // creates the outbound leg, sends the outbound INVITE, and lands in
-    // WaitingForAnswer, all off this single call — no external .is()/process_event driving.
-    machine.process_event(InviteReceived{kValidSdp});
-    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
-    REQUIRE(actions.was_called("send_100_trying"));
-    REQUIRE(actions.was_called("resolve_route"));
-    REQUIRE(actions.was_called("create_outbound_leg:sip:callee@example.com"));
-    REQUIRE(actions.was_called("send_outbound_invite"));
-
-    // Step 2: Receive 180 Ringing from callee
-    actions.reset();
-    machine.process_event(RingingReceived{});
-    REQUIRE(machine.is(Sml::state<Ringing>));
-    REQUIRE(actions.was_called("forward_180_ringing"));
-
-    // Step 3: Receive 200 OK from callee with valid answer SDP
-    actions.reset();
-    machine.process_event(CallAccepted{kValidSdp});
-    REQUIRE(machine.is(Sml::state<WaitingForAck>));
-    REQUIRE(actions.was_called("forward_200_ok"));
-
-    // Step 4: Receive ACK from caller
-    actions.reset();
-    machine.process_event(AckReceived{});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("forward_ack_and_start_dialog"));
+    SetupSmRunner runner(actions, "setup");
+    REQUIRE_FALSE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
+    REQUIRE(runner.process_event(Setup::Requested{}));
+    REQUIRE(actions.calls_ == std::vector<std::string>{"begin_setup", "resolve_route", "start_exchange:callee"});
+    SECTION("With progress") {
+        REQUIRE(runner.process_event(Setup::ProgressReceived{}));
+        REQUIRE(runner.process_event(Setup::ProgressReceived{}));
+        REQUIRE(actions.was_called("report_progress"));
+    }
+    SECTION("Without progress") {}
+    REQUIRE_FALSE(runner.is_established());
+    REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
+    REQUIRE(runner.is_established());
+    REQUIRE_FALSE(actions.was_called("cleanup"));
+    REQUIRE_FALSE(actions.was_called("terminate_call"));
+    REQUIRE_FALSE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
+    REQUIRE_FALSE(runner.process_event(Setup::Requested{}));
 }
 
-// Test: Invalid INVITE message (empty SDP)
-// Verifies: SM self-drives straight to Done — no separate Cleanup{} step needed.
-TEST_CASE("SetupSm invalid INVITE", "[setup_sm]") {
+TEST_CASE("Setup routing failures never allocate an exchange", "[setup_sm]") {
     MockSetupActions actions;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{""});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("send_400_bad_request"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: Invalid SDP offer in INVITE
-// Verifies: SM self-drives straight to Done, sending 488 Not Acceptable en route.
-TEST_CASE("SetupSm invalid offer SDP", "[setup_sm]") {
-    MockSetupActions actions;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{"malformed"});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("send_488_not_acceptable"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: Routing logic fails to find destination
-// Verifies: resolve_route()'s canned RouteResolution drives the SM straight to Done.
-TEST_CASE("SetupSm route failed", "[setup_sm]") {
-    MockSetupActions actions;
-    actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}};
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("resolve_route"));
-    REQUIRE(actions.was_called("send_route_failure_response"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: Routing resolves to this engine's own listening address
-// Verifies: Setup SM rejects self-routing loops instead of dialing itself
-// (github issue #39 — an unbounded loop would otherwise exhaust ports)
-TEST_CASE("SetupSm loop detected", "[setup_sm]") {
-    MockSetupActions actions;
-    actions.route_resolution_ = {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}};
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("send_loop_detected_response"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: Caller cancels call before receiving answer
-// Verifies: reaching Cancelled self-fires Cleanup too — lands on Done directly.
-TEST_CASE("SetupSm cancel before answer", "[setup_sm]") {
-    MockSetupActions actions;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    machine.process_event(RingingReceived{});
-    REQUIRE(machine.is(Sml::state<Ringing>));
-
-    // Caller sends CANCEL before call is answered
-    actions.reset();
-    machine.process_event(CancelReceived{});
-    REQUIRE(machine.is(Sml::state<Cancelling>));
-    REQUIRE(actions.was_called("send_cancel"));
-
-    // Receive final response (487 Request Terminated) from callee
-    actions.reset();
-    machine.process_event(InviteTerminated{});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("forward_final_response"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: create_outbound_leg() fails to stand up the callee leg (RTP bind
-// failure, SDP parse failure, PJSIP dialog/invite failure, ...)
-// Verifies: SM self-fires OutboundLegFailed instead of InviteSent (issue #87 / #1)
-// — it does not sit in WaitingForAnswer waiting for events a nonexistent
-// callee session can never send.
-TEST_CASE("SetupSm outbound leg creation fails", "[setup_sm]") {
-    MockSetupActions actions;
-    actions.create_outbound_leg_result_ = false;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("create_outbound_leg"));
-    REQUIRE_FALSE(actions.was_called("send_outbound_invite"));
-    REQUIRE(actions.was_called("send_route_failure_response"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: create_outbound_leg() succeeds but send_outbound_invite() fails
-// (e.g. pjsip_inv_invite() itself errors)
-// Verifies: same OutboundLegFailed self-fire path as above (issue #87 / #1).
-TEST_CASE("SetupSm outbound invite send fails", "[setup_sm]") {
-    MockSetupActions actions;
-    actions.send_outbound_invite_result_ = false;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("create_outbound_leg"));
-    REQUIRE(actions.was_called("send_outbound_invite"));
-    REQUIRE(actions.was_called("send_route_failure_response"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: CallAccepted passes the Sdp::is_valid_answer guard, but forward_200_ok()
-// itself fails to relay the answer (e.g. some other part of it fails)
-// Verifies: SM self-fires AcceptForwardFailed instead of settling in
-// WaitingForAck as if 200 OK had actually gone out (issue #87 / #2). Unlike
-// "invalid answer SDP" above, forward_200_ok is responsible for its own
-// caller-facing failure response — the SM only needs to self-clean.
-TEST_CASE("SetupSm forward_200_ok fails despite valid-looking SDP", "[setup_sm]") {
-    MockSetupActions actions;
-    actions.forward_200_ok_result_ = false;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
-
-    actions.reset();
-    machine.process_event(CallAccepted{kValidSdp});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("forward_200_ok"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: Callee sends answer with invalid SDP
-// Verifies: Setup SM rejects incompatible answer, terminates both legs, self-cleans.
-TEST_CASE("SetupSm invalid answer SDP", "[setup_sm]") {
-    MockSetupActions actions;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    machine.process_event(RingingReceived{});
-    REQUIRE(machine.is(Sml::state<Ringing>));
-
-    actions.reset();
-    machine.process_event(CallAccepted{"malformed answer"});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("send_ack_then_bye_to_callee"));
-    REQUIRE(actions.was_called("send_failure_to_caller"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: Callee rejects incoming call
-// Verifies: Setup SM forwards rejection and self-cleans to Done.
-TEST_CASE("SetupSm call rejected", "[setup_sm]") {
-    MockSetupActions actions;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
-
-    actions.reset();
-    machine.process_event(CallRejected{kStatusCodeCallRejected});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("forward_rejection:480"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: Callee never answers the INVITE (PJSIP surfaces this as cause 408)
-// Verifies: Setup SM distinguishes timeout from an explicit rejection, self-cleans.
-TEST_CASE("SetupSm call timeout", "[setup_sm]") {
-    MockSetupActions actions;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    REQUIRE(machine.is(Sml::state<WaitingForAnswer>));
-
-    actions.reset();
-    machine.process_event(CallTimeout{});
-    REQUIRE(machine.is(Sml::state<Done>));
-    REQUIRE(actions.was_called("forward_timeout"));
-    REQUIRE(actions.was_called("cleanup"));
-}
-
-// Test: ACK timeout while waiting for ACK from caller
-// Verifies: Setup SM terminates both legs of the call and self-cleans.
-TEST_CASE("SetupSm ACK timeout", "[setup_sm]") {
-    MockSetupActions actions;
-    TestMachine machine{actions};
-
-    machine.process_event(InviteReceived{kValidSdp});
-    machine.process_event(CallAccepted{kValidSdp});
-    REQUIRE(machine.is(Sml::state<WaitingForAck>));
-
-    actions.reset();
-    machine.process_event(AckTimeout{});
-    REQUIRE(machine.is(Sml::state<Done>));
+    SECTION("No route") {
+        actions.route_resolution_.kind_ = RouteResolution::Kind::kFailed;
+    }
+    SECTION("Routing loop") {
+        actions.route_resolution_.kind_ = RouteResolution::Kind::kLoop;
+    }
+    SetupSmRunner runner(actions, "setup");
+    REQUIRE(runner.process_event(Setup::Requested{}));
+    REQUIRE(runner.is_done());
+    REQUIRE_FALSE(runner.is_established());
+    REQUIRE_FALSE(actions.was_called("start_exchange"));
+    REQUIRE(actions.was_called(
+        actions.route_resolution_.kind_ == RouteResolution::Kind::kFailed ? "route_failed" : "routing_loop_detected"));
     REQUIRE(actions.was_called("terminate_call"));
     REQUIRE(actions.was_called("cleanup"));
 }
+
+TEST_CASE("Setup handles exchange failure without protocol knowledge", "[setup_sm]") {
+    MockSetupActions actions;
+    SetupSmRunner runner(actions, "setup");
+    runner.process_event(Setup::Requested{});
+    SECTION("Rollback before progress") {
+        REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kRolledBack}));
+    }
+    SECTION("Fatal failure before progress") {
+        REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed}));
+    }
+    SECTION("Rollback after progress") {
+        runner.process_event(Setup::ProgressReceived{});
+        REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kRolledBack}));
+    }
+    SECTION("Fatal failure after progress") {
+        runner.process_event(Setup::ProgressReceived{});
+        REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed}));
+    }
+    REQUIRE(runner.is_done());
+    REQUIRE_FALSE(runner.is_established());
+    REQUIRE(actions.was_called("terminate_call"));
+    REQUIRE(actions.was_called("cleanup"));
+    actions.reset();
+    REQUIRE_FALSE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
+    REQUIRE_FALSE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed}));
+    REQUIRE(actions.calls_.empty());
+}
+
+TEST_CASE("Setup cancellation waits for completion and handles crossing success", "[setup_sm]") {
+    MockSetupActions actions;
+    SetupSmRunner runner(actions, "setup");
+    runner.process_event(Setup::Requested{});
+    SECTION("Before progress") {}
+    SECTION("After progress") {
+        runner.process_event(Setup::ProgressReceived{});
+    }
+    REQUIRE(runner.process_event(Setup::CancelRequested{}));
+    REQUIRE(runner.is_cancelling());
+    REQUIRE(actions.was_called("cancel_call"));
+    REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kRolledBack}));
+    REQUIRE(runner.is_cancelling());
+    REQUIRE_FALSE(actions.was_called("cleanup"));
+    REQUIRE(runner.process_event(Setup::CancelRequested{}));
+    REQUIRE(runner.process_event(Setup::CancellationCompleted{}));
+    REQUIRE(runner.is_done());
+    REQUIRE(actions.was_called("cleanup"));
+}
+
+TEST_CASE("Setup never establishes after cancellation", "[setup_sm]") {
+    MockSetupActions actions;
+    SetupSmRunner runner(actions, "setup");
+    runner.process_event(Setup::Requested{});
+    runner.process_event(Setup::CancelRequested{});
+    SECTION("Crossing commit") {
+        REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
+    }
+    SECTION("Exchange failure") {
+        REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed}));
+    }
+    REQUIRE(runner.is_done());
+    REQUIRE_FALSE(actions.was_called("establish_call"));
+    REQUIRE(actions.was_called("terminate_call"));
+    REQUIRE(actions.was_called("cleanup"));
+}
+
+TEST_CASE("Setup consumes synchronous exchange startup failure once", "[setup_sm]") {
+    MockSetupActions actions;
+    SECTION("Rollback") {
+        actions.exchange_result_ = ExchangeOutcome::kRolledBack;
+    }
+    SECTION("Failure") {
+        actions.exchange_result_ = ExchangeOutcome::kFailed;
+    }
+    SetupSmRunner runner(actions, "setup");
+    REQUIRE(runner.process_event(Setup::Requested{}));
+    REQUIRE(runner.is_done());
+    REQUIRE(
+        actions.calls_ ==
+        std::vector<std::string>{"begin_setup", "resolve_route", "start_exchange:callee", "terminate_call", "cleanup"});
+    REQUIRE_FALSE(runner.is_processing());
+}
+
+TEST_CASE("Setup completes synchronous cancellation without a callback", "[setup_sm]") {
+    MockSetupActions actions;
+    actions.cancellation_complete_ = true;
+    SetupSmRunner runner(actions, "setup");
+    runner.process_event(Setup::Requested{});
+    actions.reset();
+    REQUIRE(runner.process_event(Setup::CancelRequested{}));
+    REQUIRE(runner.is_done());
+    REQUIRE(actions.calls_ == std::vector<std::string>{"cancel_call", "cleanup"});
+    REQUIRE_FALSE(runner.process_event(Setup::CancellationCompleted{}));
+}
+
+namespace {
+// Exercise the real runners together: offer/answer owns confirmation and
+// publishes only its outcome to setup. No SIP transport is needed.
+struct SetupExchangeActions final : IOfferAnswerActions {
+    explicit SetupExchangeActions(SetupSmRunner& setup)
+        : setup_(setup) {}
+    SetupSmRunner& setup_;
+    bool ack_required_ = true;
+    int commits_ = 0;
+    int cleanups_ = 0;
+    [[nodiscard]] bool offer_usable([[maybe_unused]] const std::string& sdp) const override { return true; }
+    [[nodiscard]] bool answer_usable([[maybe_unused]] const std::string& sdp) const override { return true; }
+    [[nodiscard]] bool needs_ack() const override { return ack_required_; }
+    void relay_offer([[maybe_unused]] const std::string& sdp) override {}
+    void relay_answer([[maybe_unused]] const std::string& sdp) override {}
+    void reject_offer([[maybe_unused]] OfferAnswer::Reason reason) override {}
+    void relay_rejection([[maybe_unused]] int code) override {}
+    void commit() override {
+        ++commits_;
+        setup_.process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted});
+    }
+    void rollback([[maybe_unused]] OfferAnswer::Reason reason) override {
+        setup_.process_event(Setup::ExchangeFinished{ExchangeOutcome::kRolledBack});
+    }
+    void fail([[maybe_unused]] OfferAnswer::Reason reason) override {
+        setup_.process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed});
+    }
+    void cleanup() override { ++cleanups_; }
+};
+} // namespace
+
+TEST_CASE("Offer-answer drives setup completion and has independent cleanup", "[setup_sm][offer_answer_sm]") {
+    MockSetupActions setup_actions;
+    SetupSmRunner setup(setup_actions, "setup");
+    setup.process_event(Setup::Requested{});
+    SetupExchangeActions exchange_actions(setup);
+    OfferAnswerSmRunner exchange(exchange_actions, "exchange");
+    exchange.process_event(OfferAnswer::OfferReceived{"offer"});
+    exchange.process_event(OfferAnswer::AnswerReceived{"answer"});
+    REQUIRE_FALSE(setup.is_established());
+    SECTION("Success with confirmation") {
+        exchange.process_event(OfferAnswer::AnswerRelaySucceeded{});
+        REQUIRE_FALSE(setup.is_established());
+        exchange.process_event(OfferAnswer::AckReceived{});
+        REQUIRE(setup.is_established());
+        REQUIRE(exchange_actions.commits_ == 1);
+        REQUIRE_FALSE(setup_actions.was_called("cleanup"));
+    }
+    SECTION("Success without confirmation") {
+        exchange_actions.ack_required_ = false;
+        exchange.process_event(OfferAnswer::AnswerRelaySucceeded{});
+        REQUIRE(setup.is_established());
+    }
+    SECTION("Relay failure") {
+        exchange.process_event(OfferAnswer::AnswerRelayFailed{});
+        REQUIRE(setup.is_done());
+        REQUIRE(exchange_actions.commits_ == 0);
+    }
+    SECTION("Confirmation timeout") {
+        exchange.process_event(OfferAnswer::AnswerRelaySucceeded{});
+        exchange.process_event(OfferAnswer::AckTimeout{});
+        REQUIRE(setup.is_done());
+        REQUIRE(exchange_actions.commits_ == 0);
+    }
+    REQUIRE(exchange.process_event(OfferAnswer::Cleanup{}));
+    REQUIRE(exchange_actions.cleanups_ == 1);
+    REQUIRE_FALSE(exchange.process_event(OfferAnswer::Cleanup{}));
+}
+
+} // namespace SbcEngine
 // NOLINTEND(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace)

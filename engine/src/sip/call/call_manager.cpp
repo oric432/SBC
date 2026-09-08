@@ -80,7 +80,7 @@ void CallManager::process_pending_rtp_inactivity() {
     rtp_inactivity_timer_->run_pending_scan([this](std::chrono::steady_clock::duration interval) {
         const auto now = std::chrono::steady_clock::now();
         for (auto& [call_id, session] : sessions_) {
-            if (!session->setup_sm().is_done()) {
+            if (!session->setup_sm().is_established()) {
                 continue;
             }
 
