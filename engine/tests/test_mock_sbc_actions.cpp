@@ -8,9 +8,9 @@ TEST_CASE("Mock setup actions record calls and reset", "[sbc_mock]") {
     MockSetupActions actions;
 
     REQUIRE(actions.resolve_route().kind_ == RouteResolution::Kind::kFound);
-    REQUIRE(actions.create_outbound_leg("sip:callee@example.com"));
+    actions.start_exchange("callee");
     REQUIRE(actions.was_called("resolve_route"));
-    REQUIRE(actions.was_called("create_outbound_leg:sip:callee@example.com"));
+    REQUIRE(actions.was_called("start_exchange:callee"));
 
     actions.reset();
     REQUIRE_FALSE(actions.was_called("resolve_route"));
