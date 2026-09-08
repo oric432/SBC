@@ -3,10 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    paths: ["engine/**", ".github/workflows/ci.yml"]
   push:
     branches: [main]
-    paths: ["engine/**", ".github/workflows/ci.yml"]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,7 +15,34 @@ defaults:
     working-directory: engine
 
 jobs:
+  # Required status checks must always report *something*, or a PR that never
+  # touches engine/ leaves build-lint-test/asan-ubsan stuck "Expected —
+  # waiting" forever (path-filtering the whole workflow's `on:` trigger, as
+  # this used to do, means no run — and no status — ever gets created at all).
+  # Gating each job's own `if:` on this job's output instead means an
+  # untouched job still runs (trivially) and reports "skipped", which branch
+  # protection accepts as passing.
+  changes:
+    runs-on: ubuntu-26.04
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+    steps:
+      # Full history: push events diff locally against the prior commit, and
+      # a shallow (default depth-1) checkout wouldn't have it to diff against.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            engine:
+              - 'engine/**'
+              - '.github/workflows/ci.yml'
+
   build-lint-test:
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout
@@ -46,6 +71,8 @@ jobs:
         run: just format-check
 
   asan-ubsan:
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout
