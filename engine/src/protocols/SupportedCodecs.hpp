@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 namespace SbcEngine::Protocols {
 
@@ -51,6 +52,17 @@ inline constexpr std::array<SupportedCodec, 3> kSupportedCodecs{{
         }
     }
     return nullptr;
+}
+
+// Codec names only (same order as kSupportedCodecs) — for schema/UI enum
+// lists, e.g. issue #33's SipRouteRule.codec.
+[[nodiscard]] inline std::vector<std::string_view> supported_codec_names() {
+    std::vector<std::string_view> names;
+    names.reserve(kSupportedCodecs.size());
+    for (const auto& codec : kSupportedCodecs) {
+        names.push_back(codec.name_);
+    }
+    return names;
 }
 
 } // namespace SbcEngine::Protocols

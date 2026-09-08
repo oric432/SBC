@@ -11,7 +11,12 @@
                      "string",
                      "null"
                   ],
-                  "description": "Optional strict media codec requirement"
+                  "description": "Optional strict media codec requirement",
+                  "enum": [
+                     "G722",
+                     "PCMU",
+                     "PCMA"
+                  ]
                },
                "port": {
                   "$ref": "#/$defs/int32_t",

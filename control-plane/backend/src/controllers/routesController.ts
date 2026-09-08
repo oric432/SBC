@@ -5,7 +5,7 @@ import { StatusCodes } from 'http-status-codes';
 import { db } from '../db/client';
 import { routeRules, routeTables } from '../db/schema';
 import { ConflictError, NotFoundError } from '../errors';
-import { SipRouteRule, SipRouteSnapshot } from '../types/sipRoutes';
+import { SipRouteRule, SipRouteSnapshot, SupportedCodec } from '../types/sipRoutes';
 import { sendSuccess } from '../utils/apiResponse';
 import { logger } from '../utils/logger';
 
@@ -20,7 +20,11 @@ const toRouteRule = (rule: {
   uri: rule.uri,
   sip_address: rule.sipAddress,
   port: rule.port,
-  codec: rule.codec,
+  // The DB column is plain TEXT (no Postgres enum), so Drizzle's row type is
+  // an unconstrained string — the enum is enforced at the write boundary
+  // (routeBodySchema's zod validation), not the schema, so cast rather than
+  // widen SipRouteRule's own type.
+  codec: rule.codec as SupportedCodec | null,
 });
 
 const getDefaultTable = async () => {
