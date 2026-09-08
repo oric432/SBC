@@ -33,25 +33,16 @@ SetupSmRunner::SetupSmRunner(ISetupContext& actions, std::string_view call_id)
 
 SetupSmRunner::~SetupSmRunner() = default;
 
-bool SetupSmRunner::process_event(const Setup::Requested& event) {
+template <typename Event>
+bool SetupSmRunner::process_event(const Event& event) {
     return impl_->dispatch(event);
 }
 
-bool SetupSmRunner::process_event(const Setup::ProgressReceived& event) {
-    return impl_->dispatch(event);
-}
-
-bool SetupSmRunner::process_event(const Setup::ExchangeFinished& event) {
-    return impl_->dispatch(event);
-}
-
-bool SetupSmRunner::process_event(const Setup::CancelRequested& event) {
-    return impl_->dispatch(event);
-}
-
-bool SetupSmRunner::process_event(const Setup::CancellationCompleted& event) {
-    return impl_->dispatch(event);
-}
+template bool SetupSmRunner::process_event(const Setup::Requested&);
+template bool SetupSmRunner::process_event(const Setup::ProgressReceived&);
+template bool SetupSmRunner::process_event(const Setup::ExchangeFinished&);
+template bool SetupSmRunner::process_event(const Setup::CancelRequested&);
+template bool SetupSmRunner::process_event(const Setup::CancellationCompleted&);
 
 bool SetupSmRunner::is_processing() const {
     return impl_->processing_;

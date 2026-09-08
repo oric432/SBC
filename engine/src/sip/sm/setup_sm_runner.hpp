@@ -19,11 +19,8 @@ public:
     SetupSmRunner(SetupSmRunner&&) = delete;
     SetupSmRunner& operator=(SetupSmRunner&&) = delete;
 
-    bool process_event(const Setup::Requested& event);
-    bool process_event(const Setup::ProgressReceived& event);
-    bool process_event(const Setup::ExchangeFinished& event);
-    bool process_event(const Setup::CancelRequested& event);
-    bool process_event(const Setup::CancellationCompleted& event);
+    template <typename Event>
+    bool process_event(const Event& event);
 
     [[nodiscard]] bool is_processing() const;
     [[nodiscard]] bool is_done() const;
