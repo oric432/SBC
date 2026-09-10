@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1" ?>
 <!DOCTYPE scenario SYSTEM "sipp.dtd">
-<scenario name="Basic SIPp UAC">
+<scenario name="{{ scenario_name }}">
   <send retrans="500">
     <![CDATA[
       INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
@@ -27,7 +27,7 @@
 
   <recv response="100" optional="true"></recv>
   <recv response="180" optional="true"></recv>
-  
+
   <recv response="200" rtd="true"></recv>
 
   <send>
@@ -45,13 +45,32 @@
     ]]>
   </send>
 
-  <!-- Play pcap audio continuously in a loop during the call -->
-  <label id="pcap_loop"/>
+  <!-- Re-triggering the pcap once per hold (rather than one trigger plus a
+       long pause) is what lets a single template express both a short call
+       and a longer, sustained-relay one via holds_ms alone. -->
+{% for hold_ms in holds_ms %}
   <nop>
     <action>
-      <exec play_pcap_audio="g711a.pcap"/>
+      <exec play_pcap_audio="{{ pcap_path }}"/>
     </action>
   </nop>
-  <pause milliseconds="7080"/>
-  <nop next="pcap_loop"/>
+
+  <pause milliseconds="{{ hold_ms }}"/>
+{% endfor %}
+
+  <send retrans="500">
+    <![CDATA[
+      BYE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: sut <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 2 BYE
+      Contact: sip:sipp@[local_ip]:[local_port]
+      Max-Forwards: 70
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <recv response="200" crlf="true"></recv>
 </scenario>

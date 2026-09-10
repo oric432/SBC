@@ -79,7 +79,7 @@ format-check:
 format:
     cmake --build build --target format
 
-# Run B2BUA SIPp tests (assumes engine is already running)
+# Run B2BUA integration tests (builds+starts the engine itself; sipp must be installed)
 test-b2bua *args:
     #!/usr/bin/env bash
     set -e
@@ -93,12 +93,20 @@ test-b2bua *args:
     # play_pcap_audio opens a raw socket. Non-root runs therefore require
     # CAP_NET_RAW on the SIPp executable.
     if [[ $EUID -ne 0 ]] && ! getcap "$(readlink -f "$SIPP_BIN")" 2>/dev/null | grep -q 'cap_net_raw'; then
-        echo "error: SIPp needs CAP_NET_RAW to replay tests/b2bua/g711a.pcap" >&2
+        echo "error: SIPp needs CAP_NET_RAW to replay tests/integration/b2bua/g711a.pcap" >&2
         echo "run once: sudo setcap cap_net_raw+ep \"$(readlink -f "$SIPP_BIN")\"" >&2
         exit 1
     fi
 
-    python3 tests/b2bua/run_test.py {{args}}
+    # A project-local venv sidesteps PEP 668 (Debian/Ubuntu's system Python
+    # refuses `pip install` outside a venv) and matches what CI does after
+    # `actions/setup-python`.
+    VENV="tests/.venv"
+    if [[ ! -x "$VENV/bin/python" ]]; then
+        python3 -m venv "$VENV"
+    fi
+    "$VENV/bin/pip" install --quiet ./tests
+    "$VENV/bin/pytest" tests/integration/b2bua {{args}}
 
 # Generate schemas using the schema generator tool
 generate-schemas:
