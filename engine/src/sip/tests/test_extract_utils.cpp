@@ -250,4 +250,122 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
     manager.purge_scheduled();
 }
 
+namespace {
+struct DialogExchangeActions final : IOfferAnswerActions {
+    explicit DialogExchangeActions(std::vector<std::string>& calls)
+        : calls_(calls) {}
+    std::vector<std::string>& calls_;
+    bool valid_offer_ = true;
+    bool valid_answer_ = true;
+    bool ack_required_ = true;
+    bool offer_usable([[maybe_unused]] const std::string& sdp) const override { return valid_offer_; }
+    bool answer_usable([[maybe_unused]] const std::string& sdp) const override { return valid_answer_; }
+    bool needs_ack() const override { return ack_required_; }
+    void relay_offer([[maybe_unused]] const std::string& sdp) override { calls_.emplace_back("offer"); }
+    void relay_answer([[maybe_unused]] const std::string& sdp) override { calls_.emplace_back("answer"); }
+    void reject_offer([[maybe_unused]] OfferAnswer::Reason reason) override { calls_.emplace_back("reject"); }
+    void relay_rejection([[maybe_unused]] int code) override { calls_.emplace_back("rejection"); }
+    void commit() override { calls_.emplace_back("commit"); }
+    void rollback([[maybe_unused]] OfferAnswer::Reason reason) override { calls_.emplace_back("rollback"); }
+    void fail([[maybe_unused]] OfferAnswer::Reason reason) override { calls_.emplace_back("fail"); }
+    void cleanup() override { calls_.emplace_back("release"); }
+};
+} // namespace
+
+TEST_CASE("Dialog and setup share the session-owned exchange slot", "[dialog_sm][call_session]") {
+    boost::asio::io_context io;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    std::vector<std::string> calls;
+    CallManager manager;
+    ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* session = manager.create_session("dialog-exchange", &context, nullptr, io.get_executor(), &request);
+    auto& adapter = session->dialog_actions();
+    auto& dialog = session->dialog_sm();
+    auto actions = std::make_unique<DialogExchangeActions>(calls);
+    SECTION("Existing slot prevents another exchange") {
+        REQUIRE(session->create_exchange(std::move(actions)));
+        REQUIRE_FALSE(adapter.request_exchange(std::make_unique<DialogExchangeActions>(calls), "offer"));
+        REQUIRE(dialog.is_active());
+        REQUIRE(calls.empty());
+        session->exchange()->stop();
+        session->release_exchange();
+        return;
+    }
+    SECTION("Synchronous invalid offer releases the slot") {
+        actions->valid_offer_ = false;
+        REQUIRE(adapter.request_exchange(std::move(actions), "invalid"));
+        REQUIRE(dialog.is_active());
+        REQUIRE_FALSE(session->has_exchange());
+        REQUIRE(calls == std::vector<std::string>{"reject", "rollback", "release"});
+        return;
+    }
+    bool needs_ack = true;
+    SECTION("Confirmed exchange") {}
+    SECTION("Exchange without confirmation") {
+        needs_ack = false;
+        actions->ack_required_ = false;
+    }
+    REQUIRE(adapter.request_exchange(std::move(actions), "offer"));
+    REQUIRE(session->has_exchange());
+    REQUIRE(dialog.is_negotiating());
+    REQUIRE_FALSE(adapter.request_exchange(std::make_unique<DialogExchangeActions>(calls), "collision"));
+    adapter.finish_exchange(session->exchange()->receive_answer("answer"));
+    REQUIRE(dialog.is_negotiating());
+    adapter.finish_exchange(session->exchange()->process_event(OfferAnswer::AnswerRelaySucceeded{}));
+    if (needs_ack) {
+        REQUIRE(dialog.is_negotiating());
+        REQUIRE_FALSE(adapter.request_exchange(std::make_unique<DialogExchangeActions>(calls), "collision"));
+        adapter.finish_exchange(session->exchange()->confirm());
+    }
+    REQUIRE(dialog.is_active());
+    REQUIRE_FALSE(session->has_exchange());
+    REQUIRE(calls == std::vector<std::string>{"offer", "answer", "commit", "release"});
+    REQUIRE(manager.find_by_call_id("dialog-exchange") == session);
+    // A fresh sequential exchange uses the same session slot, without an ID.
+    REQUIRE(adapter.request_exchange(std::make_unique<DialogExchangeActions>(calls), "next offer"));
+    adapter.finish_exchange(session->exchange()->answer_timeout());
+    REQUIRE(dialog.is_active());
+    REQUIRE_FALSE(session->has_exchange());
+    REQUIRE(calls.back() == "release");
+}
+
+TEST_CASE("Dialog adapter stops or fails the exchange before retiring the call", "[dialog_sm][call_session]") {
+    boost::asio::io_context io;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    std::vector<std::string> calls;
+    CallManager manager;
+    ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* session = manager.create_session("dialog-stop", &context, nullptr, io.get_executor(), &request);
+    auto& adapter = session->dialog_actions();
+    auto& dialog = session->dialog_sm();
+    REQUIRE(adapter.request_exchange(std::make_unique<DialogExchangeActions>(calls), "offer"));
+    SECTION("End while awaiting answer") {
+        dialog.process_event(Dialog::EndRequested{});
+    }
+    SECTION("Call error") {
+        dialog.process_event(CallError{});
+    }
+    SECTION("End while awaiting confirmation") {
+        adapter.finish_exchange(session->exchange()->receive_answer("answer"));
+        adapter.finish_exchange(session->exchange()->process_event(OfferAnswer::AnswerRelaySucceeded{}));
+        dialog.process_event(Dialog::EndRequested{});
+    }
+    SECTION("Confirmation failure") {
+        adapter.finish_exchange(session->exchange()->receive_answer("answer"));
+        adapter.finish_exchange(session->exchange()->process_event(OfferAnswer::AnswerRelaySucceeded{}));
+        adapter.finish_exchange(session->exchange()->confirmation_timeout());
+    }
+    REQUIRE(dialog.is_done());
+    REQUIRE_FALSE(session->has_exchange());
+    REQUIRE(calls.back() == "release");
+    REQUIRE(std::ranges::count(calls, "release") == 1);
+    REQUIRE(std::ranges::count(calls, "commit") == 0);
+    REQUIRE(manager.find_by_call_id("dialog-stop") == nullptr);
+    manager.purge_scheduled();
+}
+
 } // namespace SbcEngine

@@ -16,7 +16,9 @@ public:
     std::vector<std::string> calls_;
 
     RouteResolution route_resolution_{
-        .kind_ = RouteResolution::Kind::kFound, .destination_ = "callee", .required_codec_ = {}};
+        .kind_ = RouteResolution::Kind::kFound,
+        .destination_ = "callee",
+        .required_codec_ = {}};
 
     ExchangeOutcome exchange_result_ = ExchangeOutcome::kPending;
     bool cancellation_complete_ = false;
@@ -30,8 +32,8 @@ public:
     void routing_loop_detected() override { calls_.emplace_back("routing_loop_detected"); }
     void codec_mismatch_detected() override { calls_.emplace_back("codec_mismatch_detected"); }
     ExchangeOutcome start_exchange(
-        const std::string& destination, [[maybe_unused]] std::optional<Protocols::SupportedCodec> required_codec)
-        override {
+        const std::string& destination,
+        [[maybe_unused]] std::optional<Protocols::SupportedCodec> required_codec) override {
         calls_.push_back("start_exchange:" + destination);
         return exchange_result_;
     }
@@ -55,29 +57,23 @@ class MockDialogActions : public IDialogContext {
 public:
     std::vector<std::string> calls_;
 
-    void send_200_ok_to_bye_sender() override { calls_.emplace_back("send_200_ok_to_bye_sender"); }
-
-    void forward_bye_to_other_leg(bool /*from_caller*/) override { calls_.emplace_back("forward_bye_to_other_leg"); }
-
-    void forward_reinvite(const std::string& sdp) override {
-        calls_.push_back("forward_reinvite:" + std::to_string(sdp.length()) + "B");
+    ExchangeOutcome exchange_result_ = ExchangeOutcome::kPending;
+    ExchangeOutcome start_exchange() override {
+        calls_.emplace_back("start_exchange");
+        return exchange_result_;
     }
 
-    void reject_reinvite_488() override { calls_.emplace_back("reject_reinvite_488"); }
+    bool termination_complete_ = false;
 
-    void reject_reinvite_491_request_pending() override { calls_.emplace_back("reject_reinvite_491_request_pending"); }
-
-    void forward_reinvite_200_ok(const std::string& sdp) override {
-        calls_.push_back("forward_reinvite_200_ok:" + std::to_string(sdp.length()) + "B");
+    bool end_call(bool from_caller) override {
+        calls_.emplace_back(from_caller ? "end_call:caller" : "end_call:callee");
+        return termination_complete_;
     }
 
-    void forward_reinvite_rejection(int status_code) override {
-        calls_.push_back("forward_reinvite_rejection:" + std::to_string(status_code));
+    bool terminate_call() override {
+        calls_.emplace_back("terminate_call");
+        return termination_complete_;
     }
-
-    void forward_ack_and_commit_media() override { calls_.emplace_back("forward_ack_and_commit_media"); }
-
-    void terminate_call() override { calls_.emplace_back("terminate_call"); }
 
     void cleanup() override { calls_.emplace_back("cleanup"); }
 
