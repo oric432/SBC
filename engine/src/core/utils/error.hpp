@@ -43,7 +43,8 @@ public:
             fmt,
             std::forward<Args>(args)...);
 
-        std::size_t written = res1.size > (kMAX_ERROR_SIZE - 1) ? (kMAX_ERROR_SIZE - 1) : res1.size;
+        const auto res1_size = static_cast<std::size_t>(res1.size);
+        std::size_t written = res1_size > (kMAX_ERROR_SIZE - 1) ? (kMAX_ERROR_SIZE - 1) : res1_size;
         std::size_t remaining = (kMAX_ERROR_SIZE - 1) - written;
 
         if (remaining > 0) {
