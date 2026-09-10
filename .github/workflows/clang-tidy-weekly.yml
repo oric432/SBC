@@ -1,0 +1,39 @@
+name: Engine clang-tidy (weekly)
+
+# Not a required per-PR check: per-PR CI (ci.yml) only clang-tidys files a PR
+# actually changed to keep build time down (a full-tree clang-tidy build
+# adds ~15-17 minutes over a plain debug build). This full-repo sweep is the
+# safety net for what a diff-only check misses -- e.g. a header-only change
+# whose includers weren't touched in the same PR.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: engine
+
+jobs:
+  clang-tidy:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang clang-tidy ninja-build just ccache
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v6
+        with:
+          path: engine/build/_deps
+          key: deps-${{ runner.os }}-debug-${{ hashFiles('engine/third_party/**/declare.cmake', 'engine/third_party/**/configure.cmake') }}
+          restore-keys: |
+            deps-${{ runner.os }}-debug-
+
+      - name: Build (ci-debug preset, clang-tidy on, full tree)
+        run: just build-ci

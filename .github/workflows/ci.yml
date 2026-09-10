@@ -47,6 +47,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # Full history so `just lint-changed` can diff against the PR's
+          # merge-base (or the prior commit, on a push to main).
+          fetch-depth: 0
 
       - name: Install toolchain
         run: |
@@ -61,11 +65,27 @@ jobs:
           restore-keys: |
             deps-${{ runner.os }}-debug-
 
-      - name: Build (ci-debug preset, clang-tidy on)
-        run: just build-ci
+      - name: Build (debug preset, clang-tidy off)
+        run: just build-dev
 
       - name: Run unit tests
-        run: just test-ci
+        run: just test
+
+      - name: Determine lint base
+        id: lint-base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "sha=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Only clang-tidys files this PR (or push) actually changed, to keep
+      # per-PR CI time down. A weekly full-repo sweep (clang-tidy-weekly.yml)
+      # is the safety net for what this misses -- e.g. a header-only change
+      # whose includers aren't touched in the same PR.
+      - name: Lint changed files (clang-tidy)
+        run: just lint-changed ${{ steps.lint-base.outputs.sha }}
 
       - name: Check formatting (non-mutating)
         run: just format-check
