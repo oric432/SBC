@@ -39,7 +39,8 @@ std::string_view to_string(RelayOp operation) {
 struct MediaBridge::Impl {
     explicit Impl(const boost::asio::any_io_executor& executor)
         : session_a_(make_raw_rtp_session(executor))
-        , session_b_(make_raw_rtp_session(executor)) {}
+        , session_b_(make_raw_rtp_session(executor))
+        , last_packet_time_(std::chrono::steady_clock::now()) {}
 
     RtpSession<BasicRawRtpSender> session_a_;
     RtpSession<BasicRawRtpSender> session_b_;
