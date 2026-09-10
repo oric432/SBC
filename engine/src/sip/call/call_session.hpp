@@ -57,8 +57,9 @@ public:
     DialogSmRunner& dialog_sm() { return dialog_sm_; }
 
     // One temporary exchange slot. The caller performs an exchange operation,
-    // releases a finished exchange, then notifies the setup machine once.
+    // releases a finished exchange, then notifies the setup or dialog machine once.
     bool create_exchange(const std::string& destination, std::optional<Protocols::SupportedCodec> required_codec);
+    bool create_exchange(std::unique_ptr<IOfferAnswerActions> actions);
     OfferAnswerExchange* exchange() { return exchange_.get(); }
     void release_exchange();
     [[nodiscard]] bool has_exchange() const { return exchange_ != nullptr; }

@@ -79,7 +79,9 @@ void CallManager::process_pending_rtp_inactivity() {
 
     rtp_inactivity_timer_->run_pending_scan([this](std::chrono::steady_clock::duration interval) {
         const auto now = std::chrono::steady_clock::now();
-        for (auto& [call_id, session] : sessions_) {
+        for (auto iter = sessions_.begin(); iter != sessions_.end();) {
+            // Teardown can synchronously retire this session. Advance before dispatch.
+            auto& [call_id, session] = *iter++;
             if (!session->setup_sm().is_established()) {
                 continue;
             }
@@ -90,7 +92,7 @@ void CallManager::process_pending_rtp_inactivity() {
             }
 
             auto& dialog = session->dialog_sm();
-            if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
+            if (dialog.is_active() || dialog.is_negotiating()) {
                 Log::call()->warn("[{}] removing session because the RTP inactivity timeout expired", call_id);
                 dialog.process_event(CallError{});
             }
@@ -99,10 +101,13 @@ void CallManager::process_pending_rtp_inactivity() {
 }
 
 void CallManager::terminate_established_calls() {
-    for (auto& [call_id, session] : sessions_) {
-        (void)call_id;
+    for (auto iter = sessions_.begin(); iter != sessions_.end();) {
+        auto& session = (iter++)->second;
+        if (!session->setup_sm().is_established()) {
+            continue;
+        }
         auto& dialog = session->dialog_sm();
-        if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
+        if (dialog.is_active() || dialog.is_negotiating()) {
             dialog.process_event(CallError{});
         }
     }

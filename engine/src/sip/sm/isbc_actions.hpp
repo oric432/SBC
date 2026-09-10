@@ -79,22 +79,14 @@ public:
     IDialogContext& operator=(IDialogContext&&) = delete;
     ~IDialogContext() override = default;
 
-    // BYE handling
-    virtual void send_200_ok_to_bye_sender() = 0;
-    virtual void forward_bye_to_other_leg(bool from_caller) = 0;
+    // Starts the adapter's pending request in the session's temporary exchange slot.
+    virtual ExchangeOutcome start_exchange() = 0;
 
-    // re-INVITE handling
-    virtual void forward_reinvite(const std::string& sdp) = 0;
-    virtual void reject_reinvite_488() = 0;
-    virtual void reject_reinvite_491_request_pending() = 0;
-    virtual void forward_reinvite_200_ok(const std::string& sdp) = 0;
-    virtual void forward_reinvite_rejection(int status_code) = 0;
-
-    // ACK handling (dialog phase)
-    virtual void forward_ack_and_commit_media() = 0;
+    // Return true when both legs have already ended (synchronous completion).
+    virtual bool end_call(bool from_caller) = 0;
 
     // Call termination
-    virtual void terminate_call() = 0;
+    virtual bool terminate_call() = 0;
 };
 
 // ════════════════════════════════════════════════════════════════════════════

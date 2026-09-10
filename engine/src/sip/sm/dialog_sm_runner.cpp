@@ -2,52 +2,56 @@
 
 #include <queue>
 
-#include "sip/router/real_dialog_actions.hpp"
+#include "sip/sm/isbc_actions.hpp"
 #include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/sm_logger.hpp"
 
 namespace SbcEngine {
-
 struct DialogSmRunner::Impl {
-    using Machine = Sml::sm<DialogSm<RealDialogActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
-
-    Impl(RealDialogActions& actions, std::string_view call_id)
+    Impl(IDialogContext& actions, std::string_view call_id)
         : logger_("dialog", call_id)
         , sm_(actions, logger_) {}
 
-    // Logger must outlive (so precede) the machine that references it.
+    template <typename Event>
+    bool dispatch(const Event& event) {
+        processing_ = true;
+        const bool handled = sm_.process_event(event);
+        processing_ = false;
+        return handled;
+    }
+    bool processing_ = false;
+    // The logger outlives the machine that references it.
     SmLogger logger_;
-    Machine sm_;
+    Sml::sm<DialogSm<IDialogContext>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>> sm_;
 };
 
-DialogSmRunner::DialogSmRunner(RealDialogActions& actions, std::string_view call_id)
+DialogSmRunner::DialogSmRunner(IDialogContext& actions, std::string_view call_id)
     : impl_(std::make_unique<Impl>(actions, call_id)) {}
-
 DialogSmRunner::~DialogSmRunner() = default;
 
 template <typename Event>
 bool DialogSmRunner::process_event(const Event& event) {
-    return impl_->sm_.process_event(event);
+    return impl_->dispatch(event);
 }
-
-template bool DialogSmRunner::process_event(const ByeReceived&);
+template bool DialogSmRunner::process_event(const Dialog::ExchangeRequested&);
+template bool DialogSmRunner::process_event(const Dialog::ExchangeFinished&);
+template bool DialogSmRunner::process_event(const Dialog::EndRequested&);
 template bool DialogSmRunner::process_event(const CallEnded&);
 template bool DialogSmRunner::process_event(const CallError&);
 
 bool DialogSmRunner::is_active() const {
-    return impl_->sm_.is(Sml::state<Active>);
+    return impl_->sm_.is(Sml::state<Dialog::Active>);
 }
-
+bool DialogSmRunner::is_negotiating() const {
+    return impl_->sm_.is(Sml::state<Dialog::Negotiating>);
+}
 bool DialogSmRunner::is_terminating() const {
-    return impl_->sm_.is(Sml::state<Terminating>);
+    return impl_->sm_.is(Sml::state<Dialog::Terminating>);
 }
-
-bool DialogSmRunner::is_reinviting() const {
-    return impl_->sm_.is(Sml::state<Reinviting>);
+bool DialogSmRunner::is_done() const {
+    return impl_->sm_.is(Sml::state<Dialog::Done>);
 }
-
-bool DialogSmRunner::is_waiting_for_reinvite_ack() const {
-    return impl_->sm_.is(Sml::state<WaitingForReinviteAck>);
+bool DialogSmRunner::is_processing() const {
+    return impl_->processing_;
 }
-
 } // namespace SbcEngine

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <pjsip_ua.h>
 
@@ -9,8 +10,7 @@ namespace SbcEngine {
 
 class CallSession;
 
-// Per-call implementation of the DialogSm action interface (confirmed-dialog
-// phase: BYE teardown and, later, re-INVITE handling).
+// SIP adapter for the generic established-call lifecycle.
 class RealDialogActions : public IDialogContext {
 public:
     explicit RealDialogActions(CallSession& session)
@@ -18,22 +18,22 @@ public:
 
     void on_leg_state_changed(pjsip_inv_session* inv);
 
-    void send_200_ok_to_bye_sender() override;
-    void forward_bye_to_other_leg(bool from_caller) override;
+    // Stages one request and lets the lifecycle start it through start_exchange().
+    bool request_exchange(std::unique_ptr<IOfferAnswerActions> actions, const std::string& offer);
+    ExchangeOutcome start_exchange() override;
+    // Call after an operation on session.exchange() has returned.
+    void finish_exchange(ExchangeOutcome outcome);
 
-    void forward_reinvite(const std::string& sdp) override;
-    void reject_reinvite_488() override;
-    void reject_reinvite_491_request_pending() override;
-    void forward_reinvite_200_ok(const std::string& sdp) override;
-    void forward_reinvite_rejection(int status_code) override;
+    bool end_call(bool from_caller) override;
 
-    void forward_ack_and_commit_media() override;
-
-    void terminate_call() override;
+    bool terminate_call() override;
     void cleanup() override;
 
 private:
+    void stop_exchange();
     CallSession& session_;
+    std::unique_ptr<IOfferAnswerActions> pending_actions_;
+    std::string pending_offer_;
 };
 
 } // namespace SbcEngine

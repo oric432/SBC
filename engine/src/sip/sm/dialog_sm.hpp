@@ -1,100 +1,60 @@
 #pragma once
 
-#include <boost/sml.hpp>
-
 #include "events.hpp"
-#include "sip/stack/sdp.hpp"
+#include "types.hpp"
 
 namespace SbcEngine {
-
-namespace Sml = boost::sml;
-
-// State tags
+namespace Dialog {
 struct Active {};
-struct Reinviting {};
-struct WaitingForReinviteAck {};
+struct Negotiating {};
 struct Terminating {};
 struct Terminated {};
-struct DialogDone {};
+struct Done {};
+} // namespace Dialog
 
-// Queue used by DialogSm's own action to self-fire Cleanup once Terminated is
-// reached, instead of requiring external code to fire it as a separate step —
-// same mechanism as SetupSelfFireQueue (setup_sm.hpp): the action lambda takes
-// this type by value, boost::sml substitutes a live instance wired to the sm's
-// own internal queue at dispatch time (see Sml::process_queue<std::queue>).
-using DialogSelfFireQueue = Sml::back::process<Cleanup>;
-
-template <typename Actions>
+// Like setup, the context starts exchanges and returns their logical outcomes.
+// The session owns exchange resources; the adapter stops them during teardown.
+template <typename Context>
 struct DialogSm {
     auto operator()() const {
-        // Guards - SM validates SDP content directly
-        auto is_sdp_valid = [](const ReinviteReceived& evt) { return Sdp::is_valid_sdp(evt.sdp_); };
-        auto is_sdp_invalid = [](const ReinviteReceived& evt) { return !Sdp::is_valid_sdp(evt.sdp_); };
-        auto is_reinvite_accepted_valid = [](const ReinviteAccepted& evt) {
-            return Sdp::is_valid_sdp(evt.answer_sdp_);
+        const auto start = [](Context& actions, Sml::back::process<Dialog::ExchangeFinished> result) {
+            const auto outcome = actions.start_exchange();
+            if (outcome != ExchangeOutcome::kPending) {
+                result(Dialog::ExchangeFinished{outcome});
+            }
         };
-        auto is_reinvite_accepted_invalid = [](const ReinviteAccepted& evt) {
-            return !Sdp::is_valid_sdp(evt.answer_sdp_);
+        const auto recovered = [](const Dialog::ExchangeFinished& event) {
+            return event.outcome_ == ExchangeOutcome::kCommitted || event.outcome_ == ExchangeOutcome::kRolledBack;
         };
-
-        // Actions
-        auto handle_bye = [](Actions& actions, const ByeReceived& evt) {
-            actions.send_200_ok_to_bye_sender();
-            actions.forward_bye_to_other_leg(evt.from_caller_);
+        const auto failed = [](const Dialog::ExchangeFinished& event) {
+            return event.outcome_ == ExchangeOutcome::kFailed;
         };
-
-        auto handle_reinvite = [](Actions& actions, const ReinviteReceived& evt) {
-            actions.forward_reinvite(evt.sdp_);
+        const auto end = [](Context& actions, const Dialog::EndRequested& event, Sml::back::process<CallEnded> result) {
+            if (actions.end_call(event.from_caller_)) {
+                result(CallEnded{});
+            }
         };
-
-        auto handle_reinvite_invalid = [](Actions& actions) { actions.reject_reinvite_488(); };
-
-        auto handle_reinvite_collision = [](Actions& actions) { actions.reject_reinvite_491_request_pending(); };
-
-        auto handle_reinvite_accepted = [](Actions& actions, const ReinviteAccepted& evt) {
-            actions.forward_reinvite_200_ok(evt.answer_sdp_);
+        const auto terminate = [](Context& actions, Sml::back::process<CallEnded> result) {
+            if (actions.terminate_call()) {
+                result(CallEnded{});
+            }
         };
-
-        auto handle_reinvite_rejected = [](Actions& actions, const ReinviteRejected& evt) {
-            actions.forward_reinvite_rejection(evt.status_code_);
-        };
-
-        auto handle_ack = [](Actions& actions) { actions.forward_ack_and_commit_media(); };
-
-        auto handle_call_error = [](Actions& actions) { actions.terminate_call(); };
-
-        auto handle_call_ended = [](DialogSelfFireQueue cleanup_event) { cleanup_event(Cleanup{}); };
-
-        auto handle_cleanup = [](Actions& actions) { actions.cleanup(); };
+        const auto ended = [](Sml::back::process<Dialog::Cleanup> result) { result(Dialog::Cleanup{}); };
+        const auto cleanup = [](Context& actions) { actions.cleanup(); };
 
         // clang-format off
         return Sml::make_transition_table(
-             // Active state
-            *Sml::state<Active>                + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<Terminating>,
-             Sml::state<Active>                + (Sml::event<ReinviteReceived>       [is_sdp_valid]                                 / handle_reinvite)            = Sml::state<Reinviting>,
-             Sml::state<Active>                + (Sml::event<ReinviteReceived>       [is_sdp_invalid]                               / handle_reinvite_invalid)    = Sml::state<Active>,
-             Sml::state<Active>                + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
-
-             // Reinviting state
-             Sml::state<Reinviting>            + (Sml::event<ReinviteAccepted>       [is_reinvite_accepted_valid]                   / handle_reinvite_accepted)   = Sml::state<WaitingForReinviteAck>,
-             Sml::state<Reinviting>            + (Sml::event<ReinviteAccepted>       [is_reinvite_accepted_invalid]                 / handle_call_error)          = Sml::state<Terminating>,
-             Sml::state<Reinviting>            + (Sml::event<ReinviteRejected>                                                      / handle_reinvite_rejected)   = Sml::state<Active>,
-             Sml::state<Reinviting>            + (Sml::event<ReinviteReceived>                                                      / handle_reinvite_collision)  = Sml::state<Reinviting>,
-             Sml::state<Reinviting>            + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<Terminating>,
-
-             // WaitingForReinviteAck state
-             Sml::state<WaitingForReinviteAck> + (Sml::event<AckReceived>                                                           / handle_ack)                 = Sml::state<Active>,
-             Sml::state<WaitingForReinviteAck> + (Sml::event<AckTimeout>                                                            / handle_call_error)          = Sml::state<Terminating>,
-             Sml::state<WaitingForReinviteAck> + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<Terminating>,
-
-             // Terminating state
-             Sml::state<Terminating>           + (Sml::event<CallEnded>                                                              / handle_call_ended)          = Sml::state<Terminated>,
-
-             // Cleanup
-             Sml::state<Terminated>            + (Sml::event<Cleanup>                                                               / handle_cleanup)             = Sml::state<DialogDone>
+            *Sml::state<Dialog::Active> + Sml::event<Dialog::ExchangeRequested> / start = Sml::state<Dialog::Negotiating>,
+             Sml::state<Dialog::Negotiating> + Sml::event<Dialog::ExchangeFinished>[recovered] = Sml::state<Dialog::Active>,
+             Sml::state<Dialog::Negotiating> + Sml::event<Dialog::ExchangeFinished>[failed] / terminate = Sml::state<Dialog::Terminating>,
+             Sml::state<Dialog::Active> + Sml::event<Dialog::EndRequested> / end = Sml::state<Dialog::Terminating>,
+             Sml::state<Dialog::Negotiating> + Sml::event<Dialog::EndRequested> / end = Sml::state<Dialog::Terminating>,
+             Sml::state<Dialog::Active> + Sml::event<CallError> / terminate = Sml::state<Dialog::Terminating>,
+             Sml::state<Dialog::Negotiating> + Sml::event<CallError> / terminate = Sml::state<Dialog::Terminating>,
+             Sml::state<Dialog::Terminating> + Sml::event<CallEnded> / ended = Sml::state<Dialog::Terminated>,
+             Sml::state<Dialog::Terminated> + Sml::event<Dialog::Cleanup> / cleanup = Sml::state<Dialog::Done>
         );
         // clang-format on
     }
 };
-
 } // namespace SbcEngine

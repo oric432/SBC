@@ -7,13 +7,18 @@ OfferAnswerExchange::OfferAnswerExchange(
     CallSession& session,
     const std::string& destination,
     std::optional<Protocols::SupportedCodec> required_codec)
-    : actions_(session, destination, required_codec)
-    , runner_(actions_, session.call_id()) {}
+    : actions_(std::make_unique<RealOfferAnswerActions>(session, destination, required_codec))
+    , initial_actions_(dynamic_cast<RealOfferAnswerActions*>(actions_.get()))
+    , runner_(*actions_, session.call_id()) {}
+
+OfferAnswerExchange::OfferAnswerExchange(std::unique_ptr<IOfferAnswerActions> actions, std::string_view call_id)
+    : actions_(std::move(actions))
+    , runner_(*actions_, call_id) {}
 
 ExchangeOutcome OfferAnswerExchange::start(const std::string& offer) {
     processing_ = true;
     runner_.process_event(OfferAnswer::OfferReceived{offer});
-    if (runner_.is_awaiting_answer() && !actions_.offer_sent()) {
+    if (initial_actions_ != nullptr && runner_.is_awaiting_answer() && !initial_actions_->offer_sent()) {
         runner_.process_event(OfferAnswer::OfferRelayFailed{});
     }
     return finish_operation();
@@ -22,8 +27,8 @@ ExchangeOutcome OfferAnswerExchange::start(const std::string& offer) {
 ExchangeOutcome OfferAnswerExchange::receive_answer(const std::string& answer) {
     processing_ = true;
     runner_.process_event(OfferAnswer::AnswerReceived{answer});
-    if (runner_.is_relaying_answer()) {
-        if (actions_.answer_sent()) {
+    if (initial_actions_ != nullptr && runner_.is_relaying_answer()) {
+        if (initial_actions_->answer_sent()) {
             runner_.process_event(OfferAnswer::AnswerRelaySucceeded{});
         }
         else {
@@ -34,19 +39,19 @@ ExchangeOutcome OfferAnswerExchange::receive_answer(const std::string& answer) {
 }
 
 ExchangeOutcome OfferAnswerExchange::reject(int status_code) {
-    return apply(OfferAnswer::AnswerRejected{status_code});
+    return process_event(OfferAnswer::AnswerRejected{status_code});
 }
 ExchangeOutcome OfferAnswerExchange::answer_timeout() {
-    return apply(OfferAnswer::AnswerTimeout{});
+    return process_event(OfferAnswer::AnswerTimeout{});
 }
 ExchangeOutcome OfferAnswerExchange::confirm() {
-    return apply(OfferAnswer::AckReceived{});
+    return process_event(OfferAnswer::AckReceived{});
 }
 ExchangeOutcome OfferAnswerExchange::confirmation_timeout() {
-    return apply(OfferAnswer::AckTimeout{});
+    return process_event(OfferAnswer::AckTimeout{});
 }
 ExchangeOutcome OfferAnswerExchange::stop() {
-    return apply(OfferAnswer::StopExchange{});
+    return process_event(OfferAnswer::StopExchange{});
 }
 
 ExchangeOutcome OfferAnswerExchange::finish_operation() {

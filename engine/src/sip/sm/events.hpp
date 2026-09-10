@@ -8,10 +8,6 @@
 
 namespace SbcEngine {
 
-constexpr int kStatusCodeCallRejected = 480;
-constexpr int kStatusCodeNotAcceptableHere = 488;
-constexpr int kStatusCodeRequestPending = 491;
-
 enum class ExchangeOutcome : std::uint8_t { kPending, kCommitted, kRolledBack, kFailed };
 
 // Protocol-independent setup lifecycle and exchange outcomes.
@@ -33,29 +29,19 @@ struct CancellationCompleted {};
 struct Cleanup {};
 } // namespace Setup
 
-struct AckReceived {};
-struct AckTimeout {};
-struct Cleanup {};
-
-// Dialog SM Events
-struct ByeReceived {
+// Protocol-independent established-call lifecycle.
+namespace Dialog {
+struct ExchangeRequested {};
+struct ExchangeFinished {
+    ExchangeOutcome outcome_;
+};
+struct EndRequested {
     bool from_caller_ = true;
 };
-
-struct ReinviteReceived {
-    std::string sdp_;
-};
-
-struct ReinviteAccepted {
-    std::string answer_sdp_;
-};
-
-struct ReinviteRejected {
-    int status_code_ = kStatusCodeNotAcceptableHere;
-};
+struct Cleanup {};
+} // namespace Dialog
 
 struct CallError {};
-
 struct CallEnded {};
 
 // Stateless/Simple Message SM Events

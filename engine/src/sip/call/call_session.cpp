@@ -64,6 +64,14 @@ bool CallSession::create_exchange(
     return true;
 }
 
+bool CallSession::create_exchange(std::unique_ptr<IOfferAnswerActions> actions) {
+    if (exchange_ || !actions) {
+        return false;
+    }
+    exchange_ = std::make_unique<OfferAnswerExchange>(std::move(actions), call_id_);
+    return true;
+}
+
 void CallSession::release_exchange() {
     exchange_.reset();
 }
