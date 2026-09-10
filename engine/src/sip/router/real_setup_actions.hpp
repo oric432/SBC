@@ -19,7 +19,7 @@ public:
         , routes_store_(routes_store) {}
 
     // Translate stack callbacks into logical setup/exchange operations.
-    void on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* request);
+    void on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
     void begin_setup() override;
     RouteResolution resolve_route() override;
     void route_failed() override;

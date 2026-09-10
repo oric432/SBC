@@ -1,4 +1,4 @@
-// NOLINTBEGIN(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace)
+// NOLINTBEGIN(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace,cert-err58-cpp)
 #include <queue>
 #include <vector>
 
@@ -204,7 +204,7 @@ TEST_CASE("DialogSm reinvite accepted with invalid SDP", "[dialog_sm]") {
     REQUIRE(machine.is(Sml::state<Terminating>));
     REQUIRE(actions.was_called("terminate_call"));
 }
-// NOLINTEND(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace)
+// NOLINTEND(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace,cert-err58-cpp)
 
 // Offer-answer negotiation is tested independently of dialog lifecycle and SIP.
 

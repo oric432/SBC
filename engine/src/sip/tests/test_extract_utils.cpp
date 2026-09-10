@@ -129,7 +129,7 @@ TEST_CASE("extract_method returns empty when msg is null", "[extract_utils]") {
 }
 
 TEST_CASE("extract_method reads the request method", "[extract_utils]") {
-    ScopedPool pool;
+    const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
     CHECK(extract_method(&rdata) == "INVITE");
 }
@@ -139,13 +139,13 @@ TEST_CASE("extract_sdp returns empty for null rx_data", "[extract_utils]") {
 }
 
 TEST_CASE("extract_sdp returns empty when there is no body", "[extract_utils]") {
-    ScopedPool pool;
+    const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteNoBody);
     CHECK(extract_sdp(&rdata).empty());
 }
 
 TEST_CASE("extract_sdp returns the raw message body", "[extract_utils]") {
-    ScopedPool pool;
+    const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
     CHECK(extract_sdp(&rdata) == "v=0\r\n");
 }
@@ -160,7 +160,7 @@ TEST_CASE("extract_call_id returns empty when the Call-ID header is absent", "[e
 }
 
 TEST_CASE("extract_call_id reads the Call-ID header", "[extract_utils]") {
-    ScopedPool pool;
+    const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
     CHECK(extract_call_id(&rdata) == "abc123@127.0.0.1");
 }
@@ -175,7 +175,7 @@ TEST_CASE("extract_request_uri returns empty when msg is null", "[extract_utils]
 }
 
 TEST_CASE("extract_request_uri formats the request-URI", "[extract_utils]") {
-    ScopedPool pool;
+    const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
     CHECK(extract_request_uri(&rdata) == "sip:bob@example.com");
 }
@@ -185,13 +185,13 @@ TEST_CASE("extract_from_display_name returns empty for null rx_data", "[extract_
 }
 
 TEST_CASE("extract_from_display_name returns empty when the From header has no display name", "[extract_utils]") {
-    ScopedPool pool;
+    const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
     CHECK(extract_from_display_name(&rdata).empty());
 }
 
 TEST_CASE("extract_from_display_name reads the From header's display name", "[extract_utils]") {
-    ScopedPool pool;
+    const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithDisplayName);
     CHECK(extract_from_display_name(&rdata) == "Alice");
 }
@@ -219,22 +219,23 @@ TEST_CASE("extract_uri_user returns empty for an empty string", "[extract_utils]
 }
 
 TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][call_session]") {
-    boost::asio::io_context io;
+    constexpr int kTestRoutePort = 5060;
+    boost::asio::io_context ioc;
     PjContext context;
     context.endpt_ = kPjEndpoint.get();
     RoutesStore routes;
     Protocols::SipRouteSnapshot snapshot;
     snapshot.routes.emplace(
         1,
-        Protocols::SipRouteRule{.uri = "*", .sip_address = "192.0.2.1", .port = 5060, .codec = std::nullopt});
+        Protocols::SipRouteRule{.uri = "*", .sip_address = "192.0.2.1", .port = kTestRoutePort, .codec = std::nullopt});
     routes.set_snapshot(std::move(snapshot));
     CallManager manager;
-    ScopedPool pool;
+    const ScopedPool pool;
     auto request = parse_rdata(pool.get(), kInviteWithSdp);
     // No signaling legs are installed: the malformed offer must be rejected
     // before outbound creation. This exercises the synchronous exchange-result handling,
     // real exchange actions, both runners, and deferred session retirement.
-    auto* session = manager.create_session("exchange-reject", &context, &routes, io.get_executor(), &request);
+    auto* session = manager.create_session("exchange-reject", &context, &routes, ioc.get_executor(), &request);
     session->setup_sm().process_event(Setup::Requested{});
     REQUIRE(session->setup_sm().is_done());
     REQUIRE_FALSE(session->setup_sm().is_established());
