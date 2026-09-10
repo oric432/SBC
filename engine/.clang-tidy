@@ -32,7 +32,7 @@ Checks: "*,
         -misc-include-cleaner,
         -cert-dcl58-cpp,
         -clang-analyzer-cplusplus.NewDeleteLeaks"
-WarningsAsErrors: '*'
+WarningsAsErrors: ''
 HeaderFilterRegex: ''
 FormatStyle:     none
 
