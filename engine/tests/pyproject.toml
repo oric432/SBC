@@ -1,0 +1,22 @@
+[project]
+name = "sbc-engine-tests"
+version = "0.1.0"
+description = "Python dependencies for the SBC engine's integration test suites"
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=8.3,<9",
+    "jinja2>=3.1,<4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
+
+[tool.pytest.ini_options]
+testpaths = ["integration"]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(message)s"
