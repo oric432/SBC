@@ -38,7 +38,7 @@ void OptionsActions::send_options_response() {
     }
 
     static constexpr std::array<int, 3> kCapabilityHeaders = {PJSIP_H_ALLOW, PJSIP_H_ACCEPT, PJSIP_H_SUPPORTED};
-    for (int htype : kCapabilityHeaders) {
+    for (const int htype : kCapabilityHeaders) {
         add_capability_header(endpt, tdata, htype);
     }
 

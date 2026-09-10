@@ -63,7 +63,8 @@ struct MediaBridge::Impl {
                                              const std::error_code& err) mutable {
             // TODO: Implement Symmetric RTP latching using src_ep here
             if (err) {
-                std::error_code abort_err = boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
+                const std::error_code abort_err =
+                    boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
                 if (err == abort_err) {
                     return;
                 }
@@ -87,7 +88,7 @@ struct MediaBridge::Impl {
                     std::size_t /*bytes_sent*/,
                     const std::error_code& send_err) mutable {
                     if (send_err) {
-                        std::error_code abort_err =
+                        const std::error_code abort_err =
                             boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
 
                         if (send_err == abort_err) {

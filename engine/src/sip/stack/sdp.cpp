@@ -111,8 +111,11 @@ pjmedia_sdp_session* parse(pj_pool_t* pool, const std::string& sdp_str) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     buf[sdp_str.size()] = '\0';
 
+    // pjmedia_sdp_parse writes through &sdp, which needs a
+    // pjmedia_sdp_session**; a const pointee wouldn't bind to that.
+    // NOLINTNEXTLINE(misc-const-correctness)
     pjmedia_sdp_session* sdp = nullptr;
-    pj_status_t status = pjmedia_sdp_parse(pool, buf, sdp_str.size(), &sdp);
+    const pj_status_t status = pjmedia_sdp_parse(pool, buf, sdp_str.size(), &sdp);
     if (status != PJ_SUCCESS) {
         Log::sip()->warn("SDP parse failed");
         return nullptr;
@@ -122,7 +125,7 @@ pjmedia_sdp_session* parse(pj_pool_t* pool, const std::string& sdp_str) {
 
 std::string serialize(const pjmedia_sdp_session* sdp) {
     std::array<char, kSdpPrintBufSize> buf{};
-    int len = pjmedia_sdp_print(sdp, buf.data(), buf.size());
+    const int len = pjmedia_sdp_print(sdp, buf.data(), buf.size());
     if (len < 0) {
         Log::sip()->warn("SDP print overflow");
         return {};
@@ -200,7 +203,9 @@ pjmedia_sdp_media* find_active_audio_media(pjmedia_sdp_session* sdp) {
         return nullptr;
     }
     for (unsigned i = 0; i < sdp->media_count; ++i) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        // A const pointee here wouldn't return as pjmedia_sdp_media* below --
+        // restrict_audio_codecs() (the only mutating caller) needs that.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index, misc-const-correctness)
         pjmedia_sdp_media* media = sdp->media[i];
         if (is_media_type(media, "audio") && media->desc.port != 0) {
             return media;
