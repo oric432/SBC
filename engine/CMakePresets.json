@@ -66,7 +66,7 @@
         {
             "name": "ci-debug",
             "inherits": "debug",
-            "description": "Debug build with clang-tidy on (used by CI pipeline)",
+            "description": "Debug build with clang-tidy on (weekly full-repo sweep only, see clang-tidy-weekly.yml)",
             "cacheVariables": {
                 "ENABLE_CLANG_TIDY": true
             }
