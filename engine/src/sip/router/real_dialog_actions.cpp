@@ -9,7 +9,7 @@
 namespace SbcEngine {
 
 namespace {
-constexpr char kSessionTimerExpiredCause[] = "No session refresh received.";
+constexpr const char* kSessionTimerExpiredCause = "No session refresh received.";
 bool is_session_timer_expiry(const pjsip_inv_session* inv) {
     return inv->cause == PJSIP_SC_REQUEST_TIMEOUT && pj_stricmp2(&inv->cause_text, kSessionTimerExpiredCause) == 0;
 }

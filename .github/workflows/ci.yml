@@ -55,7 +55,15 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang clang-tidy clang-format ninja-build just ccache
+          sudo apt-get install -y clang clang-tidy clang-format ninja-build just ccache sip-tester
+
+      - name: Grant SIPp CAP_NET_RAW (needed for pcap audio playback)
+        run: sudo setcap cap_net_raw+ep "$(readlink -f "$(command -v sipp)")"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Cache FetchContent dependencies
         uses: actions/cache@v6
@@ -70,6 +78,9 @@ jobs:
 
       - name: Run unit tests
         run: just test
+
+      - name: Run B2BUA integration tests
+        run: just test-b2bua
 
       - name: Determine lint base
         id: lint-base

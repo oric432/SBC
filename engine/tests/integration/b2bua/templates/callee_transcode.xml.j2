@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1" ?>
 <!DOCTYPE scenario SYSTEM "sipp.dtd">
-<scenario name="Basic SIPp UAS - answers G722 to force transcoding, waits for caller BYE">
+<scenario name="{{ scenario_name }}">
   <recv request="INVITE" crlf="true"></recv>
 
   <send>
@@ -16,7 +16,7 @@
     ]]>
   </send>
 
-  <!-- caller.xml's own offer only ever lists PCMU, so answering G722 here
+  <!-- caller.xml.j2's own offer only ever lists PCMU, so answering G722 here
        (valid: the SBC's callee-facing offer always includes G722 too, see
        Sdp::restrict_audio_codecs()) forces the two legs onto different
        codecs — caller ends up on PCMU, callee on G722 — exercising
@@ -45,17 +45,15 @@
 
   <recv request="ACK" rtd="true" crlf="true"></recv>
 
-  <!-- Play the pcap once (~7s) so the relay path gets exercised, then just
-       wait for the SBC to forward the caller's BYE (fired ~10s in on the
-       caller side) instead of looping forever. g722.pcap is g711a.pcap's
-       exact audio content re-encoded to real G.722 (see
-       tests/b2bua/README.md) — MediaBridge decodes/encodes by each leg's
+  <!-- g722.pcap is g711a.pcap's exact audio content re-encoded to real
+       G.722 (see ../README.md) — MediaBridge decodes/encodes by each leg's
        *negotiated* codec, not by inspecting an incoming packet's own
        payload-type byte, so this leg must actually send G.722 for a manual
-       listen test on the transcoded output to be meaningful. -->
+       listen test on the transcoded output to be meaningful. No pause
+       before the BYE recv, for the same reason as callee.xml.j2. -->
   <nop>
     <action>
-      <exec play_pcap_audio="g722.pcap"/>
+      <exec play_pcap_audio="{{ pcap_path }}"/>
     </action>
   </nop>
 

@@ -22,6 +22,27 @@ using SbcEngine::TestPcm::write_sample;
 
 namespace {
 constexpr std::size_t kG711FrameSamples = 80; // 10ms @ 8kHz, pjmedia's default G711 base frame
+
+void fill_pcm_frame(std::span<std::uint8_t> pcm) {
+    constexpr std::int16_t kBaseAmplitude = 1000;
+    constexpr std::int16_t kAmplitudeStep = 20;
+    for (std::size_t i = 0; i < kG711FrameSamples; ++i) {
+        write_sample(pcm, i, static_cast<std::int16_t>(kBaseAmplitude + (static_cast<int>(i) * kAmplitudeStep)));
+    }
+}
+
+// G711 is lossy (u-law compands 16-bit samples into 8 bits), so the
+// round-trip won't be bit-exact — every sample should still land within
+// u-law's quantization error of the original.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) -- one call site (below).
+void require_round_trip_close(std::span<const std::uint8_t> original, std::span<const std::uint8_t> decoded) {
+    constexpr int kMaxSampleError = 200;
+    for (std::size_t i = 0; i < kG711FrameSamples; ++i) {
+        const auto original_sample = read_sample(original, i);
+        const auto decoded_sample = read_sample(decoded, i);
+        REQUIRE(std::abs(original_sample - decoded_sample) < kMaxSampleError);
+    }
+}
 } // namespace
 
 TEST_CASE("CodecSession opens G711 PCMU and round-trips a frame", "[CodecSession]") {
@@ -31,12 +52,8 @@ TEST_CASE("CodecSession opens G711 PCMU and round-trips a frame", "[CodecSession
     REQUIRE(session->clock_rate() == 8000);
 
     // 16-bit signed linear PCM, one base frame's worth of silence-free samples.
-    constexpr std::int16_t kBaseAmplitude = 1000;
-    constexpr std::int16_t kAmplitudeStep = 20;
     std::array<std::uint8_t, kG711FrameSamples * 2> pcm{};
-    for (std::size_t i = 0; i < kG711FrameSamples; ++i) {
-        write_sample(pcm, i, static_cast<std::int16_t>(kBaseAmplitude + (static_cast<int>(i) * kAmplitudeStep)));
-    }
+    fill_pcm_frame(pcm);
 
     std::array<std::uint8_t, kG711FrameSamples> encoded{};
     auto encoded_size = session->encode(pcm, encoded);
@@ -48,14 +65,7 @@ TEST_CASE("CodecSession opens G711 PCMU and round-trips a frame", "[CodecSession
     REQUIRE(decoded_size.has_value());
     REQUIRE(*decoded_size == pcm.size());
 
-    // G711 is lossy (u-law compands 16-bit samples into 8 bits), so the
-    // round-trip won't be bit-exact — every sample should still land within
-    // u-law's quantization error of the original.
-    for (std::size_t i = 0; i < kG711FrameSamples; ++i) {
-        const auto original_sample = read_sample(pcm, i);
-        const auto decoded_sample = read_sample(decoded, i);
-        REQUIRE(std::abs(original_sample - decoded_sample) < 200);
-    }
+    require_round_trip_close(pcm, decoded);
 }
 
 TEST_CASE("CodecSession opens G722", "[CodecSession]") {

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1" ?>
 <!DOCTYPE scenario SYSTEM "sipp.dtd">
-<scenario name="Basic SIPp UAS - waits for caller BYE">
+<scenario name="{{ scenario_name }}">
   <recv request="INVITE" crlf="true"></recv>
 
   <send>
@@ -40,12 +40,14 @@
 
   <recv request="ACK" rtd="true" crlf="true"></recv>
 
-  <!-- Play the pcap once (~7s) so the RTP relay path gets exercised, then
-       just wait for the SBC to forward the caller's BYE (fired ~10s in on
-       the caller side) instead of looping forever. -->
+  <!-- No pause between this and the BYE recv below: an explicit pause would
+       block this call's scenario progression and risk the caller's BYE
+       arriving before a recv step is active to catch it. The pcap keeps
+       streaming in the background regardless of scenario position, so the
+       caller's own holds_ms loop is what actually controls call length. -->
   <nop>
     <action>
-      <exec play_pcap_audio="g711a.pcap"/>
+      <exec play_pcap_audio="{{ pcap_path }}"/>
     </action>
   </nop>
 

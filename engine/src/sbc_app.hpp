@@ -41,7 +41,7 @@ public:
 
 private:
     // Loads settings.toml and sets the log level. Crashes the process on failure.
-    Settings init_settings();
+    static Settings init_settings();
     // Fetches the routing snapshot from the control plane. Crashes the process on failure.
     void init_routes(const Settings& settings);
     // Builds PjsipConfig from settings and brings up the PJSIP stack.

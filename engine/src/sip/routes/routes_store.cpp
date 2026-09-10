@@ -5,12 +5,12 @@
 namespace SbcEngine {
 
 void RoutesStore::set_snapshot(Protocols::SipRouteSnapshot snapshot) {
-    std::unique_lock lock(mutex_);
+    const std::unique_lock lock(mutex_);
     snapshot_ = std::move(snapshot);
 }
 
 std::optional<Protocols::SipRouteRule> RoutesStore::find_route(const std::string& request_uri) const {
-    std::shared_lock lock(mutex_);
+    const std::shared_lock lock(mutex_);
     for (const auto& [priority, rule] : snapshot_.routes) {
         if (rule.uri == "*" || rule.uri == request_uri) {
             return rule;
@@ -20,7 +20,7 @@ std::optional<Protocols::SipRouteRule> RoutesStore::find_route(const std::string
 }
 
 int RoutesStore::version() const {
-    std::shared_lock lock(mutex_);
+    const std::shared_lock lock(mutex_);
     return snapshot_.version;
 }
 

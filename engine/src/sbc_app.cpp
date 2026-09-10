@@ -23,9 +23,9 @@ void SbcApp::handle_signal(int /*signum*/) {
 void SbcApp::init() {
     Log::init_logging();
 
-    Settings settings = init_settings();
+    const Settings settings = init_settings();
     init_routes(settings);
-    PjsipConfig config = init_pjsip(settings);
+    const PjsipConfig config = init_pjsip(settings);
     init_pjmedia();
     init_context(config);
     init_signal_handlers();

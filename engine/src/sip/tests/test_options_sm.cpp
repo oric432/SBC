@@ -21,7 +21,7 @@ using MockOptionsMachine = Sml::sm<OptionsSm<MockOptionsActions>, Sml::process_q
 // Verifies: OPTIONS state machine starts in Idle state
 TEST_CASE("OptionsSm initial state is idle", "[options_sm]") {
     MockOptionsActions actions;
-    MockOptionsMachine machine{actions};
+    const MockOptionsMachine machine{actions};
 
     REQUIRE(machine.is(Sml::state<OptionsIdle>));
     REQUIRE_FALSE(machine.is(Sml::state<OptionsResponding>));
