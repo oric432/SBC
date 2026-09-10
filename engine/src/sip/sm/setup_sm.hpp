@@ -36,7 +36,7 @@ struct SetupSm {
             const RouteResolution route = actions.resolve_route();
             switch (route.kind_) {
             case RouteResolution::Kind::kFound:
-                result(Setup::RouteFound{.destination_=route.destination_, .required_codec_=route.required_codec_});
+                result(Setup::RouteFound{.destination_ = route.destination_, .required_codec_ = route.required_codec_});
                 break;
             case RouteResolution::Kind::kFailed: result(Setup::RouteFailed{}); break;
             case RouteResolution::Kind::kLoop: result(Setup::LoopDetected{}); break;
