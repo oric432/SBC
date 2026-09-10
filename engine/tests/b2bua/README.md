@@ -21,7 +21,7 @@ avoid a bind collision. For example, the values in `config-example.json`
 reserve `6002`/`6004` for the Caller and `6006`/`6008` for the Callee. A
 collision is reported by SIPp as `Unable to bind video RTP socket`.
 
-RTP (using `g711a.pcap`) is continuously streamed independently by both Caller and Callee at realistic G.711 packet pacing (~30ms per packet).
+RTP (using `g711a.pcap`) is continuously streamed independently by both Caller and Callee at realistic G.711 packet pacing (~30ms per packet). The `--transcode` callee scenario uses `g722.pcap` instead (see below).
 
 ### SIPp raw-socket permission
 
@@ -73,3 +73,44 @@ automatically.
    just test-b2bua --loop
    ```
 3. Press `Ctrl+C` to stop both SIPp processes.
+
+### Transcoding: mismatched-codec call
+
+The caller's own SDP offer only ever lists PCMU, but the SBC always offers
+the callee its full codec set (G722, PCMU, PCMA) regardless — see
+`Sdp::restrict_audio_codecs()`. `--transcode` swaps in a callee scenario that
+statically answers G722 instead of PCMU, so the two legs end up negotiating
+different codecs (caller=PCMU, callee=G722) and `MediaBridge` has to
+decode/resample/encode between them instead of relaying raw bytes.
+
+1. Start the SBC engine. Ensure its route table forwards calls to `callee_port`.
+2. From the engine directory:
+   ```bash
+   just test-b2bua --transcode
+   ```
+3. Both processes exit on their own after the BYE/200 OK exchange, same as
+   the default mode. There's no dedicated success log line for this path —
+   a clean call (no crash, no media-relay error in the SBC's own logs) is
+   what confirms the transcode path ran without issue. `--transcode` and
+   `--loop` can't be combined (no looping transcode scenario exists).
+
+`callee_transcode.xml` plays `g722.pcap` rather than `g711a.pcap` — it's
+genuinely G.722-encoded, not just PCMA relabeled with a different payload
+type, so a manual listen (e.g. Wireshark's RTP Player on a capture of the
+call) on the transcoded output actually verifies audio correctness rather
+than only "did the negotiated codec's decode/resample/encode path run
+without crashing." `g722.pcap` is `g711a.pcap`'s *exact* audio content
+(same SSRC, sequence numbers, RTP timestamps, and packet sizes — regenerated
+from it, not an independent recording), so the two are directly comparable
+sample-for-sample; only the RTP payload type byte and the encoded payload
+bytes differ. Regenerated with:
+
+```bash
+ffmpeg -f alaw -ar 8000 -ac 1 -i g711a_rtp_payload.alaw -ar 16000 -c:a g722 -f g722 g711a.g722
+```
+
+(`g711a_rtp_payload.alaw` is `g711a.pcap`'s 236 RTP payloads concatenated in
+sequence order; both G.711 and G.722 run at the same 64kbit/s wire rate, so
+the encoded output re-slices back into the original 236 packets' 240-byte
+payloads 1:1, with the RTP/UDP/IP headers otherwise untouched apart from the
+payload type byte and a recomputed UDP checksum.)

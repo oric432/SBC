@@ -22,7 +22,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="keep the call and RTP playback running until interrupted",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--transcode",
+        action="store_true",
+        help="answer G722 (forcing a caller=PCMU/callee=G722 mismatch) to exercise MediaBridge's transcoding path",
+    )
+    args = parser.parse_args()
+    if args.loop and args.transcode:
+        parser.error("--loop and --transcode cannot be combined (no looping transcode scenario exists)")
+    return args
 
 
 def run_sipp(command: list[str]) -> int:
@@ -61,7 +69,12 @@ def main() -> int:
     local_ip = config.get("local_ip", "127.0.0.1")
     callee_port = config.get("callee_port", "5061")
     callee_media_port = config.get("callee_media_port", "6004")
-    scenario = "tests/b2bua/callee_loop.xml" if args.loop else "tests/b2bua/callee.xml"
+    if args.transcode:
+        scenario = "tests/b2bua/callee_transcode.xml"
+    elif args.loop:
+        scenario = "tests/b2bua/callee_loop.xml"
+    else:
+        scenario = "tests/b2bua/callee.xml"
     callee_args = [
         "sipp",
         "-sf",
@@ -81,7 +94,10 @@ def main() -> int:
     print(f"--> Local SIP URI: sip:sipp@{local_ip}:{callee_port}")
     print(f"--> Target SIP URI for routes: sip:service@{local_ip}:{callee_port}")
 
-    if args.loop:
+    if args.transcode:
+        print("*** Answering G722 to force a caller=PCMU/callee=G722 mismatch (MediaBridge transcoding). ***")
+        print("*** Waits for the caller's BYE, then exits on its own. ***")
+    elif args.loop:
         print("\n*** SIPp is now running in the foreground. ***")
         print("*** Press Ctrl+C to exit and clean up... ***\n")
     else:

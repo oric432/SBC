@@ -23,6 +23,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="keep the call and RTP playback running until interrupted",
     )
+    # Accepted (and ignored) so run_test.py's --transcode can be forwarded to
+    # both processes uniformly — caller.xml's own PCMU-only offer is exactly
+    # what forces the mismatch, so the caller side never needs to change.
+    parser.add_argument(
+        "--transcode",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     return parser.parse_args()
 
 
