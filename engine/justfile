@@ -16,10 +16,27 @@ build-release:
     cmake --preset release
     cmake --build --preset build-release
 
-# Configure and build in debug mode with clang-tidy on (CI only)
+# Configure and build in debug mode with clang-tidy on (weekly full-repo sweep only)
 build-ci:
     cmake --preset ci-debug
     cmake --build --preset build-ci-debug
+
+# Run clang-tidy on .cpp files changed since `base` (merge-base diff). Per-PR
+# CI uses this instead of a full-tree scan to keep build time down; the
+# weekly sweep (build-ci) covers files this misses, e.g. a header-only change
+# whose includers weren't touched in the same PR.
+lint-changed base="origin/main":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    merge_base=$(git merge-base {{base}} HEAD 2>/dev/null || echo HEAD~1)
+    mapfile -t files < <(git diff --relative --name-only --diff-filter=ACMR "$merge_base" HEAD -- '*.cpp')
+    if [ ${#files[@]} -eq 0 ]; then
+        echo "No changed .cpp files to lint."
+        exit 0
+    fi
+    printf 'Linting %d changed file(s):\n' "${#files[@]}"
+    printf '  %s\n' "${files[@]}"
+    clang-tidy -p build "${files[@]}"
 
 # Run the engine in debug mode
 run-dev:
@@ -43,7 +60,7 @@ build-tsan:
 test:
     ctest --preset test-debug
 
-# Run standard C++ tests (CI only, matches build-ci preset)
+# Run standard C++ tests (weekly full-repo sweep only, matches build-ci preset)
 test-ci:
     ctest --preset test-ci-debug --output-on-failure
 

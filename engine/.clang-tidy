@@ -1,4 +1,12 @@
 ---
+# cert-dcl58-cpp is disabled below: it flags src/net/rtp/RtpCpp.hpp's
+# `namespace std { template<> struct is_error_code_enum<...> }` specialization
+# in every one of the ~28 TUs that transitively include it. Specializing
+# standard traits for a program-defined type inside namespace std is
+# explicitly permitted by the standard ([namespace.std]) and is exactly how
+# the <system_error> extension point (see utils/error.hpp) is meant to be
+# used -- the check has no way to distinguish that from an actual ODR
+# violation, so it's a structural false positive here, not real debt.
 Checks: "*,
         -abseil-*,
         -altera-*,
@@ -13,7 +21,8 @@ Checks: "*,
         -readability-avoid-const-params-in-decls,
         -cppcoreguidelines-non-private-member-variables-in-classes,
         -misc-non-private-member-variables-in-classes,
-        -misc-include-cleaner"
+        -misc-include-cleaner,
+        -cert-dcl58-cpp"
 WarningsAsErrors: ''
 HeaderFilterRegex: ''
 FormatStyle:     none
