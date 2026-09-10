@@ -33,6 +33,12 @@ option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(ENABLE_CLANG_TIDY "Enable clang tidy during build" OFF)
 option(ENABLE_FAST_LINKER "Use mold/lld instead of the default linker if available" ON)
 
+configure_file(
+    ${PROJECT_SOURCE_DIR}/settings-example.toml
+    ${PROJECT_BINARY_DIR}/settings.toml
+    COPYONLY
+)
+
 if(BUILD_TESTS)
     enable_testing()
     include(CTest)
