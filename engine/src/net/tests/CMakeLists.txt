@@ -2,6 +2,7 @@ add_executable(net_tests
     test_media_bridge.cpp
     test_codec_session.cpp
     test_audio_transcoder.cpp
+    test_dtmf_pt_relay.cpp
 )
 
 target_include_directories(net_tests PRIVATE
