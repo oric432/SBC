@@ -26,6 +26,7 @@ void SbcApp::init() {
     Settings settings = init_settings();
     init_routes(settings);
     PjsipConfig config = init_pjsip(settings);
+    init_pjmedia();
     init_context(config);
     init_signal_handlers();
 }
@@ -74,10 +75,17 @@ PjsipConfig SbcApp::init_pjsip(const Settings& settings) {
     return config;
 }
 
+void SbcApp::init_pjmedia() {
+    if (auto res = pjmedia_endpoint_.init(); !res) {
+        Log::crash_error(res.error().message());
+    }
+}
+
 void SbcApp::init_context(const PjsipConfig& config) {
     ctx_.endpt_ = stack_.endpt();
     ctx_.config_ = config;
     ctx_.module_id_ = stack_.module_id();
+    ctx_.pjmedia_endpoint_ = &pjmedia_endpoint_;
 
     stack_.set_router(&router_);
 }
