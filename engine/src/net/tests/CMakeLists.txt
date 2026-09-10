@@ -3,6 +3,7 @@ add_executable(net_tests
     test_codec_session.cpp
     test_audio_transcoder.cpp
     test_dtmf_pt_relay.cpp
+    test_transcoded_rtp_stream.cpp
 )
 
 target_include_directories(net_tests PRIVATE

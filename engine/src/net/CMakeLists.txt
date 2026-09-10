@@ -6,6 +6,7 @@ add_library(net STATIC
     rtp/PjmediaEndpoint.cpp
     rtp/CodecSession.cpp
     rtp/AudioTranscoder.cpp
+    rtp/TranscodedRtpStream.cpp
 )
 target_compile_definitions(net PRIVATE RTPCPP_USE_BOOST_ASIO)
 
