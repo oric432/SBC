@@ -105,7 +105,24 @@ void SbcApp::run() {
 
     // Keep the io_context alive even when no RTP sessions are open yet.
     auto work_guard = boost::asio::make_work_guard(ioc_);
-    std::thread asio_thread{[this] { ioc_.run(); }};
+    std::thread asio_thread{[this] {
+        // The RTP relay loop calls into pjmedia (AudioTranscoder's codec/
+        // resampler calls, on this thread) whenever a call is transcoding —
+        // pjlib asserts if a pjlib/pjmedia call is made from a thread it
+        // never saw registered, and pj_init() (called on the main thread in
+        // init_pjsip()) only auto-registers its own caller.
+        pj_thread_desc desc;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
+        pj_bzero(desc, sizeof(desc));
+        // NOLINTNEXTLINE(misc-const-correctness) - pj_thread_register() fills it in via &thread
+        pj_thread_t* thread = nullptr;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
+        const pj_status_t status = pj_thread_register("rtp-relay", desc, &thread);
+        if (status != PJ_SUCCESS) {
+            Log::app()->error("failed to register RTP relay thread with pjlib ({})", status);
+        }
+        ioc_.run();
+    }};
 
     Log::app()->info("SBC running: SIP on {}:{}", ctx_.config_.bind_ip_, ctx_.config_.sip_port_);
 
