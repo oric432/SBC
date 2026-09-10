@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <utility>
 #include <pjsip_ua.h>
 
 #include "sip/call/call_manager.hpp"
@@ -77,7 +78,7 @@ RouteResolution RealSetupActions::resolve_route() {
         return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
     }
 
-    if (route->sip_address == ctx->config_.local_ip_ && route->port == static_cast<int>(ctx->config_.sip_port_)) {
+    if (route->sip_address == ctx->config_.local_ip_ && std::cmp_equal(route->port, ctx->config_.sip_port_)) {
         // The routing table points this request straight back at this
         // engine's own listening address. Max-Forwards decrementing alone is
         // a fallback net (it still bounds a loop that hops through other

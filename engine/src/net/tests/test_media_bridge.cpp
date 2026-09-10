@@ -18,6 +18,9 @@ constexpr unsigned short kUnreachableTestPort = 12345;
 constexpr auto kShortInactivityTimeout = 20ms;
 constexpr auto kExpiryRunWindow = 60ms;
 constexpr auto kActivityDelay = 25ms;
+// Version 2, no padding/extension/CSRC (RFC 3550 5.1) -- the rest of the
+// dummy packet's content doesn't matter for these relay tests.
+constexpr std::uint8_t kRtpVersion2FirstByte = 0x80;
 } // namespace
 
 TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
@@ -45,23 +48,39 @@ TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
     bridge->start_bridge_loop();
 
     // Send dummy RTP packet from caller to bridge's Leg A
-    std::vector<uint8_t> dummy_packet =
-        {0x80, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 'H', 'e', 'l', 'l', 'o'};
-    udp::endpoint bridge_leg_a_ep(make_address("127.0.0.1"), leg_a_port.value());
+    const std::vector<uint8_t> dummy_packet = {
+        kRtpVersion2FirstByte,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        'H',
+        'e',
+        'l',
+        'l',
+        'o'};
+    const udp::endpoint bridge_leg_a_ep(make_address("127.0.0.1"), leg_a_port.value());
     caller_sock.send_to(buffer(dummy_packet), bridge_leg_a_ep);
 
     // Async receive on callee socket
     bool received = false;
+    boost::system::error_code recv_errc;
+    std::size_t recv_bytes = 0;
     std::vector<uint8_t> recv_buf(kReceiveBufferSize);
     udp::endpoint recv_ep;
     callee_sock.async_receive_from(
         buffer(recv_buf),
         recv_ep,
         [&](const boost::system::error_code& errc, std::size_t bytes_recvd) {
-            REQUIRE(!errc);
-            REQUIRE(bytes_recvd == dummy_packet.size());
-            // The bridge sends from Leg B to Callee.
-            REQUIRE(recv_ep.port() == leg_b_port.value());
+            recv_errc = errc;
+            recv_bytes = bytes_recvd;
             received = true;
         });
 
@@ -69,6 +88,10 @@ TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
     ioc.run_for(kRelayRunWindow);
 
     REQUIRE(received == true);
+    REQUIRE(!recv_errc);
+    REQUIRE(recv_bytes == dummy_packet.size());
+    // The bridge sends from Leg B to Callee.
+    REQUIRE(recv_ep.port() == leg_b_port.value());
 }
 
 TEST_CASE("MediaBridge close() succeeds even when neither leg was ever bound", "[MediaBridge]") {
@@ -112,9 +135,25 @@ TEST_CASE("MediaBridge reports relay send errors via the error handler", "[Media
 
     bridge->start_bridge_loop();
 
-    std::vector<uint8_t> dummy_packet =
-        {0x80, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 'H', 'e', 'l', 'l', 'o'};
-    udp::endpoint bridge_leg_a_ep(make_address("127.0.0.1"), leg_a_port.value());
+    const std::vector<uint8_t> dummy_packet = {
+        kRtpVersion2FirstByte,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        'H',
+        'e',
+        'l',
+        'l',
+        'o'};
+    const udp::endpoint bridge_leg_a_ep(make_address("127.0.0.1"), leg_a_port.value());
     caller_sock.send_to(buffer(dummy_packet), bridge_leg_a_ep);
 
     ioc.run_for(kRelayRunWindow);
