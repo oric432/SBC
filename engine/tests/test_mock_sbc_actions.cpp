@@ -18,8 +18,8 @@ TEST_CASE("Mock setup actions record calls and reset", "[sbc_mock]") {
 
 TEST_CASE("Mock dialog and options actions record calls", "[sbc_mock]") {
     MockDialogActions dialog_actions;
-    dialog_actions.forward_reinvite("v=0\r\n");
-    REQUIRE(dialog_actions.was_called("forward_reinvite:5B"));
+    dialog_actions.start_exchange("v=0\r\n");
+    REQUIRE(dialog_actions.was_called("start_exchange:5B"));
 
     MockOptionsActions options_actions;
     options_actions.send_options_response();

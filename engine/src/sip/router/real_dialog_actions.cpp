@@ -33,6 +33,13 @@ void end_session(pjsip_inv_session* inv, int code, const char* what) {
     }
 }
 
+ExchangeOutcome finish_exchange(CallSession& session, ExchangeOutcome outcome) {
+    if (outcome != ExchangeOutcome::kPending) {
+        session.release_exchange();
+    }
+    return outcome;
+}
+
 } // namespace
 
 void RealDialogActions::send_200_ok_to_bye_sender() {
@@ -55,29 +62,41 @@ void RealDialogActions::forward_bye_to_other_leg(bool from_caller) {
         recipient_uri);
 }
 
-void RealDialogActions::forward_reinvite([[maybe_unused]] const std::string& sdp) {
-    // Out of Stage 1 scope.
-    Log::call()->warn("[{}] re-INVITE forwarding not implemented", session_.call_id());
-}
-
-void RealDialogActions::reject_reinvite_488() {
-    Log::call()->warn("[{}] re-INVITE rejected (488): not implemented", session_.call_id());
+ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer) {
+    if (!session_.create_exchange(session_.outbound_destination(), std::nullopt)) {
+        return ExchangeOutcome::kRolledBack;
+    }
+    return finish_exchange(session_, session_.exchange()->start(offer));
 }
 
 void RealDialogActions::reject_reinvite_491_request_pending() {
     Log::call()->warn("[{}] re-INVITE rejected (491): not implemented", session_.call_id());
 }
 
-void RealDialogActions::forward_reinvite_200_ok([[maybe_unused]] const std::string& sdp) {
-    Log::call()->warn("[{}] re-INVITE 200 OK forwarding not implemented", session_.call_id());
+ExchangeOutcome RealDialogActions::receive_exchange_answer(const std::string& answer) {
+    return session_.exchange() != nullptr ? finish_exchange(session_, session_.exchange()->receive_answer(answer))
+                                          : ExchangeOutcome::kFailed;
 }
 
-void RealDialogActions::forward_reinvite_rejection([[maybe_unused]] int status_code) {
-    Log::call()->warn("[{}] re-INVITE rejection forwarding not implemented", session_.call_id());
+ExchangeOutcome RealDialogActions::reject_exchange(int status_code) {
+    return session_.exchange() != nullptr ? finish_exchange(session_, session_.exchange()->reject(status_code))
+                                          : ExchangeOutcome::kFailed;
 }
 
-void RealDialogActions::forward_ack_and_commit_media() {
-    Log::call()->debug("[{}] re-INVITE ACK: media unchanged (Stage 1)", session_.call_id());
+ExchangeOutcome RealDialogActions::confirm_exchange() {
+    return session_.exchange() != nullptr ? finish_exchange(session_, session_.exchange()->confirm())
+                                          : ExchangeOutcome::kFailed;
+}
+
+ExchangeOutcome RealDialogActions::exchange_confirmation_timeout() {
+    return session_.exchange() != nullptr ? finish_exchange(session_, session_.exchange()->confirmation_timeout())
+                                          : ExchangeOutcome::kFailed;
+}
+
+void RealDialogActions::stop_exchange() {
+    if (session_.exchange() != nullptr) {
+        finish_exchange(session_, session_.exchange()->stop());
+    }
 }
 
 void RealDialogActions::terminate_call() {

@@ -67,21 +67,27 @@ TEST_CASE("DialogSm reinvite happy path", "[dialog_sm]") {
     // Expected: Transition to Reinviting, forward to callee
     machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
-    REQUIRE(actions.was_called("forward_reinvite"));
+    REQUIRE(actions.was_called("start_exchange"));
 
     // Step 2: Receive 200 OK from callee with answer
     // Expected: Transition to WaitingForReinviteAck, forward 200 OK to caller
     actions.reset();
     machine.process_event(ReinviteAccepted{kValidSdp});
     REQUIRE(machine.is(Sml::state<WaitingForReinviteAck>));
-    REQUIRE(actions.was_called("forward_reinvite_200_ok"));
+    REQUIRE(actions.was_called("receive_exchange_answer"));
 
     // Step 3: Receive ACK from caller
     // Expected: Transition to Active, commit new media parameters
     actions.reset();
     machine.process_event(AckReceived{});
     REQUIRE(machine.is(Sml::state<Active>));
-    REQUIRE(actions.was_called("forward_ack_and_commit_media"));
+    REQUIRE(actions.was_called("confirm_exchange"));
+
+    // A later re-INVITE starts a distinct exchange while the dialog SM is reused.
+    actions.reset();
+    machine.process_event(ReinviteReceived{kValidSdp});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+    REQUIRE(actions.was_called("start_exchange"));
 }
 
 // Test: Callee rejects re-INVITE request
@@ -99,20 +105,21 @@ TEST_CASE("DialogSm reinvite rejected", "[dialog_sm]") {
     actions.reset();
     machine.process_event(ReinviteRejected{kStatusCodeCallRejected});
     REQUIRE(machine.is(Sml::state<Active>));
-    REQUIRE(actions.was_called("forward_reinvite_rejection:480"));
+    REQUIRE(actions.was_called("reject_exchange:480"));
 }
 
 // Test: Invalid SDP in re-INVITE from caller
 // Verifies: Dialog SM rejects re-INVITE with unsupported media
 TEST_CASE("DialogSm reinvite invalid SDP", "[dialog_sm]") {
     MockDialogActions actions;
+    actions.start_result_ = ExchangeOutcome::kRolledBack;
     TestMachine machine{actions};
 
     // Receive re-INVITE with invalid/unsupported SDP
     // Expected: Remain in Active state, reject with 488 Not Acceptable Here
     machine.process_event(ReinviteReceived{"malformed"});
     REQUIRE(machine.is(Sml::state<Active>));
-    REQUIRE(actions.was_called("reject_reinvite_488"));
+    REQUIRE(actions.was_called("start_exchange"));
 }
 
 // Test: Two re-INVITEs arrive at same time (collision)
@@ -148,6 +155,7 @@ TEST_CASE("DialogSm bye during reinvite", "[dialog_sm]") {
     actions.reset();
     machine.process_event(ByeReceived{true});
     REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("stop_exchange"));
     REQUIRE(actions.was_called("send_200_ok_to_bye_sender"));
     REQUIRE(actions.was_called("forward_bye_to_other_leg"));
 }
@@ -168,6 +176,7 @@ TEST_CASE("DialogSm reinvite ACK timeout", "[dialog_sm]") {
     actions.reset();
     machine.process_event(AckTimeout{});
     REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("exchange_confirmation_timeout"));
     REQUIRE(actions.was_called("terminate_call"));
 }
 
@@ -191,6 +200,7 @@ TEST_CASE("DialogSm call error", "[dialog_sm]") {
 // Verifies: Dialog SM terminates call if answer SDP is incompatible
 TEST_CASE("DialogSm reinvite accepted with invalid SDP", "[dialog_sm]") {
     MockDialogActions actions;
+    actions.answer_result_ = ExchangeOutcome::kFailed;
     TestMachine machine{actions};
 
     // Re-INVITE pending
