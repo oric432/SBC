@@ -35,7 +35,6 @@ public:
     [[nodiscard]] bool is_active() const;
     [[nodiscard]] bool is_terminating() const;
     [[nodiscard]] bool is_reinviting() const;
-    [[nodiscard]] bool is_waiting_for_reinvite_ack() const;
 
 private:
     struct Impl;

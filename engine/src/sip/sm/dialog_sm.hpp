@@ -12,7 +12,6 @@ namespace Sml = boost::sml;
 // State tags
 struct Active {};
 struct Reinviting {};
-struct WaitingForReinviteAck {};
 struct Terminating {};
 struct Terminated {};
 struct DialogDone {};
@@ -41,24 +40,6 @@ struct DialogSm {
 
         auto handle_reinvite_collision = [](Actions& actions) { actions.reject_reinvite_491_request_pending(); };
 
-        auto handle_reinvite_accepted =
-            [publish_outcome](Actions& actions, const ReinviteAccepted& evt, DialogSelfFireQueue result) {
-                publish_outcome(actions.receive_exchange_answer(evt.answer_sdp_), result);
-            };
-
-        auto handle_reinvite_rejected =
-            [publish_outcome](Actions& actions, const ReinviteRejected& evt, DialogSelfFireQueue result) {
-                publish_outcome(actions.reject_exchange(evt.status_code_), result);
-            };
-
-        auto handle_ack = [publish_outcome](Actions& actions, DialogSelfFireQueue result) {
-            publish_outcome(actions.confirm_exchange(), result);
-        };
-
-        auto handle_ack_timeout = [publish_outcome](Actions& actions, DialogSelfFireQueue result) {
-            publish_outcome(actions.exchange_confirmation_timeout(), result);
-        };
-
         auto committed = [](const Dialog::ExchangeFinished& event) {
             return event.outcome_ == ExchangeOutcome::kCommitted;
         };
@@ -83,21 +64,10 @@ struct DialogSm {
              Sml::state<Active>                + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
              // Reinviting state
-             Sml::state<Reinviting>            + (Sml::event<ReinviteAccepted>                                                      / handle_reinvite_accepted)   = Sml::state<WaitingForReinviteAck>,
-             Sml::state<Reinviting>            + (Sml::event<ReinviteRejected>                                                      / handle_reinvite_rejected),
              Sml::state<Reinviting>            + (Sml::event<ReinviteReceived>                                                      / handle_reinvite_collision)  = Sml::state<Reinviting>,
-             Sml::state<Reinviting>            + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<Terminating>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[committed]                                  = Sml::state<Active>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[rolled_back]                                = Sml::state<Active>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[failed] / handle_call_error                 = Sml::state<Terminating>,
-
-             // WaitingForReinviteAck state
-             Sml::state<WaitingForReinviteAck> + (Sml::event<AckReceived>                                                           / handle_ack),
-             Sml::state<WaitingForReinviteAck> + (Sml::event<AckTimeout>                                                            / handle_ack_timeout),
-             Sml::state<WaitingForReinviteAck> + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<Terminating>,
-             Sml::state<WaitingForReinviteAck> + Sml::event<Dialog::ExchangeFinished>[committed]                                  = Sml::state<Active>,
-             Sml::state<WaitingForReinviteAck> + Sml::event<Dialog::ExchangeFinished>[rolled_back]                                = Sml::state<Active>,
-             Sml::state<WaitingForReinviteAck> + Sml::event<Dialog::ExchangeFinished>[failed] / handle_call_error                 = Sml::state<Terminating>,
 
              // Terminating state
              Sml::state<Terminating>           + (Sml::event<CallEnded>                                                              / handle_call_ended)          = Sml::state<Terminated>,

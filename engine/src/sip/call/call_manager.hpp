@@ -56,7 +56,7 @@ public:
         std::chrono::steady_clock::duration interval);
 
     // Sends a BYE to both legs of every call whose dialog is confirmed and
-    // still up (Active/Reinviting/WaitingForReinviteAck), so peers aren't left
+    // still up (Active/Reinviting), so peers aren't left
     // hanging when the process shuts down. Calls still mid-setup (no answer
     // yet) are left alone here.
     void terminate_established_calls();

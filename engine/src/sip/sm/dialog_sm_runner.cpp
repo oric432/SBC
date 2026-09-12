@@ -32,10 +32,7 @@ bool DialogSmRunner::process_event(const Event& event) {
 
 template bool DialogSmRunner::process_event(const ByeReceived&);
 template bool DialogSmRunner::process_event(const ReinviteReceived&);
-template bool DialogSmRunner::process_event(const ReinviteAccepted&);
-template bool DialogSmRunner::process_event(const ReinviteRejected&);
-template bool DialogSmRunner::process_event(const AckReceived&);
-template bool DialogSmRunner::process_event(const AckTimeout&);
+template bool DialogSmRunner::process_event(const Dialog::ExchangeFinished&);
 template bool DialogSmRunner::process_event(const CallEnded&);
 template bool DialogSmRunner::process_event(const CallError&);
 
@@ -49,10 +46,6 @@ bool DialogSmRunner::is_terminating() const {
 
 bool DialogSmRunner::is_reinviting() const {
     return impl_->sm_.is(Sml::state<Reinviting>);
-}
-
-bool DialogSmRunner::is_waiting_for_reinvite_ack() const {
-    return impl_->sm_.is(Sml::state<WaitingForReinviteAck>);
 }
 
 } // namespace SbcEngine
