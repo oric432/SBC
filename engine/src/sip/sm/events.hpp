@@ -38,6 +38,12 @@ struct AckTimeout {};
 struct Cleanup {};
 
 // Dialog SM Events
+namespace Dialog {
+struct ExchangeFinished {
+    ExchangeOutcome outcome_;
+};
+} // namespace Dialog
+
 struct ByeReceived {
     bool from_caller_ = true;
 };
