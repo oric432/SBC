@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="{{ scenario_name }}">
+  <recv request="INVITE" crlf="true"></recv>
+
+  <send>
+    <![CDATA[
+      SIP/2.0 180 Ringing
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <!-- caller.xml.j2's own offer only ever lists PCMU, so answering G722 here
+       (valid: the SBC's callee-facing offer always includes G722 too, see
+       Sdp::restrict_audio_codecs()) forces the two legs onto different
+       codecs — caller ends up on PCMU, callee on G722 — exercising
+       MediaBridge's transcode path (issue #177) instead of pure passthrough. -->
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 9
+      a=rtpmap:9 G722/8000
+    ]]>
+  </send>
+
+  <recv request="ACK" rtd="true" crlf="true"></recv>
+
+  <!-- g722.pcap is g711a.pcap's exact audio content re-encoded to real
+       G.722 (see ../README.md) — MediaBridge decodes/encodes by each leg's
+       *negotiated* codec, not by inspecting an incoming packet's own
+       payload-type byte, so this leg must actually send G.722 for a manual
+       listen test on the transcoded output to be meaningful. No pause
+       before the BYE recv, for the same reason as callee.xml.j2. -->
+  <nop>
+    <action>
+      <exec play_pcap_audio="{{ pcap_path }}"/>
+    </action>
+  </nop>
+
+  <recv request="BYE" crlf="true"></recv>
+
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+    ]]>
+  </send>
+</scenario>

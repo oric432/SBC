@@ -12,6 +12,10 @@
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/ip/udp.hpp>
 
+#include "core/utils/error.hpp"
+#include "net/rtp/PjmediaEndpoint.hpp"
+#include "protocols/SupportedCodecs.hpp"
+
 namespace SbcEngine {
 
 // Identifies which of the bridge's two RTP sockets an error occurred on.
@@ -29,6 +33,15 @@ std::string_view to_string(RelayOp operation);
 // acting on. Runs on the bridge's own executor, synchronously inside the
 // relay loop's completion handler — keep it fast and non-blocking.
 using MediaBridgeErrorHandler = std::function<void(RelayLeg leg, RelayOp operation, std::error_code error)>;
+
+// One leg's negotiated audio codec plus (if the leg's offer/answer included
+// one) its telephone-event payload type — both decided independently per
+// leg by SDP negotiation (issue #172), and both potentially different from
+// the other leg's.
+struct LegCodec {
+    Protocols::SupportedCodec audio_;
+    std::optional<std::uint8_t> dtmf_pt_;
+};
 
 class MediaBridge : public std::enable_shared_from_this<MediaBridge> {
 public:
@@ -62,6 +75,22 @@ public:
     // The timestamp is written by the RTP executor and may safely be read by
     // the SIP thread. It is the default time point until the relay is started.
     [[nodiscard]] std::chrono::steady_clock::time_point last_packet_time() const;
+
+    // Configures per-leg codec/DTMF-PT info for the call. Opens pjmedia codec
+    // sessions (and a resampler, if the two legs' audio clock rates differ)
+    // only when the two legs' codec names don't match — passthrough calls pay
+    // no pjmedia cost. Must be called before start_bridge_loop() (same
+    // not-thread-safe-against-a-running-loop constraint as
+    // set_error_handler()) and before any SIP response has committed the
+    // call, so a failure here can still be answered with an error response
+    // instead of one that's already gone out. `endpoint` is used transiently
+    // to open codec/resampler resources — MediaBridge does not retain it.
+    //
+    // Returns the project's Error type rather than std::error_code (unlike
+    // the rest of this class): failures here originate from pjmedia codec/
+    // resampler allocation, not socket I/O — see AGENTS.md's error-handling
+    // guidance on preferring the project's own error type for that.
+    VoidResult configure_legs(PjmediaEndpoint& endpoint, LegCodec leg_a, LegCodec leg_b);
 
     void start_bridge_loop();
 

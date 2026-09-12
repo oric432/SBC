@@ -13,7 +13,14 @@ from jinja2 import Environment, FileSystemLoader
 from ..conftest import RouteRule
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
-_PCAP_PATH = Path(__file__).parent / "g711a.pcap"
+_PCAP_PATHS = {
+    "g711a": Path(__file__).parent / "g711a.pcap",
+    # g711a.pcap re-encoded to real G.722 (same SSRC/seq/timestamps/packet
+    # sizes) - see README.md for the regeneration command. Used by the
+    # transcode scenario, which needs the callee to actually send G.722 for
+    # MediaBridge's decode/resample/encode path to be meaningfully exercised.
+    "g722": Path(__file__).parent / "g722.pcap",
+}
 
 
 @dataclass(frozen=True)
@@ -72,8 +79,8 @@ def _jinja_env() -> Environment:
 
 @pytest.fixture
 def render_scenario(_jinja_env: Environment, tmp_path: Path) -> Callable[..., Path]:
-    def _render(template_name: str, **params: object) -> Path:
-        rendered = _jinja_env.get_template(template_name).render(pcap_path=_PCAP_PATH, **params)
+    def _render(template_name: str, *, pcap: str = "g711a", **params: object) -> Path:
+        rendered = _jinja_env.get_template(template_name).render(pcap_path=_PCAP_PATHS[pcap], **params)
         out_path = tmp_path / template_name.removesuffix(".j2")
         out_path.write_text(rendered)
         return out_path
