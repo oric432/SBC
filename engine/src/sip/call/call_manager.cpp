@@ -90,7 +90,7 @@ void CallManager::process_pending_rtp_inactivity() {
             }
 
             auto& dialog = session->dialog_sm();
-            if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
+            if (dialog.is_active() || dialog.is_reinviting()) {
                 Log::call()->warn("[{}] removing session because the RTP inactivity timeout expired", call_id);
                 dialog.process_event(CallError{});
             }
@@ -102,7 +102,7 @@ void CallManager::terminate_established_calls() {
     for (auto& [call_id, session] : sessions_) {
         (void)call_id;
         auto& dialog = session->dialog_sm();
-        if (dialog.is_active() || dialog.is_reinviting() || dialog.is_waiting_for_reinvite_ack()) {
+        if (dialog.is_active() || dialog.is_reinviting()) {
             dialog.process_event(CallError{});
         }
     }
