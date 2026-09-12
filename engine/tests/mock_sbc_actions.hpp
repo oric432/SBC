@@ -57,10 +57,6 @@ class MockDialogActions : public IDialogContext {
 public:
     std::vector<std::string> calls_;
     ExchangeOutcome start_result_ = ExchangeOutcome::kPending;
-    ExchangeOutcome answer_result_ = ExchangeOutcome::kPending;
-    ExchangeOutcome rejection_result_ = ExchangeOutcome::kRolledBack;
-    ExchangeOutcome confirmation_result_ = ExchangeOutcome::kCommitted;
-    ExchangeOutcome confirmation_timeout_result_ = ExchangeOutcome::kFailed;
 
     void send_200_ok_to_bye_sender() override { calls_.emplace_back("send_200_ok_to_bye_sender"); }
 
@@ -69,22 +65,6 @@ public:
     ExchangeOutcome start_exchange(const std::string& sdp) override {
         calls_.push_back("start_exchange:" + std::to_string(sdp.length()) + "B");
         return start_result_;
-    }
-    ExchangeOutcome receive_exchange_answer(const std::string& sdp) override {
-        calls_.push_back("receive_exchange_answer:" + std::to_string(sdp.length()) + "B");
-        return answer_result_;
-    }
-    ExchangeOutcome reject_exchange(int status_code) override {
-        calls_.push_back("reject_exchange:" + std::to_string(status_code));
-        return rejection_result_;
-    }
-    ExchangeOutcome confirm_exchange() override {
-        calls_.emplace_back("confirm_exchange");
-        return confirmation_result_;
-    }
-    ExchangeOutcome exchange_confirmation_timeout() override {
-        calls_.emplace_back("exchange_confirmation_timeout");
-        return confirmation_timeout_result_;
     }
     void stop_exchange() override { calls_.emplace_back("stop_exchange"); }
     void reject_reinvite_491_request_pending() override { calls_.emplace_back("reject_reinvite_491_request_pending"); }

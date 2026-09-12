@@ -133,14 +133,14 @@ void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_da
     case PJSIP_INV_STATE_CONNECTING:
         Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_CONNECTING", session_.call_id());
         if (is_callee_leg && session_.exchange() != nullptr) {
-            finish_exchange(session_, session_.exchange()->receive_answer(extract_sdp(rdata)));
+            finish_exchange(session_, receive_exchange_answer(extract_sdp(rdata)));
         }
         break;
 
     case PJSIP_INV_STATE_CONFIRMED:
         Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_CONFIRMED", session_.call_id());
         if (!is_callee_leg && session_.exchange() != nullptr) {
-            finish_exchange(session_, session_.exchange()->confirm());
+            finish_exchange(session_, confirm_exchange());
         }
         break;
 
@@ -160,14 +160,14 @@ void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_da
         if (dialog.is_reinviting()) {
             if ((session_.exchange() != nullptr) && session_.exchange()->awaiting_confirmation()) {
                 if (is_caller_leg && cause == PJSIP_SC_REQUEST_TIMEOUT) {
-                    finish_exchange(session_, session_.exchange()->confirmation_timeout());
+                    finish_exchange(session_, exchange_confirmation_timeout());
                 }
                 else {
                     finish_exchange(session_, ExchangeOutcome::kFailed);
                 }
             }
             else if (is_callee_leg && cause >= kMinFinalErrorCode && session_.exchange() != nullptr) {
-                finish_exchange(session_, session_.exchange()->reject(cause));
+                finish_exchange(session_, reject_exchange(cause));
             }
             else {
                 finish_exchange(session_, ExchangeOutcome::kFailed);

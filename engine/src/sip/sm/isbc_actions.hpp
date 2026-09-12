@@ -85,10 +85,6 @@ public:
 
     // One disposable offer-answer exchange is created for each re-INVITE.
     virtual ExchangeOutcome start_exchange(const std::string& offer) = 0;
-    virtual ExchangeOutcome receive_exchange_answer(const std::string& answer) = 0;
-    virtual ExchangeOutcome reject_exchange(int status_code) = 0;
-    virtual ExchangeOutcome confirm_exchange() = 0;
-    virtual ExchangeOutcome exchange_confirmation_timeout() = 0;
     virtual void stop_exchange() = 0;
     virtual void reject_reinvite_491_request_pending() = 0;
 

@@ -22,10 +22,6 @@ public:
     void forward_bye_to_other_leg(bool from_caller) override;
 
     ExchangeOutcome start_exchange(const std::string& offer) override;
-    ExchangeOutcome receive_exchange_answer(const std::string& answer) override;
-    ExchangeOutcome reject_exchange(int status_code) override;
-    ExchangeOutcome confirm_exchange() override;
-    ExchangeOutcome exchange_confirmation_timeout() override;
     void stop_exchange() override;
     void reject_reinvite_491_request_pending() override;
 
@@ -33,6 +29,11 @@ public:
     void cleanup() override;
 
 private:
+    ExchangeOutcome receive_exchange_answer(const std::string& answer);
+    ExchangeOutcome reject_exchange(int status_code);
+    ExchangeOutcome confirm_exchange();
+    ExchangeOutcome exchange_confirmation_timeout();
+
     CallSession& session_;
 };
 
