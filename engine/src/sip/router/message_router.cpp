@@ -31,7 +31,7 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
         return;
     }
     if (session->setup_sm().is_established()) {
-        session->dialog_actions().on_leg_state_changed(inv);
+        session->dialog_actions().on_leg_state_changed(inv, request);
     }
     else if (!session->setup_sm().is_done()) {
         session->setup_actions().on_leg_state_changed(inv, request);

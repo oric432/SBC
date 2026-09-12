@@ -4,12 +4,14 @@
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
 
 namespace {
 constexpr const char* kSessionTimerExpiredCause = "No session refresh received.";
+constexpr int kMinFinalErrorCode = 300;
 bool is_session_timer_expiry(const pjsip_inv_session* inv) {
     return inv->cause == PJSIP_SC_REQUEST_TIMEOUT && pj_stricmp2(&inv->cause_text, kSessionTimerExpiredCause) == 0;
 }
@@ -33,11 +35,12 @@ void end_session(pjsip_inv_session* inv, int code, const char* what) {
     }
 }
 
-ExchangeOutcome finish_exchange(CallSession& session, ExchangeOutcome outcome) {
-    if (outcome != ExchangeOutcome::kPending) {
-        session.release_exchange();
+void finish_exchange(CallSession& session, ExchangeOutcome outcome) {
+    if (outcome == ExchangeOutcome::kPending) {
+        return;
     }
-    return outcome;
+    session.release_exchange();
+    session.dialog_sm().process_event(Dialog::ExchangeFinished{outcome});
 }
 
 } // namespace
@@ -66,7 +69,11 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer) {
     if (!session_.create_exchange(session_.outbound_destination(), std::nullopt)) {
         return ExchangeOutcome::kRolledBack;
     }
-    return finish_exchange(session_, session_.exchange()->start(offer));
+    const auto outcome = session_.exchange()->start(offer);
+    if (outcome != ExchangeOutcome::kPending) {
+        session_.release_exchange();
+    }
+    return outcome;
 }
 
 void RealDialogActions::reject_reinvite_491_request_pending() {
@@ -74,28 +81,25 @@ void RealDialogActions::reject_reinvite_491_request_pending() {
 }
 
 ExchangeOutcome RealDialogActions::receive_exchange_answer(const std::string& answer) {
-    return session_.exchange() != nullptr ? finish_exchange(session_, session_.exchange()->receive_answer(answer))
-                                          : ExchangeOutcome::kFailed;
+    return session_.exchange() != nullptr ? session_.exchange()->receive_answer(answer) : ExchangeOutcome::kFailed;
 }
 
 ExchangeOutcome RealDialogActions::reject_exchange(int status_code) {
-    return session_.exchange() != nullptr ? finish_exchange(session_, session_.exchange()->reject(status_code))
-                                          : ExchangeOutcome::kFailed;
+    return session_.exchange() != nullptr ? session_.exchange()->reject(status_code) : ExchangeOutcome::kFailed;
 }
 
 ExchangeOutcome RealDialogActions::confirm_exchange() {
-    return session_.exchange() != nullptr ? finish_exchange(session_, session_.exchange()->confirm())
-                                          : ExchangeOutcome::kFailed;
+    return session_.exchange() != nullptr ? session_.exchange()->confirm() : ExchangeOutcome::kFailed;
 }
 
 ExchangeOutcome RealDialogActions::exchange_confirmation_timeout() {
-    return session_.exchange() != nullptr ? finish_exchange(session_, session_.exchange()->confirmation_timeout())
-                                          : ExchangeOutcome::kFailed;
+    return session_.exchange() != nullptr ? session_.exchange()->confirmation_timeout() : ExchangeOutcome::kFailed;
 }
 
 void RealDialogActions::stop_exchange() {
     if (session_.exchange() != nullptr) {
-        finish_exchange(session_, session_.exchange()->stop());
+        session_.exchange()->stop();
+        session_.release_exchange();
     }
 }
 
@@ -114,31 +118,74 @@ void RealDialogActions::cleanup() {
     Log::call()->info("[{}] dialog cleanup complete", session_.call_id());
 }
 
-void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv) {
-    if (inv->state != PJSIP_INV_STATE_DISCONNECTED) {
+void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
+    auto& dialog = session_.dialog_sm();
+    const bool is_callee_leg = inv == session_.inv_callee();
+    if ((session_.exchange() != nullptr) && session_.exchange()->is_processing()) {
         return;
     }
-    auto& dialog = session_.dialog_sm();
-    const bool is_caller_leg = inv == session_.inv_caller();
 
-    if (is_session_timer_expiry(inv)) {
-        Log::call()->warn(
-            "[{}] RFC 4028 session timer expired on {} leg; PJSIP sent BYE because the session refresh was missing "
-            "or unanswered",
-            session_.call_id(),
-            is_caller_leg ? "caller" : "callee");
+    switch (inv->state) {
+    case PJSIP_INV_STATE_EARLY:
+        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_EARLY", session_.call_id());
+        break;
+
+    case PJSIP_INV_STATE_CONNECTING:
+        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_CONNECTING", session_.call_id());
+        if (is_callee_leg && session_.exchange() != nullptr) {
+            finish_exchange(session_, session_.exchange()->receive_answer(extract_sdp(rdata)));
+        }
+        break;
+
+    case PJSIP_INV_STATE_CONFIRMED:
+        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_CONFIRMED", session_.call_id());
+        if (!is_callee_leg && session_.exchange() != nullptr) {
+            finish_exchange(session_, session_.exchange()->confirm());
+        }
+        break;
+
+    case PJSIP_INV_STATE_DISCONNECTED: {
+        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
+        const bool is_caller_leg = !is_callee_leg;
+        const int cause = static_cast<int>(inv->cause);
+
+        if (is_session_timer_expiry(inv)) {
+            Log::call()->warn(
+                "[{}] RFC 4028 session timer expired on {} leg; PJSIP sent BYE because the session refresh was "
+                "missing or unanswered",
+                session_.call_id(),
+                is_caller_leg ? "caller" : "callee");
+        }
+
+        if (dialog.is_reinviting()) {
+            if ((session_.exchange() != nullptr) && session_.exchange()->awaiting_confirmation()) {
+                if (is_caller_leg && cause == PJSIP_SC_REQUEST_TIMEOUT) {
+                    finish_exchange(session_, session_.exchange()->confirmation_timeout());
+                }
+                else {
+                    finish_exchange(session_, ExchangeOutcome::kFailed);
+                }
+            }
+            else if (is_callee_leg && cause >= kMinFinalErrorCode && session_.exchange() != nullptr) {
+                finish_exchange(session_, session_.exchange()->reject(cause));
+            }
+            else {
+                finish_exchange(session_, ExchangeOutcome::kFailed);
+            }
+            break;
+        }
+
+        if (dialog.is_active()) {
+            dialog.process_event(ByeReceived{is_caller_leg});
+        }
+        else if (dialog.is_terminating()) {
+            dialog.process_event(CallEnded{});
+        }
+        break;
     }
 
-    if (dialog.is_active()) {
-        // First leg to drop initiates teardown of the other.
-        dialog.process_event(ByeReceived{is_caller_leg});
-    }
-    else if (dialog.is_terminating()) {
-        // Second leg finished → the call is fully over. Cleanup{} self-fires
-        // from DialogSm's own action once Terminated is reached.
-        dialog.process_event(CallEnded{});
+    default: break;
     }
 }
-
 
 } // namespace SbcEngine
