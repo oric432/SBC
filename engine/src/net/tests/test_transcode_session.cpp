@@ -9,12 +9,18 @@
 #include "net/rtp/TranscodeSession.hpp"
 #include "net/tests/codec_test_utils.hpp"
 
+#ifndef RTPCPP_USE_BOOST_ASIO
+    #define RTPCPP_USE_BOOST_ASIO
+#endif
+#include "net/rtp/RtpCpp.hpp"
+
 using namespace SbcEngine;
 using namespace boost::asio;
 using namespace boost::asio::ip;
 using namespace std::chrono_literals;
 using SbcEngine::TestPcm::write_sample;
 
+namespace SbcEngine {
 namespace {
 constexpr auto kRunWindow = 250ms;
 
@@ -22,6 +28,7 @@ std::uint8_t packet_payload_type(std::span<const std::uint8_t> pkt) {
     return pkt[1] & 0x7F;
 }
 } // namespace
+} // namespace SbcEngine
 
 TEST_CASE("TranscodeSession::open rejects an unregistered leg codec", "[TranscodeSession]") {
     io_context ioc;
@@ -71,7 +78,7 @@ TEST_CASE("TranscodeSession wires each direction's stream to the destination leg
     auto transcoded = session->transcoder().transcode_a_to_b(encoded);
     REQUIRE(transcoded.has_value());
 
-    std::vector<std::uint8_t> recv_buf(64);
+    std::vector<std::uint8_t> recv_buf(RtpCpp::kMaxRtpPacketSize);
     udp::endpoint from;
     bool received = false;
     recv_towards_b.async_receive_from(buffer(recv_buf), from, [&](const boost::system::error_code& ec, std::size_t n) {

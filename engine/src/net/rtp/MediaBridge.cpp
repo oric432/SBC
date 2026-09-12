@@ -100,10 +100,17 @@ struct MediaBridge::Impl {
             self->impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
 
             const bool from_a = (src_leg == RelayLeg::kLegA);
-            relay_dtmf_pt(
+            const auto dtmf = relay_dtmf_pt(
                 pkt,
                 from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
                 from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_);
+            if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
+                Log::rtp()->trace(
+                    "media bridge: dropping DTMF packet with no destination PT mapping on {}",
+                    to_string(src_leg));
+                Impl::do_relay(std::move(self), src_leg, src, dst, dst_ep);
+                return;
+            }
 
             dst.sender().async_send_pkt(
                 pkt.packet(),
@@ -175,11 +182,24 @@ struct MediaBridge::Impl {
                 Impl::do_transcode_relay(std::move(self), src_leg, src, dst, dst_ep);
             };
 
-            if (auto out_pt = relay_dtmf_pt(
-                    pkt,
-                    from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
-                    from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_)) {
-                out_stream.send_dtmf(*out_pt, pkt.payload(), pkt.get_header().is_marked_, dst_ep, std::move(finish));
+            const auto dtmf = relay_dtmf_pt(
+                pkt,
+                from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
+                from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_);
+            if (dtmf.outcome_ == DtmfRelayOutcome::kRelay) {
+                out_stream.send_dtmf(
+                    dtmf.payload_type_,
+                    pkt.payload(),
+                    pkt.get_header().is_marked_,
+                    dst_ep,
+                    std::move(finish));
+                return;
+            }
+            if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
+                Log::rtp()->trace(
+                    "media bridge: dropping DTMF packet with no destination PT mapping on {}",
+                    to_string(src_leg));
+                Impl::do_transcode_relay(std::move(self), src_leg, src, dst, dst_ep);
                 return;
             }
 

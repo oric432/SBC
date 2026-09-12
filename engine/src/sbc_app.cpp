@@ -1,6 +1,7 @@
 #include "sbc_app.hpp"
 
 #include <csignal>
+#include <cstdlib>
 #include <thread>
 
 #include "core/settings.hpp"
@@ -119,7 +120,12 @@ void SbcApp::run() {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
         const pj_status_t status = pj_thread_register("rtp-relay", desc, &thread);
         if (status != PJ_SUCCESS) {
-            Log::app()->error("failed to register RTP relay thread with pjlib ({})", status);
+            // Unregistered, this thread would still run pjmedia codec/resampler
+            // calls for any transcoding call, tripping pjlib's own assertions —
+            // Log::crash_error() isn't used here since its message is
+            // std::string_view (static literals only) and this one is formatted.
+            Log::app()->critical("failed to register RTP relay thread with pjlib ({})", status);
+            std::quick_exit(EXIT_FAILURE);
         }
         ioc_.run();
     }};

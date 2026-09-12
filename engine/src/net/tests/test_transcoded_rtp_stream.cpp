@@ -17,6 +17,7 @@ using namespace boost::asio;
 using namespace boost::asio::ip;
 using namespace std::chrono_literals;
 
+namespace SbcEngine {
 namespace {
 constexpr auto kRunWindow = 250ms;
 
@@ -53,6 +54,7 @@ std::vector<std::uint8_t> receive_one(io_context& ioc, udp::socket& recv_sock) {
     return recv_buf;
 }
 } // namespace
+} // namespace SbcEngine
 
 TEST_CASE("TranscodedRtpStream sends audio under its own synthesized identity and PT", "[TranscodedRtpStream]") {
     io_context ioc;

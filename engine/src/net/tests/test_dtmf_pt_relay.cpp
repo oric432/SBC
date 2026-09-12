@@ -8,6 +8,7 @@
 
 using namespace SbcEngine;
 
+namespace SbcEngine {
 namespace {
 // Builds a minimal (no payload) RTP packet's wire bytes and parses it into
 // an RtpPacketView, matching how relay_dtmf_pt() is actually fed — from a
@@ -22,13 +23,14 @@ RtpCpp::RtpPacketView parse_packet(std::vector<std::uint8_t>& buffer, std::uint8
     return pkt;
 }
 } // namespace
+} // namespace SbcEngine
 
 TEST_CASE("relay_dtmf_pt passes through ordinary audio untouched", "[DtmfPtRelay]") {
     std::vector<std::uint8_t> buffer;
     auto pkt = parse_packet(buffer, 0 /* PCMU */, false);
 
     auto out = relay_dtmf_pt(pkt, /*src_dtmf_pt=*/std::nullopt, /*dst_dtmf_pt=*/std::uint8_t{100});
-    CHECK_FALSE(out.has_value());
+    CHECK(out.outcome_ == DtmfRelayOutcome::kNotDtmf);
     CHECK(buffer[1] == 0);
 }
 
@@ -37,7 +39,7 @@ TEST_CASE("relay_dtmf_pt ignores a packet whose PT doesn't match the source leg'
     auto pkt = parse_packet(buffer, 0 /* PCMU, not DTMF */, false);
 
     auto out = relay_dtmf_pt(pkt, /*src_dtmf_pt=*/std::uint8_t{101}, /*dst_dtmf_pt=*/std::uint8_t{100});
-    CHECK_FALSE(out.has_value());
+    CHECK(out.outcome_ == DtmfRelayOutcome::kNotDtmf);
     CHECK(buffer[1] == 0);
 }
 
@@ -46,8 +48,8 @@ TEST_CASE("relay_dtmf_pt leaves the PT unchanged when both legs agree on it", "[
     auto pkt = parse_packet(buffer, 101, true);
 
     auto out = relay_dtmf_pt(pkt, /*src_dtmf_pt=*/std::uint8_t{101}, /*dst_dtmf_pt=*/std::uint8_t{101});
-    REQUIRE(out.has_value());
-    CHECK(*out == 101);
+    REQUIRE(out.outcome_ == DtmfRelayOutcome::kRelay);
+    CHECK(out.payload_type_ == 101);
     CHECK((buffer[1] & 0x7F) == 101);
     CHECK((buffer[1] & 0x80) != 0); // marker bit preserved
 }
@@ -57,18 +59,17 @@ TEST_CASE("relay_dtmf_pt rewrites the PT byte in place when the legs' DTMF PTs d
     auto pkt = parse_packet(buffer, 101, true);
 
     auto out = relay_dtmf_pt(pkt, /*src_dtmf_pt=*/std::uint8_t{101}, /*dst_dtmf_pt=*/std::uint8_t{100});
-    REQUIRE(out.has_value());
-    CHECK(*out == 100);
+    REQUIRE(out.outcome_ == DtmfRelayOutcome::kRelay);
+    CHECK(out.payload_type_ == 100);
     CHECK((buffer[1] & 0x7F) == 100);
     CHECK((buffer[1] & 0x80) != 0); // marker bit preserved
 }
 
-TEST_CASE("relay_dtmf_pt falls back to the source PT when the destination leg has no DTMF PT", "[DtmfPtRelay]") {
+TEST_CASE("relay_dtmf_pt drops the packet when the destination leg has no DTMF PT", "[DtmfPtRelay]") {
     std::vector<std::uint8_t> buffer;
     auto pkt = parse_packet(buffer, 101, false);
 
     auto out = relay_dtmf_pt(pkt, /*src_dtmf_pt=*/std::uint8_t{101}, /*dst_dtmf_pt=*/std::nullopt);
-    REQUIRE(out.has_value());
-    CHECK(*out == 101);
-    CHECK(buffer[1] == 101);
+    CHECK(out.outcome_ == DtmfRelayOutcome::kDropUnmapped);
+    CHECK(buffer[1] == 101); // untouched — the caller drops it rather than rewriting or forwarding
 }

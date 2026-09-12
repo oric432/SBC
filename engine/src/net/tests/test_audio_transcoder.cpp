@@ -16,6 +16,7 @@ using namespace SbcEngine;
 using SbcEngine::TestPcm::read_sample;
 using SbcEngine::TestPcm::write_sample;
 
+namespace SbcEngine {
 namespace {
 constexpr unsigned kMaxPayloadBytes = RtpCpp::kMaxRtpPacketSize - RtpCpp::kFixedRtpHeaderSize;
 
@@ -35,6 +36,7 @@ std::vector<std::uint8_t> encode_tone(CodecSession& codec, unsigned num_frames) 
     return encoded;
 }
 } // namespace
+} // namespace SbcEngine
 
 TEST_CASE(
     "AudioTranscoder opens a codec pair with mismatched clock rates and creates resamplers",
