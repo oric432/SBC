@@ -19,6 +19,7 @@ public:
         , options_sm_(options_actions_, "") {}
 
     void on_rx_request(pjsip_rx_data* request);
+    pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer);
     void on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* request);
     void process_pending_media_events();
 

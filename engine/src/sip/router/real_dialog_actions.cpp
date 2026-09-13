@@ -65,19 +65,72 @@ void RealDialogActions::forward_bye_to_other_leg(bool from_caller) {
         recipient_uri);
 }
 
-ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer) {
-    if (!session_.create_exchange(session_.outbound_destination(), std::nullopt)) {
-        return ExchangeOutcome::kRolledBack;
+bool RealDialogActions::send_reinvite_response(
+    pjsip_inv_session* inv,
+    int status_code,
+    const pjmedia_sdp_session* answer) {
+    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
+        return false;
     }
-    const auto outcome = session_.exchange()->start(offer);
-    if (outcome != ExchangeOutcome::kPending) {
-        session_.release_exchange();
+
+    if (answer != nullptr) {
+        const pj_status_t set_status = pjsip_inv_set_sdp_answer(inv, answer);
+        if (set_status != PJ_SUCCESS) {
+            Log::sip()->error("[{}] failed to set re-INVITE SDP answer ({})", session_.call_id(), set_status);
+            return false;
+        }
     }
-    return outcome;
+
+    pjsip_tx_data* data = nullptr;
+    pj_status_t status = pjsip_inv_answer(inv, status_code, nullptr, nullptr, &data);
+    if (status == PJ_SUCCESS) {
+        status = pjsip_inv_send_msg(inv, data);
+    }
+    if (status != PJ_SUCCESS) {
+        Log::sip()->error("[{}] failed to send re-INVITE response {} ({})", session_.call_id(), status_code, status);
+        return false;
+    }
+    return true;
 }
 
-void RealDialogActions::reject_reinvite_491_request_pending() {
-    Log::call()->warn("[{}] re-INVITE rejected (491): not implemented", session_.call_id());
+ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, bool from_caller) {
+    pjsip_inv_session* inv = from_caller ? session_.inv_caller() : session_.inv_callee();
+    if (inv == nullptr || inv->neg == nullptr || offer.empty()) {
+        send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE);
+        return ExchangeOutcome::kRolledBack;
+    }
+
+    const pjmedia_sdp_session* active_remote = nullptr;
+    const pjmedia_sdp_session* active_local = nullptr;
+    const pj_status_t remote_status = pjmedia_sdp_neg_get_active_remote(inv->neg, &active_remote);
+    const pj_status_t local_status = pjmedia_sdp_neg_get_active_local(inv->neg, &active_local);
+    if (remote_status != PJ_SUCCESS || local_status != PJ_SUCCESS) {
+        Log::sip()->error("[{}] re-INVITE leg has no active SDP", session_.call_id());
+        send_reinvite_response(inv, PJSIP_SC_INTERNAL_SERVER_ERROR);
+        return ExchangeOutcome::kFailed;
+    }
+
+    if (offer != Sdp::serialize(active_remote)) {
+        Log::call()->debug("[{}] changed-SDP re-INVITE is not implemented", session_.call_id());
+        send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE);
+        return ExchangeOutcome::kRolledBack;
+    }
+
+    if (!send_reinvite_response(inv, PJSIP_SC_OK, active_local)) {
+        return ExchangeOutcome::kFailed;
+    }
+    Log::call()->debug(
+        "[{}] answered unchanged-SDP re-INVITE from {} without changing media",
+        session_.call_id(),
+        from_caller ? "caller" : "callee");
+    return ExchangeOutcome::kCommitted;
+}
+
+void RealDialogActions::reject_reinvite_491_request_pending(bool from_caller) {
+    pjsip_inv_session* inv = from_caller ? session_.inv_caller() : session_.inv_callee();
+    if (!send_reinvite_response(inv, PJSIP_SC_REQUEST_PENDING)) {
+        Log::call()->warn("[{}] failed to reject colliding re-INVITE with 491", session_.call_id());
+    }
 }
 
 ExchangeOutcome RealDialogActions::receive_exchange_answer(const std::string& answer) {
