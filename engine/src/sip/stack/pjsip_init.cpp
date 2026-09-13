@@ -51,7 +51,24 @@ void on_inv_state_changed(pjsip_inv_session* inv, pjsip_event* event) {
 
 void on_inv_new_session(pjsip_inv_session* /*inv*/, pjsip_event* /*e*/) {}
 
-void on_inv_media_update(pjsip_inv_session* /*inv*/, pj_status_t /*status*/) {}
+pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* /*rdata*/) {
+    if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
+        return PJ_ENOTFOUND;
+    }
+    return g_active_stack->router()->on_rx_reinvite(inv, offer);
+}
+
+void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
+    if (g_active_stack != nullptr && g_active_stack->router() != nullptr) {
+        g_active_stack->router()->on_create_offer(inv, offer);
+    }
+}
+
+void on_inv_media_update(pjsip_inv_session* inv, pj_status_t status) {
+    if (g_active_stack != nullptr && g_active_stack->router() != nullptr) {
+        g_active_stack->router()->on_inv_media_update(inv, status);
+    }
+}
 
 } // namespace
 
@@ -115,6 +132,8 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
     pj_bzero(&inv_cb, sizeof(inv_cb));
     inv_cb.on_state_changed = &on_inv_state_changed;
     inv_cb.on_new_session = &on_inv_new_session;
+    inv_cb.on_rx_reinvite = &on_rx_reinvite;
+    inv_cb.on_create_offer = &on_create_offer;
     inv_cb.on_media_update = &on_inv_media_update;
 
     status = pjsip_inv_usage_init(endpt_, &inv_cb);
