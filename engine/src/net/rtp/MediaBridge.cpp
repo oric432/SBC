@@ -23,6 +23,10 @@ namespace {
 constexpr RelayLeg opposite(RelayLeg leg) {
     return leg == RelayLeg::kLegA ? RelayLeg::kLegB : RelayLeg::kLegA;
 }
+
+bool is_operation_aborted(const std::error_code& err) {
+    return err == boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
+}
 } // namespace
 
 std::string_view to_string(RelayLeg leg) {
@@ -69,153 +73,169 @@ struct MediaBridge::Impl {
     // only the original passthrough behavior).
     std::optional<TranscodeSession> transcode_session_;
 
-    static void do_relay(
+    // Shared receive/error-handling/re-arm loop for both do_relay() and
+    // do_transcode_relay() — they differ only in what happens to a
+    // successfully-received packet, supplied via `process` (a function
+    // pointer, never a closure: everything it needs travels as an
+    // argument, so re-arming just means calling listen() again with it).
+    template <typename ProcessPacket>
+    static void listen(
         std::shared_ptr<MediaBridge> self,
         RelayLeg src_leg,
         RtpSession<BasicRawRtpSender>& src,
         RtpSession<BasicRawRtpSender>& dst,
-        boost::asio::ip::udp::endpoint& dst_ep) {
-        src.receiver().async_receive_pkt([self = std::move(self), src_leg, &src, &dst, &dst_ep](
+        boost::asio::ip::udp::endpoint& dst_ep,
+        ProcessPacket process) {
+        src.receiver().async_receive_pkt([self = std::move(self), src_leg, &src, &dst, &dst_ep, process](
                                              const RtpPacketView& pkt,
                                              [[maybe_unused]] const boost::asio::ip::udp::endpoint& src_ep,
                                              const std::error_code& err) mutable {
             // TODO: Implement Symmetric RTP latching using src_ep here
             if (err) {
-                const std::error_code abort_err =
-                    boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
-                if (err == abort_err) {
+                if (is_operation_aborted(err)) {
                     return;
                 }
-
                 if (self->impl_->error_handler_) {
                     self->impl_->error_handler_(src_leg, RelayOp::kReceive, err);
                 }
                 // Nothing to relay this iteration (the packet is not valid), but
                 // keep the loop alive so a transient error doesn't permanently
                 // kill the relay for the rest of the call.
-                Impl::do_relay(std::move(self), src_leg, src, dst, dst_ep);
+                listen(std::move(self), src_leg, src, dst, dst_ep, process);
                 return;
             }
 
             self->impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
-
-            const bool from_a = (src_leg == RelayLeg::kLegA);
-            const auto dtmf = relay_dtmf_pt(
-                pkt,
-                from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
-                from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_);
-            if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
-                Log::rtp()->trace(
-                    "media bridge: dropping DTMF packet with no destination PT mapping on {}",
-                    to_string(src_leg));
-                Impl::do_relay(std::move(self), src_leg, src, dst, dst_ep);
-                return;
-            }
-
-            dst.sender().async_send_pkt(
-                pkt.packet(),
-                dst_ep,
-                [self, src_leg, &src, &dst, &dst_ep](
-                    std::size_t /*bytes_sent*/,
-                    const std::error_code& send_err) mutable {
-                    if (send_err) {
-                        const std::error_code abort_err =
-                            boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
-
-                        if (send_err == abort_err) {
-                            return;
-                        }
-
-                        if (self->impl_->error_handler_) {
-                            self->impl_->error_handler_(opposite(src_leg), RelayOp::kSend, send_err);
-                        }
-                    }
-                    Impl::do_relay(std::move(self), src_leg, src, dst, dst_ep);
-                });
+            process(std::move(self), src_leg, src, dst, dst_ep, pkt);
         });
     }
 
-    // Used instead of do_relay() for a call whose two legs negotiated
+    // Completion handler for every send a relay direction issues: report a
+    // real failure via error_handler_, then re-arm listen() for the next
+    // packet — unless the send was aborted (the socket is going away), in
+    // which case the loop simply stops rather than listening on it again.
+    template <typename ProcessPacket>
+    static auto send_completion(
+        std::shared_ptr<MediaBridge> self,
+        RelayLeg src_leg,
+        RtpSession<BasicRawRtpSender>& src,
+        RtpSession<BasicRawRtpSender>& dst,
+        boost::asio::ip::udp::endpoint& dst_ep,
+        ProcessPacket process) {
+        return [self, src_leg, &src, &dst, &dst_ep, process](
+                   std::size_t /*bytes_sent*/,
+                   const std::error_code& send_err) mutable {
+            if (send_err) {
+                if (is_operation_aborted(send_err)) {
+                    return;
+                }
+                if (self->impl_->error_handler_) {
+                    self->impl_->error_handler_(opposite(src_leg), RelayOp::kSend, send_err);
+                }
+            }
+            listen(std::move(self), src_leg, src, dst, dst_ep, process);
+        };
+    }
+
+    static void relay_process(
+        std::shared_ptr<MediaBridge> self,
+        RelayLeg src_leg,
+        RtpSession<BasicRawRtpSender>& src,
+        RtpSession<BasicRawRtpSender>& dst,
+        boost::asio::ip::udp::endpoint& dst_ep,
+        const RtpPacketView& pkt) {
+        const bool from_a = (src_leg == RelayLeg::kLegA);
+        const auto dtmf = relay_dtmf_pt(
+            pkt,
+            from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
+            from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_);
+        if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
+            Log::rtp()->trace(
+                "media bridge: dropping DTMF packet with no destination PT mapping on {}",
+                to_string(src_leg));
+            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::relay_process);
+            return;
+        }
+
+        dst.sender().async_send_pkt(
+            pkt.packet(),
+            dst_ep,
+            send_completion(self, src_leg, src, dst, dst_ep, &Impl::relay_process));
+    }
+
+    static void do_relay(
+        std::shared_ptr<MediaBridge> self,
+        RelayLeg src_leg,
+        RtpSession<BasicRawRtpSender>& src,
+        RtpSession<BasicRawRtpSender>& dst,
+        boost::asio::ip::udp::endpoint& dst_ep) {
+        listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::relay_process);
+    }
+
+    // Used instead of relay_process() for a call whose two legs negotiated
     // different audio codecs. Telephone-event packets still bypass
-    // AudioTranscoder entirely (same DTMF-PT check as do_relay(), relayed
-    // through this direction's TranscodedRtpStream identity instead of a
-    // raw byte copy). Everything else is decoded, resampled if needed, and
-    // re-encoded for the destination leg's codec via TranscodeSession.
+    // AudioTranscoder entirely (same DTMF-PT check as relay_process(),
+    // relayed through this direction's TranscodedRtpStream identity instead
+    // of a raw byte copy). Everything else is decoded, resampled if needed,
+    // and re-encoded for the destination leg's codec via TranscodeSession.
+    static void transcode_process(
+        std::shared_ptr<MediaBridge> self,
+        RelayLeg src_leg,
+        RtpSession<BasicRawRtpSender>& src,
+        RtpSession<BasicRawRtpSender>& dst,
+        boost::asio::ip::udp::endpoint& dst_ep,
+        const RtpPacketView& pkt) {
+        // Only reached when configure_legs() built a TranscodeSession.
+        auto& session = *self->impl_->transcode_session_;
+        const bool from_a = (src_leg == RelayLeg::kLegA);
+        auto& out_stream = from_a ? session.stream_towards_b() : session.stream_towards_a();
+
+        const auto dtmf = relay_dtmf_pt(
+            pkt,
+            from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
+            from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_);
+        if (dtmf.outcome_ == DtmfRelayOutcome::kRelay) {
+            out_stream.send_dtmf(
+                dtmf.payload_type_,
+                pkt.payload(),
+                pkt.get_header().is_marked_,
+                dst_ep,
+                send_completion(self, src_leg, src, dst, dst_ep, &Impl::transcode_process));
+            return;
+        }
+        if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
+            Log::rtp()->trace(
+                "media bridge: dropping DTMF packet with no destination PT mapping on {}",
+                to_string(src_leg));
+            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::transcode_process);
+            return;
+        }
+
+        auto transcoded = from_a ? session.transcoder().transcode_a_to_b(pkt.payload())
+                                 : session.transcoder().transcode_b_to_a(pkt.payload());
+        if (!transcoded) {
+            Log::rtp()->trace(
+                "media bridge: dropping untranscodable packet on {} ({} bytes)",
+                to_string(src_leg),
+                pkt.payload().size());
+            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::transcode_process);
+            return;
+        }
+
+        out_stream.send_audio(
+            transcoded->encoded_,
+            transcoded->timestamp_delta_,
+            dst_ep,
+            send_completion(self, src_leg, src, dst, dst_ep, &Impl::transcode_process));
+    }
+
     static void do_transcode_relay(
         std::shared_ptr<MediaBridge> self,
         RelayLeg src_leg,
         RtpSession<BasicRawRtpSender>& src,
         RtpSession<BasicRawRtpSender>& dst,
         boost::asio::ip::udp::endpoint& dst_ep) {
-        src.receiver().async_receive_pkt([self = std::move(self), src_leg, &src, &dst, &dst_ep](
-                                             const RtpPacketView& pkt,
-                                             [[maybe_unused]] const boost::asio::ip::udp::endpoint& src_ep,
-                                             const std::error_code& err) mutable {
-            if (err) {
-                std::error_code abort_err = boost::asio::error::make_error_code(boost::asio::error::operation_aborted);
-                if (err == abort_err) {
-                    return;
-                }
-                if (self->impl_->error_handler_) {
-                    self->impl_->error_handler_(src_leg, RelayOp::kReceive, err);
-                }
-                Impl::do_transcode_relay(std::move(self), src_leg, src, dst, dst_ep);
-                return;
-            }
-
-            self->impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
-
-            // Only reached when configure_legs() built a TranscodeSession.
-            auto& session = *self->impl_->transcode_session_;
-            const bool from_a = (src_leg == RelayLeg::kLegA);
-            auto& out_stream = from_a ? session.stream_towards_b() : session.stream_towards_a();
-
-            auto finish = [self, src_leg, &src, &dst, &dst_ep](
-                              std::size_t /*bytes_sent*/,
-                              const std::error_code& send_err) mutable {
-                if (send_err &&
-                    send_err != boost::asio::error::make_error_code(boost::asio::error::operation_aborted)) {
-                    if (self->impl_->error_handler_) {
-                        self->impl_->error_handler_(opposite(src_leg), RelayOp::kSend, send_err);
-                    }
-                }
-                Impl::do_transcode_relay(std::move(self), src_leg, src, dst, dst_ep);
-            };
-
-            const auto dtmf = relay_dtmf_pt(
-                pkt,
-                from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
-                from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_);
-            if (dtmf.outcome_ == DtmfRelayOutcome::kRelay) {
-                out_stream.send_dtmf(
-                    dtmf.payload_type_,
-                    pkt.payload(),
-                    pkt.get_header().is_marked_,
-                    dst_ep,
-                    std::move(finish));
-                return;
-            }
-            if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
-                Log::rtp()->trace(
-                    "media bridge: dropping DTMF packet with no destination PT mapping on {}",
-                    to_string(src_leg));
-                Impl::do_transcode_relay(std::move(self), src_leg, src, dst, dst_ep);
-                return;
-            }
-
-            auto transcoded = from_a ? session.transcoder().transcode_a_to_b(pkt.payload())
-                                     : session.transcoder().transcode_b_to_a(pkt.payload());
-            if (!transcoded) {
-                Log::rtp()->trace(
-                    "media bridge: dropping untranscodable packet on {} ({} bytes)",
-                    to_string(src_leg),
-                    pkt.payload().size());
-                Impl::do_transcode_relay(std::move(self), src_leg, src, dst, dst_ep);
-                return;
-            }
-
-            out_stream.send_audio(transcoded->encoded_, transcoded->timestamp_delta_, dst_ep, std::move(finish));
-        });
+        listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::transcode_process);
     }
 };
 
