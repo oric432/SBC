@@ -47,7 +47,24 @@ pj_status_t MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_
     const bool from_caller = inv == session->inv_caller();
     const std::string sdp = offer != nullptr ? Sdp::serialize(offer) : std::string{};
     const bool handled = session->dialog_sm().process_event(ReinviteReceived{.sdp_ = sdp, .from_caller_ = from_caller});
-    return handled ? PJ_SUCCESS : PJ_EINVALIDOP;
+    if (!handled) {
+        return PJ_EINVALIDOP;
+    }
+    return offer != nullptr ? PJ_SUCCESS : PJ_EIGNORED;
+}
+
+void MessageRouter::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
+    auto* session = call_manager_->find_by_inv(inv);
+    if (session != nullptr && session->setup_sm().is_established()) {
+        session->dialog_actions().on_create_offer(inv, offer);
+    }
+}
+
+void MessageRouter::on_inv_media_update(pjsip_inv_session* inv, pj_status_t status) {
+    auto* session = call_manager_->find_by_inv(inv);
+    if (session != nullptr && session->setup_sm().is_established()) {
+        session->dialog_actions().on_media_update(inv, status);
+    }
 }
 
 void MessageRouter::process_invite(pjsip_rx_data* request) {

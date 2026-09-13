@@ -95,9 +95,17 @@ bool RealDialogActions::send_reinvite_response(
 
 ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, bool from_caller) {
     pjsip_inv_session* inv = from_caller ? session_.inv_caller() : session_.inv_callee();
-    if (inv == nullptr || inv->neg == nullptr || offer.empty()) {
-        send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE);
-        return ExchangeOutcome::kRolledBack;
+    if (inv == nullptr || inv->neg == nullptr) {
+        return ExchangeOutcome::kFailed;
+    }
+
+    if (offer.empty()) {
+        offerless_reinvite_leg_ = inv;
+        Log::call()->debug(
+            "[{}] received offerless re-INVITE from {}; awaiting answer in ACK",
+            session_.call_id(),
+            from_caller ? "caller" : "callee");
+        return ExchangeOutcome::kPending;
     }
 
     const pjmedia_sdp_session* active_remote = nullptr;
@@ -124,6 +132,35 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, bool
         session_.call_id(),
         from_caller ? "caller" : "callee");
     return ExchangeOutcome::kCommitted;
+}
+
+void RealDialogActions::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
+    if (offer == nullptr || inv != offerless_reinvite_leg_ || inv->neg == nullptr) {
+        return;
+    }
+
+    const pjmedia_sdp_session* active_local = nullptr;
+    const pj_status_t status = pjmedia_sdp_neg_get_active_local(inv->neg, &active_local);
+    if (status != PJ_SUCCESS || active_local == nullptr) {
+        Log::sip()->error("[{}] offerless re-INVITE leg has no active local SDP", session_.call_id());
+        return;
+    }
+
+    *offer = pjmedia_sdp_session_clone(inv->pool_prov, active_local);
+}
+
+void RealDialogActions::on_media_update(pjsip_inv_session* inv, pj_status_t status) {
+    if (inv != offerless_reinvite_leg_) {
+        return;
+    }
+
+    offerless_reinvite_leg_ = nullptr;
+    const ExchangeOutcome outcome = status == PJ_SUCCESS ? ExchangeOutcome::kCommitted : ExchangeOutcome::kFailed;
+    Log::call()->info(
+        "[{}] offerless re-INVITE answer in ACK {}",
+        session_.call_id(),
+        status == PJ_SUCCESS ? "accepted" : "failed");
+    session_.dialog_sm().process_event(Dialog::ExchangeFinished{outcome});
 }
 
 void RealDialogActions::reject_reinvite_491_request_pending(bool from_caller) {
@@ -157,6 +194,7 @@ void RealDialogActions::stop_exchange() {
 }
 
 void RealDialogActions::terminate_call() {
+    offerless_reinvite_leg_ = nullptr;
     end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT, "terminate_call caller");
     end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT, "terminate_call callee");
 }

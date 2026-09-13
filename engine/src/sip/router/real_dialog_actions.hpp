@@ -17,6 +17,8 @@ public:
         : session_(session) {}
 
     void on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
+    void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer);
+    void on_media_update(pjsip_inv_session* inv, pj_status_t status);
 
     void send_200_ok_to_bye_sender() override;
     void forward_bye_to_other_leg(bool from_caller) override;
@@ -36,6 +38,7 @@ private:
     ExchangeOutcome exchange_confirmation_timeout();
 
     CallSession& session_;
+    pjsip_inv_session* offerless_reinvite_leg_ = nullptr;
 };
 
 } // namespace SbcEngine
