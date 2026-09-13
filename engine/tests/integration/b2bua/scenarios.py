@@ -11,8 +11,10 @@ class B2buaScenario:
     # old "hold ~10s then hang up" case; several reproduce the old "loop
     # indefinitely" case but bounded, so it terminates on its own in CI.
     holds_ms: list[int]
+    caller_template: str = "caller.xml.j2"
     callee_template: str = "callee.xml.j2"
-    # Which fixture pcap the callee plays (see conftest.py's _PCAP_PATHS).
+    # Which fixture pcap each leg plays (see conftest.py's _PCAP_PATHS).
+    caller_pcap: str = "g711a"
     callee_pcap: str = "g711a"
 
 
@@ -24,5 +26,12 @@ SCENARIOS = [
         holds_ms=[10_000],
         callee_template="callee_transcode.xml.j2",
         callee_pcap="g722",
+    ),
+    B2buaScenario(
+        name="dtmf_pt_rewrite",
+        holds_ms=[2_000],
+        caller_template="caller_dtmf.xml.j2",
+        callee_template="callee_dtmf.xml.j2",
+        caller_pcap="dtmf",
     ),
 ]

@@ -67,3 +67,21 @@ sequence order; both G.711 and G.722 run at the same 64kbit/s wire rate, so
 the encoded output re-slices back into the original 236 packets' 240-byte
 payloads 1:1, with the RTP/UDP/IP headers otherwise untouched apart from the
 payload type byte and a recomputed UDP checksum.)
+
+`dtmf_pt_rewrite` exercises `MediaBridge`'s DTMF-PT-rewrite path (issue #177)
+the same way: `caller_dtmf.xml.j2` offers `telephone-event` under PT 101,
+`callee_dtmf.xml.j2` answers it under PT 100, and the caller plays
+`dtmf.pcap` — PCMU audio with one RFC 4733 digit event under PT 101 — so a
+correct engine must relay those event packets to the callee with the header
+byte rewritten to 100 (payload and timestamp untouched). As with the
+transcode scenario, `has_error_logs()` only confirms the call completed
+cleanly; the actual rewrite is best confirmed by capturing the callee's
+media port during a run (`tcpdump -i lo udp port 6006`) and checking the
+relayed event packets carry PT 100, not 101.
+
+`dtmf.pcap` is synthesized (not a real recording): PCMU silence, one RFC 4733
+digit event under PT 101 (marker on the first packet, three duration-update
+packets, three redundant end-marked packets at the final duration — all
+sharing the event's start timestamp, per RFC 4733 §3.6 — then PCMU resumes),
+built with `scapy` in a throwaway venv rather than a tool checked into the
+suite's own dependencies (see `../../pyproject.toml`).

@@ -14,7 +14,9 @@ def test_b2bua_call(sbc_engine, render_scenario, run_sipp_pair, scenario):
     total_hold_s = sum(scenario.holds_ms) / 1000
     _log.info("running scenario '%s' (~%.0fs call)...", scenario.name, total_hold_s)
 
-    caller_xml = render_scenario("caller.xml.j2", scenario_name=scenario.name, holds_ms=scenario.holds_ms)
+    caller_xml = render_scenario(
+        scenario.caller_template, scenario_name=scenario.name, holds_ms=scenario.holds_ms, pcap=scenario.caller_pcap
+    )
     callee_xml = render_scenario(scenario.callee_template, scenario_name=scenario.name, pcap=scenario.callee_pcap)
 
     run_sipp_pair(caller_xml, callee_xml)
