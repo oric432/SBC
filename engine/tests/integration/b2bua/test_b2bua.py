@@ -23,3 +23,29 @@ def test_b2bua_call(sbc_engine, render_scenario, run_sipp_pair, scenario):
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
     _log.info("scenario '%s' passed", scenario.name)
+
+
+def test_b2bua_reinvite_same_sdp(sbc_engine, render_scenario, run_sipp_pair):
+    """A mid-call re-INVITE carrying the same SDP is answered locally on that
+    leg (200 OK) without being forwarded to the other leg."""
+    scenario_name = "reinvite_same_sdp"
+    caller_xml = render_scenario("reinvite_same_sdp_caller.xml.j2", scenario_name=scenario_name)
+    callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
+def test_b2bua_reinvite_offerless(sbc_engine, render_scenario, run_sipp_pair):
+    """A mid-call re-INVITE with no SDP body gets an SBC-generated offer in
+    the 200 OK, and the caller's ACK carries the answer."""
+    scenario_name = "reinvite_offerless"
+    caller_xml = render_scenario("reinvite_offerless_caller.xml.j2", scenario_name=scenario_name)
+    callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)

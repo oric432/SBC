@@ -18,7 +18,7 @@ TEST_CASE("Mock setup actions record calls and reset", "[sbc_mock]") {
 
 TEST_CASE("Mock dialog and options actions record calls", "[sbc_mock]") {
     MockDialogActions dialog_actions;
-    dialog_actions.start_exchange("v=0\r\n");
+    dialog_actions.start_exchange("v=0\r\n", true);
     REQUIRE(dialog_actions.was_called("start_exchange:5B"));
 
     MockOptionsActions options_actions;

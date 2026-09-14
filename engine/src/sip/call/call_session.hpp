@@ -95,6 +95,15 @@ public:
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
     void clear_rdata() { current_rdata_ = nullptr; }
 
+    // rx_data of the re-INVITE currently being answered: pjsip requires the
+    // triggering request to build a response once the initial INVITE
+    // transaction has confirmed (pjsip_inv_answer() alone asserts past that
+    // point — see RealDialogActions::send_reinvite_response). MessageRouter
+    // sets this immediately before dispatching ReinviteReceived and clears
+    // it right after, so it never lingers as ambient state either.
+    [[nodiscard]] pjsip_rx_data* reinvite_rdata() const { return reinvite_rdata_; }
+    void set_reinvite_rdata(pjsip_rx_data* rdata) { reinvite_rdata_ = rdata; }
+
     // Negotiated codec/DTMF metadata is published with the exchange commit.
     // The two legs may differ — see issue #128: the SBC negotiates each leg
     // independently rather than relaying one leg's answer to the other.
@@ -116,6 +125,7 @@ private:
 
     std::string caller_offer_sdp_;
     pjsip_rx_data* current_rdata_;
+    pjsip_rx_data* reinvite_rdata_ = nullptr;
 
     std::string request_uri_;
     std::string caller_uri_;

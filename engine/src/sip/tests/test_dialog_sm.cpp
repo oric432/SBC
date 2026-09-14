@@ -81,6 +81,17 @@ TEST_CASE("DialogSm reinvite happy path", "[dialog_sm]") {
     REQUIRE(actions.was_called("start_exchange"));
 }
 
+TEST_CASE("DialogSm passes the originating leg to reinvite handling", "[dialog_sm]") {
+    MockDialogActions actions;
+    actions.start_result_ = ExchangeOutcome::kCommitted;
+    TestMachine machine{actions};
+
+    machine.process_event(ReinviteReceived{kValidSdp, false});
+
+    REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("start_exchange:" + std::to_string(kValidSdp.length()) + "B:callee"));
+}
+
 // Test: The exchange rolls back a rejected re-INVITE request.
 TEST_CASE("DialogSm reinvite rejected", "[dialog_sm]") {
     MockDialogActions actions;
