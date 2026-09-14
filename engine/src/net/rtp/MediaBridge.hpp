@@ -62,6 +62,15 @@ public:
     void set_remote_leg_a(const std::string& addr, unsigned short port);
     void set_remote_leg_b(const std::string& addr, unsigned short port);
 
+    // Same effect as set_remote_leg_a/b, but safe to call after
+    // start_bridge_loop() is already running: marshals the write onto this
+    // bridge's own executor so it can never race the relay loop's concurrent
+    // reads of the remote endpoint. Use this (not set_remote_leg_a/b) to
+    // retarget an already-active call's media path, e.g. for a re-INVITE
+    // that only changes one leg's own RTP address/port.
+    void retarget_remote_leg_a(std::string addr, unsigned short port);
+    void retarget_remote_leg_b(std::string addr, unsigned short port);
+
     // Empty until the corresponding set_remote_leg_* call — i.e. before the
     // peer's SDP has been parsed.
     [[nodiscard]] std::optional<boost::asio::ip::udp::endpoint> remote_leg_a() const;
