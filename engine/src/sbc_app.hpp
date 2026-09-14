@@ -3,6 +3,7 @@
 #include <boost/asio.hpp>
 
 #include "core/settings.hpp"
+#include "net/rtp/PjmediaEndpoint.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/router/message_router.hpp"
@@ -46,6 +47,9 @@ private:
     // Builds PjsipConfig from settings and brings up the PJSIP stack.
     // Crashes the process on failure.
     PjsipConfig init_pjsip(const Settings& settings);
+    // Brings up the pjmedia endpoint (codec factories) needed for transcoding.
+    // Crashes the process on failure.
+    void init_pjmedia();
     // Wires ctx_'s pointers and connects the stack to the router.
     void init_context(const PjsipConfig& config);
     void init_signal_handlers();
@@ -58,6 +62,7 @@ private:
 
     boost::asio::io_context ioc_;
     PjsipStack stack_;
+    PjmediaEndpoint pjmedia_endpoint_;
     CallManager call_manager_;
     RoutesStore routes_store_;
     PjContext ctx_;

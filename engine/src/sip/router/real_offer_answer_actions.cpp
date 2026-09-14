@@ -265,6 +265,14 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     caller_leg_codec_ = Sdp::extract_active_audio_codec(caller_answer);
     caller_leg_dtmf_pt_ = find_telephone_event_pt(Sdp::extract_all_audio_codecs(caller_answer));
 
+    // Configured before the 200 OK goes out: a CodecSession/resampler
+    // allocation failure here can still be answered with a SIP error rather
+    // than one that's already committed (see issue #177).
+    if (!configure_media_bridge()) {
+        send_response(PJSIP_SC_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
     Sdp::rewrite_connection_and_port(
         session_.pool(),
         caller_answer,
@@ -277,6 +285,39 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     // Preserve existing media timing: arm relay on the answer, publish committed
     // session descriptions/codecs only when the exchange is confirmed.
     session_.media_bridge()->start_bridge_loop();
+}
+
+bool RealOfferAnswerActions::configure_media_bridge() {
+    if (!caller_leg_codec_ || !callee_leg_codec_) {
+        Log::call()->error("[{}] configure_media_bridge: missing negotiated codec info", session_.call_id());
+        return false;
+    }
+    const auto* caller_supported = Protocols::find_supported_codec_by_name(caller_leg_codec_->name_);
+    const auto* callee_supported = Protocols::find_supported_codec_by_name(callee_leg_codec_->name_);
+    if (caller_supported == nullptr || callee_supported == nullptr) {
+        Log::call()->error(
+            "[{}] configure_media_bridge: negotiated codec not in kSupportedCodecs (caller={}, callee={})",
+            session_.call_id(),
+            caller_leg_codec_->name_,
+            callee_leg_codec_->name_);
+        return false;
+    }
+
+    PjmediaEndpoint* pjmedia_endpoint = session_.ctx()->pjmedia_endpoint_;
+    if (pjmedia_endpoint == nullptr) {
+        Log::call()->error("[{}] configure_media_bridge: no PjmediaEndpoint wired into PjContext", session_.call_id());
+        return false;
+    }
+
+    auto res = session_.media_bridge()->configure_legs(
+        *pjmedia_endpoint,
+        LegCodec{.audio_ = *caller_supported, .dtmf_pt_ = caller_leg_dtmf_pt_},
+        LegCodec{.audio_ = *callee_supported, .dtmf_pt_ = callee_leg_dtmf_pt_});
+    if (!res) {
+        Log::call()->error("[{}] configure_media_bridge failed: {}", session_.call_id(), res.error().message());
+        return false;
+    }
+    return true;
 }
 
 void RealOfferAnswerActions::reject_offer(OfferAnswer::Reason reason) {

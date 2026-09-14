@@ -47,6 +47,18 @@ public:
     [[nodiscard]] unsigned clock_rate() const { return param_.info.clock_rate; }
     [[nodiscard]] unsigned frame_time_ms() const { return param_.info.frm_ptime; }
 
+    // PCM samples in one atomic frame — the exact size decode() produces and
+    // encode() consumes per call.
+    [[nodiscard]] unsigned pcm_frame_samples() const { return clock_rate() * frame_time_ms() / 1000; }
+
+    // Encoded bytes in one atomic frame — the exact input size decode()
+    // requires (both G.711 and G.722 hard-assert this in pjmedia) and a
+    // natural output chunk size for encode(). Derived from average bitrate
+    // and frame time; correct for the constant-bitrate codecs supported
+    // today (G.711/G.722) — would need revisiting for a variable-bitrate
+    // codec such as Opus.
+    [[nodiscard]] unsigned encoded_frame_bytes() const { return param_.info.avg_bps * frame_time_ms() / 8000; }
+
 private:
     CodecSession(pjmedia_codec_mgr* mgr, pjmedia_codec* codec, const pjmedia_codec_param& param) noexcept;
 
