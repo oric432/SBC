@@ -49,3 +49,17 @@ def test_b2bua_reinvite_offerless(sbc_engine, render_scenario, run_sipp_pair):
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
     _log.info("scenario '%s' passed", scenario_name)
+
+
+def test_b2bua_reinvite_new_port(sbc_engine, render_scenario, run_sipp_pair):
+    """A mid-call re-INVITE that keeps the same codec but moves the caller's
+    own RTP port is answered locally on that leg (200 OK) with the relay
+    retargeted, without being forwarded to the callee."""
+    scenario_name = "reinvite_new_port"
+    caller_xml = render_scenario("reinvite_new_port_caller.xml.j2", scenario_name=scenario_name)
+    callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)

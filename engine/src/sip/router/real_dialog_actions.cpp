@@ -112,12 +112,9 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, bool
         return ExchangeOutcome::kPending;
     }
 
-    const pjmedia_sdp_session* active_remote = nullptr;
     const pjmedia_sdp_session* active_local = nullptr;
-    const pj_status_t remote_status = pjmedia_sdp_neg_get_active_remote(inv->neg, &active_remote);
-    const pj_status_t local_status = pjmedia_sdp_neg_get_active_local(inv->neg, &active_local);
-    if (remote_status != PJ_SUCCESS || local_status != PJ_SUCCESS) {
-        Log::sip()->error("[{}] re-INVITE leg has no active SDP", session_.call_id());
+    if (pjmedia_sdp_neg_get_active_local(inv->neg, &active_local) != PJ_SUCCESS) {
+        Log::sip()->error("[{}] re-INVITE leg has no active local SDP", session_.call_id());
         // Outcome is kFailed either way (call teardown follows via
         // handle_call_error), so a failed send here needs no extra handling
         // beyond send_reinvite_response's own error log.
@@ -125,21 +122,45 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, bool
         return ExchangeOutcome::kFailed;
     }
 
-    if (offer != Sdp::serialize(active_remote)) {
-        Log::call()->debug("[{}] changed-SDP re-INVITE is not implemented", session_.call_id());
+    // Compared against the codec MediaBridge actually has configured for this
+    // leg rather than the raw active-remote SDP bytes: a compliant re-INVITE
+    // always bumps the SDP o= line version even when nothing else changed, so
+    // a byte comparison would treat every re-INVITE as "changed".
+    pjmedia_sdp_session* offer_sdp = Sdp::parse(session_.pool(), offer);
+    const auto offer_codec = offer_sdp != nullptr ? Sdp::extract_active_audio_codec(offer_sdp) : std::nullopt;
+    const auto offer_endpoint = offer_sdp != nullptr ? Sdp::extract_rtp_endpoint(offer_sdp) : Sdp::RtpEndpoint{};
+    const auto& current_codec = from_caller ? session_.caller_leg_codec() : session_.callee_leg_codec();
+    const bool codec_unchanged = offer_codec && current_codec && offer_codec->name_ == current_codec->name_;
+
+    // Codec renegotiation (and full hold, which shows up here as no active
+    // audio line at all) isn't implemented yet — only an endpoint/port move
+    // on an already-negotiated codec is, since this SBC fully anchors media
+    // at its own relay sockets and such a change never needs forwarding to
+    // the other leg.
+    if (!codec_unchanged || offer_endpoint.ip_.empty()) {
+        Log::call()->debug("[{}] changed-SDP re-INVITE (codec/media change) is not implemented", session_.call_id());
         if (!send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE)) {
             return ExchangeOutcome::kFailed;
         }
         return ExchangeOutcome::kRolledBack;
     }
 
+    if (from_caller) {
+        session_.media_bridge()->retarget_remote_leg_a(offer_endpoint.ip_, offer_endpoint.port_);
+    }
+    else {
+        session_.media_bridge()->retarget_remote_leg_b(offer_endpoint.ip_, offer_endpoint.port_);
+    }
+
     if (!send_reinvite_response(inv, PJSIP_SC_OK, active_local)) {
         return ExchangeOutcome::kFailed;
     }
-    Log::call()->debug(
-        "[{}] answered unchanged-SDP re-INVITE from {} without changing media",
+    Log::call()->info(
+        "[{}] answered re-INVITE from {}; relay retargeted to {}:{}",
         session_.call_id(),
-        from_caller ? "caller" : "callee");
+        from_caller ? "caller" : "callee",
+        offer_endpoint.ip_,
+        offer_endpoint.port_);
     return ExchangeOutcome::kCommitted;
 }
 

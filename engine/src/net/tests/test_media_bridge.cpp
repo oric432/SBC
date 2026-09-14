@@ -142,6 +142,70 @@ TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
     REQUIRE(recv_ep.port() == leg_b_port.value());
 }
 
+TEST_CASE("MediaBridge retarget_remote_leg_a/b update the live relay target", "[MediaBridge]") {
+    io_context ioc;
+
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+
+    auto leg_a_port = bridge->bind_leg_a();
+    REQUIRE(leg_a_port.has_value());
+    auto leg_b_port = bridge->bind_leg_b();
+    REQUIRE(leg_b_port.has_value());
+
+    udp::socket caller_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    udp::socket callee_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    udp::socket stale_callee_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+
+    auto caller_ep = caller_sock.local_endpoint();
+    auto callee_ep = callee_sock.local_endpoint();
+    auto stale_ep = stale_callee_sock.local_endpoint();
+
+    // Before the loop starts, retarget_remote_leg_a behaves just like
+    // set_remote_leg_a -- exercised here via the live-safe entry point.
+    bridge->retarget_remote_leg_a("127.0.0.1", caller_ep.port());
+    bridge->set_remote_leg_b("127.0.0.1", stale_ep.port());
+
+    bridge->start_bridge_loop();
+
+    // Retarget leg B's destination while the relay loop is already running --
+    // the specific cross-thread race this method exists to avoid.
+    bridge->retarget_remote_leg_b("127.0.0.1", callee_ep.port());
+
+    const std::vector<uint8_t> dummy_packet =
+        {kRtpVersion2FirstByte, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 'H', 'i'};
+    const udp::endpoint bridge_leg_a_ep(make_address("127.0.0.1"), leg_a_port.value());
+    caller_sock.send_to(buffer(dummy_packet), bridge_leg_a_ep);
+
+    bool received = false;
+    boost::system::error_code recv_errc;
+    std::size_t recv_bytes = 0;
+    std::vector<uint8_t> recv_buf(kReceiveBufferSize);
+    udp::endpoint recv_ep;
+    callee_sock.async_receive_from(
+        buffer(recv_buf),
+        recv_ep,
+        [&](const boost::system::error_code& errc, std::size_t bytes_recvd) {
+            recv_errc = errc;
+            recv_bytes = bytes_recvd;
+            received = true;
+        });
+
+    bool stale_received = false;
+    stale_callee_sock.async_receive_from(
+        buffer(recv_buf),
+        recv_ep,
+        [&]([[maybe_unused]] const boost::system::error_code& errc, std::size_t) { stale_received = true; });
+
+    ioc.run_for(kRelayRunWindow);
+
+    REQUIRE(received == true);
+    REQUIRE(!recv_errc);
+    REQUIRE(recv_bytes == dummy_packet.size());
+    REQUIRE_FALSE(stale_received);
+    REQUIRE(bridge->remote_leg_a()->port() == caller_ep.port());
+    REQUIRE(bridge->remote_leg_b()->port() == callee_ep.port());
+}
+
 TEST_CASE("MediaBridge close() succeeds even when neither leg was ever bound", "[MediaBridge]") {
     // A call rejected before ever dialing out (no route, routing loop, codec
     // mismatch) tears down its MediaBridge without either bind_leg_* ever

@@ -5,6 +5,7 @@
 #include <system_error>
 #include <utility>
 #include <boost/asio/error.hpp>
+#include <boost/asio/post.hpp>
 
 #ifndef RTPCPP_USE_BOOST_ASIO
     #define RTPCPP_USE_BOOST_ASIO
@@ -47,10 +48,15 @@ std::string_view to_string(RelayOp operation) {
 
 struct MediaBridge::Impl {
     explicit Impl(const boost::asio::any_io_executor& executor)
-        : session_a_(make_raw_rtp_session(executor))
+        : executor_(executor)
+        , session_a_(make_raw_rtp_session(executor))
         , session_b_(make_raw_rtp_session(executor))
         , last_packet_time_(std::chrono::steady_clock::now()) {}
 
+    // Lets retarget_remote_leg_a/b() marshal a live update onto this bridge's
+    // own single-threaded executor, so it never races the relay loop's reads
+    // of dest_a_/dest_b_ (see those methods' doc comments in MediaBridge.hpp).
+    boost::asio::any_io_executor executor_;
     RtpSession<BasicRawRtpSender> session_a_;
     RtpSession<BasicRawRtpSender> session_b_;
 
@@ -290,6 +296,18 @@ void MediaBridge::set_remote_leg_a(const std::string& addr, unsigned short port)
 
 void MediaBridge::set_remote_leg_b(const std::string& addr, unsigned short port) {
     impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
+}
+
+void MediaBridge::retarget_remote_leg_a(std::string addr, unsigned short port) {
+    boost::asio::post(impl_->executor_, [self = shared_from_this(), addr = std::move(addr), port] {
+        self->impl_->dest_a_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
+    });
+}
+
+void MediaBridge::retarget_remote_leg_b(std::string addr, unsigned short port) {
+    boost::asio::post(impl_->executor_, [self = shared_from_this(), addr = std::move(addr), port] {
+        self->impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
+    });
 }
 
 std::optional<boost::asio::ip::udp::endpoint> MediaBridge::remote_leg_a() const {
