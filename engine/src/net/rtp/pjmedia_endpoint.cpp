@@ -1,9 +1,9 @@
-#include "PjmediaEndpoint.hpp"
+#include "pjmedia_endpoint.hpp"
 
 #include <pjmedia-codec/g722.h>
 #include <pjmedia/g711.h>
 
-#include "net/PjStatusError.hpp"
+#include "net/pj_status_error.hpp"
 
 namespace SbcEngine {
 

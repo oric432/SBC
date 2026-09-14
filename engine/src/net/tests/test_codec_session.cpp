@@ -7,14 +7,14 @@
 
 #include <pjmedia/resample.h>
 
-#include "net/rtp/CodecSession.hpp"
-#include "net/rtp/PjmediaEndpoint.hpp"
+#include "net/rtp/codec_session.hpp"
+#include "net/rtp/pjmedia_endpoint.hpp"
 #include "net/tests/codec_test_utils.hpp"
 
 #ifndef RTPCPP_USE_BOOST_ASIO
     #define RTPCPP_USE_BOOST_ASIO
 #endif
-#include "net/rtp/RtpCpp.hpp"
+#include "net/rtp/rtp_cpp.hpp"
 
 using namespace SbcEngine;
 using SbcEngine::TestPcm::read_sample;

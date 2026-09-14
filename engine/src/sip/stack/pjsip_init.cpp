@@ -7,7 +7,7 @@
 
 #include "sip/router/message_router.hpp"
 #include "core/utils/log.hpp"
-#include "net/PjStatusError.hpp"
+#include "net/pj_status_error.hpp"
 
 namespace SbcEngine {
 

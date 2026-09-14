@@ -2,7 +2,7 @@
 
 #include <pjsip.h>
 
-#include "net/rtp/PjmediaEndpoint.hpp"
+#include "net/rtp/pjmedia_endpoint.hpp"
 #include "sip/stack/pjsip_init.hpp"
 
 namespace SbcEngine {

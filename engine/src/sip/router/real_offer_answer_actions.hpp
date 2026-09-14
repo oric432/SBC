@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include "protocols/SupportedCodecs.hpp"
+#include "protocols/supported_codecs.hpp"
 #include "sip/sm/isbc_actions.hpp"
 #include "sip/stack/sdp.hpp"
 

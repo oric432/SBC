@@ -87,7 +87,7 @@ endif()
 
 if(BUILD_ENGINE)
     add_executable(SbcEngine
-        src/SbcEngine.cpp
+        src/sbc_engine.cpp
         src/sbc_app.cpp
     )
 

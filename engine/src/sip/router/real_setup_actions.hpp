@@ -4,7 +4,7 @@
 
 #include <pjsip_ua.h>
 
-#include "protocols/SupportedCodecs.hpp"
+#include "protocols/supported_codecs.hpp"
 #include "sip/sm/isbc_actions.hpp"
 
 namespace SbcEngine {

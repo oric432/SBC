@@ -1,4 +1,4 @@
-#include "RtpInactivityTimer.hpp"
+#include "rtp_inactivity_timer.hpp"
 
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/error.hpp>

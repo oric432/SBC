@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <optional>
 
-#include "protocols/SupportedCodecs.hpp"
+#include "protocols/supported_codecs.hpp"
 
 namespace SbcEngine {
 

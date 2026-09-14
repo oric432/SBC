@@ -1,4 +1,4 @@
-#include "MediaBridge.hpp"
+#include "media_bridge.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -10,11 +10,11 @@
 #ifndef RTPCPP_USE_BOOST_ASIO
     #define RTPCPP_USE_BOOST_ASIO
 #endif
-#include "RtpCpp.hpp"
+#include "rtp_cpp.hpp"
 
 #include "core/utils/log.hpp"
-#include "net/rtp/DtmfPtRelay.hpp"
-#include "net/rtp/TranscodeSession.hpp"
+#include "net/rtp/dtmf_pt_relay.hpp"
+#include "net/rtp/transcode_session.hpp"
 
 namespace SbcEngine {
 
