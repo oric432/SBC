@@ -1,11 +1,40 @@
 #include "message_router.hpp"
 
+#include <pjsip_ua.h>
+
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/sm/events.hpp"
+#include "core/utils/log.hpp"
 
 namespace SbcEngine {
+
+namespace {
+
+// Manually reject a re-INVITE. Per pjsip's on_rx_reinvite contract, a
+// non-PJ_SUCCESS return does NOT reject the request — it tells pjsip to
+// auto-answer with whatever SDP was set via pjsip_inv_set_sdp_answer() (or
+// the active SDP, if none was set), so an actual rejection must be sent
+// here and the callback must still return PJ_SUCCESS. pjsip_inv_initial_
+// answer() (not pjsip_inv_answer()) is required: pjsip clears inv->
+// last_answer once the initial INVITE transaction confirms, and
+// pjsip_inv_answer() asserts on that being unset for any later transaction.
+void reject_reinvite(pjsip_inv_session* inv, pjsip_rx_data* rdata, int status_code) {
+    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
+        return;
+    }
+    pjsip_tx_data* data = nullptr;
+    pj_status_t status = pjsip_inv_initial_answer(inv, rdata, status_code, nullptr, nullptr, &data);
+    if (status == PJ_SUCCESS) {
+        status = pjsip_inv_send_msg(inv, data);
+    }
+    if (status != PJ_SUCCESS) {
+        Log::sip()->warn("failed to reject re-INVITE with {} ({})", status_code, status);
+    }
+}
+
+} // namespace
 void MessageRouter::on_rx_request(pjsip_rx_data* request) {
     const std::string method = extract_method(request);
     if (method == "INVITE") {
@@ -35,6 +64,51 @@ void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     }
     else if (!session->setup_sm().is_done()) {
         session->setup_actions().on_leg_state_changed(inv, request);
+    }
+}
+
+pj_status_t
+MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata) {
+    auto* session = call_manager_->find_by_inv(inv);
+    if (session == nullptr) {
+        reject_reinvite(inv, rdata, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+        return PJ_SUCCESS;
+    }
+    if (!session->setup_sm().is_established()) {
+        reject_reinvite(inv, rdata, PJSIP_SC_REQUEST_PENDING);
+        return PJ_SUCCESS;
+    }
+
+    const bool from_caller = inv == session->inv_caller();
+    const std::string sdp = offer != nullptr ? Sdp::serialize(offer) : std::string{};
+    // RealDialogActions needs this rdata to build a manual response
+    // (pjsip_inv_answer() alone can't, once the initial INVITE has
+    // confirmed), but the SM's ReinviteReceived event stays pjsip-free, so
+    // it is stashed on the session for the duration of this dispatch only.
+    session->set_reinvite_rdata(rdata);
+    const bool handled = session->dialog_sm().process_event(ReinviteReceived{.sdp_ = sdp, .from_caller_ = from_caller});
+    session->set_reinvite_rdata(nullptr);
+    if (!handled) {
+        reject_reinvite(inv, rdata, PJSIP_SC_INTERNAL_SERVER_ERROR);
+        return PJ_SUCCESS;
+    }
+    // Offerless re-INVITE: deliberately return non-PJ_SUCCESS so pjsip
+    // auto-negotiates, invoking on_create_offer for the 200 OK and
+    // on_media_update once the answer arrives in the ACK.
+    return offer != nullptr ? PJ_SUCCESS : PJ_EIGNORED;
+}
+
+void MessageRouter::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
+    auto* session = call_manager_->find_by_inv(inv);
+    if (session != nullptr && session->setup_sm().is_established()) {
+        session->dialog_actions().on_create_offer(inv, offer);
+    }
+}
+
+void MessageRouter::on_inv_media_update(pjsip_inv_session* inv, pj_status_t status) {
+    auto* session = call_manager_->find_by_inv(inv);
+    if (session != nullptr && session->setup_sm().is_established()) {
+        session->dialog_actions().on_media_update(inv, status);
     }
 }
 

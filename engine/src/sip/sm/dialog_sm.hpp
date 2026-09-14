@@ -35,10 +35,12 @@ struct DialogSm {
 
         auto handle_reinvite =
             [publish_outcome](Actions& actions, const ReinviteReceived& evt, DialogSelfFireQueue result) {
-                publish_outcome(actions.start_exchange(evt.sdp_), result);
+                publish_outcome(actions.start_exchange(evt.sdp_, evt.from_caller_), result);
             };
 
-        auto handle_reinvite_collision = [](Actions& actions) { actions.reject_reinvite_491_request_pending(); };
+        auto handle_reinvite_collision = [](Actions& actions, const ReinviteReceived& evt) {
+            actions.reject_reinvite_491_request_pending(evt.from_caller_);
+        };
 
         auto committed = [](const Dialog::ExchangeFinished& event) {
             return event.outcome_ == ExchangeOutcome::kCommitted;

@@ -50,6 +50,7 @@ struct ByeReceived {
 
 struct ReinviteReceived {
     std::string sdp_;
+    bool from_caller_ = true;
 };
 
 struct ReinviteAccepted {
