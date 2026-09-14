@@ -3,7 +3,7 @@
 #include <memory>
 #include <queue>
 
-#include "sip/router/options_actions.hpp"
+#include "sip/sm/options_actions.hpp"
 #include "sip/sm/options_sm.hpp"
 #include "sip/sm/sm_logger.hpp"
 

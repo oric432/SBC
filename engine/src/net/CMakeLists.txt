@@ -22,5 +22,5 @@ target_link_libraries(net PUBLIC
 target_precompile_headers(net PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
 
 if(BUILD_TESTS)
-    add_subdirectory(tests)
+    add_subdirectory(rtp/tests)
 endif()

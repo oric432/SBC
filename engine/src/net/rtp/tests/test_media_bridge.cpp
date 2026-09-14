@@ -4,7 +4,7 @@
 #include "net/rtp/CodecSession.hpp"
 #include "net/rtp/MediaBridge.hpp"
 #include "net/rtp/RtpInactivityTimer.hpp"
-#include "net/tests/codec_test_utils.hpp"
+#include "net/rtp/tests/codec_test_utils.hpp"
 #include <algorithm>
 #include <array>
 #include <boost/asio.hpp>

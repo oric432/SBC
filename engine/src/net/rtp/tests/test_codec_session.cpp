@@ -9,7 +9,7 @@
 
 #include "net/rtp/CodecSession.hpp"
 #include "net/rtp/PjmediaEndpoint.hpp"
-#include "net/tests/codec_test_utils.hpp"
+#include "net/rtp/tests/codec_test_utils.hpp"
 
 #ifndef RTPCPP_USE_BOOST_ASIO
     #define RTPCPP_USE_BOOST_ASIO

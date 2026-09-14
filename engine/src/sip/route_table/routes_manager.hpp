@@ -4,7 +4,7 @@
 #include <glaze/net/http_client.hpp>
 #include <memory>
 #include "core/utils/error.hpp"
-#include "sip/routes/routes_store.hpp"
+#include "sip/route_table/routes_store.hpp"
 
 namespace SbcEngine {
 struct RoutesClientConfig {

@@ -3,7 +3,7 @@
 #include <optional>
 
 #include "protocols/SupportedCodecs.hpp"
-#include "sip/router/real_offer_answer_actions.hpp"
+#include "sip/sm/real_offer_answer_actions.hpp"
 #include "sip/sm/offer_answer_sm_runner.hpp"
 
 namespace SbcEngine {

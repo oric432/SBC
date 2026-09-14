@@ -6,7 +6,7 @@
 
 #include "core/settings.hpp"
 #include "core/utils/log.hpp"
-#include "sip/routes/routes_manager.hpp"
+#include "sip/route_table/routes_manager.hpp"
 
 namespace SbcEngine {
 
