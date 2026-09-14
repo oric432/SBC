@@ -9,7 +9,7 @@
 #include <pjlib.h>
 #include <pjmedia/sdp.h>
 
-#include "protocols/SupportedCodecs.hpp"
+#include "protocols/supported_codecs.hpp"
 
 namespace SbcEngine::Sdp {
 

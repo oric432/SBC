@@ -2,7 +2,7 @@
 
 #include <optional>
 
-#include "protocols/SupportedCodecs.hpp"
+#include "protocols/supported_codecs.hpp"
 #include "sip/sm/real_offer_answer_actions.hpp"
 #include "sip/sm/offer_answer_sm_runner.hpp"
 

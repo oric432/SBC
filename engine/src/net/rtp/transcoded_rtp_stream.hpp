@@ -9,7 +9,7 @@
 #ifndef RTPCPP_USE_BOOST_ASIO
     #define RTPCPP_USE_BOOST_ASIO
 #endif
-#include "net/rtp/RtpCpp.hpp"
+#include "net/rtp/rtp_cpp.hpp"
 
 namespace SbcEngine {
 

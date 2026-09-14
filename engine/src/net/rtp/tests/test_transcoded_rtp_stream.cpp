@@ -5,12 +5,12 @@
 #include <cstdint>
 #include <vector>
 
-#include "net/rtp/TranscodedRtpStream.hpp"
+#include "net/rtp/transcoded_rtp_stream.hpp"
 
 #ifndef RTPCPP_USE_BOOST_ASIO
     #define RTPCPP_USE_BOOST_ASIO
 #endif
-#include "net/rtp/RtpCpp.hpp"
+#include "net/rtp/rtp_cpp.hpp"
 
 using namespace SbcEngine;
 using namespace boost::asio;

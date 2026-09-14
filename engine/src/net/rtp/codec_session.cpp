@@ -1,9 +1,9 @@
-#include "CodecSession.hpp"
+#include "codec_session.hpp"
 
 #include <utility>
 
-#include "PjmediaEndpoint.hpp"
-#include "net/PjStatusError.hpp"
+#include "pjmedia_endpoint.hpp"
+#include "net/pj_status_error.hpp"
 
 namespace SbcEngine {
 

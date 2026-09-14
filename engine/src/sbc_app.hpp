@@ -3,7 +3,7 @@
 #include <boost/asio.hpp>
 
 #include "core/settings.hpp"
-#include "net/rtp/PjmediaEndpoint.hpp"
+#include "net/rtp/pjmedia_endpoint.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/router/message_router.hpp"

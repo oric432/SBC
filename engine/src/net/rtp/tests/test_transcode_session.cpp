@@ -5,14 +5,14 @@
 #include <cstdint>
 #include <vector>
 
-#include "net/rtp/CodecSession.hpp"
-#include "net/rtp/TranscodeSession.hpp"
+#include "net/rtp/codec_session.hpp"
+#include "net/rtp/transcode_session.hpp"
 #include "net/rtp/tests/codec_test_utils.hpp"
 
 #ifndef RTPCPP_USE_BOOST_ASIO
     #define RTPCPP_USE_BOOST_ASIO
 #endif
-#include "net/rtp/RtpCpp.hpp"
+#include "net/rtp/rtp_cpp.hpp"
 
 using namespace SbcEngine;
 using namespace boost::asio;

@@ -1,4 +1,4 @@
-#include "TranscodedRtpStream.hpp"
+#include "transcoded_rtp_stream.hpp"
 
 #include <algorithm>
 #include <cassert>

@@ -1,9 +1,9 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_test_macros.hpp>
 
-#include "net/rtp/CodecSession.hpp"
-#include "net/rtp/MediaBridge.hpp"
-#include "net/rtp/RtpInactivityTimer.hpp"
+#include "net/rtp/codec_session.hpp"
+#include "net/rtp/media_bridge.hpp"
+#include "net/rtp/rtp_inactivity_timer.hpp"
 #include "net/rtp/tests/codec_test_utils.hpp"
 #include <algorithm>
 #include <array>

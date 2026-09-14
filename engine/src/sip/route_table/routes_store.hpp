@@ -4,7 +4,7 @@
 #include <shared_mutex>
 #include <string>
 
-#include "protocols/SipRoutes.hpp"
+#include "protocols/sip_routes.hpp"
 
 namespace SbcEngine {
 
