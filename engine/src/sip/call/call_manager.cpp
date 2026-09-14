@@ -1,7 +1,7 @@
 #include "call_manager.hpp"
 
 #include "core/utils/log.hpp"
-#include "net/rtp/RtpInactivityTimer.hpp"
+#include "net/rtp/rtp_inactivity_timer.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/sm/events.hpp"

@@ -1,13 +1,13 @@
 add_library(net STATIC
-    PjStatusError.cpp
-    rtp/RtpCpp.cpp
-    rtp/MediaBridge.cpp
-    rtp/RtpInactivityTimer.cpp
-    rtp/PjmediaEndpoint.cpp
-    rtp/CodecSession.cpp
-    rtp/AudioTranscoder.cpp
-    rtp/TranscodedRtpStream.cpp
-    rtp/TranscodeSession.cpp
+    pj_status_error.cpp
+    rtp/rtp_cpp.cpp
+    rtp/media_bridge.cpp
+    rtp/rtp_inactivity_timer.cpp
+    rtp/pjmedia_endpoint.cpp
+    rtp/codec_session.cpp
+    rtp/audio_transcoder.cpp
+    rtp/transcoded_rtp_stream.cpp
+    rtp/transcode_session.cpp
 )
 target_compile_definitions(net PRIVATE RTPCPP_USE_BOOST_ASIO)
 

@@ -13,7 +13,7 @@
 #include "sip/call/pj_context.hpp"
 #include "sip/router/real_dialog_actions.hpp"
 #include "sip/router/real_setup_actions.hpp"
-#include "net/rtp/MediaBridge.hpp"
+#include "net/rtp/media_bridge.hpp"
 #include "sip/sm/dialog_sm_runner.hpp"
 #include "sip/sm/setup_sm_runner.hpp"
 #include "sip/call/offer_answer_exchange.hpp"

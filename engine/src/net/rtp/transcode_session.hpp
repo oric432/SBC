@@ -1,9 +1,9 @@
 #pragma once
 
 #include "core/utils/error.hpp"
-#include "net/rtp/AudioTranscoder.hpp"
-#include "net/rtp/TranscodedRtpStream.hpp"
-#include "protocols/SupportedCodecs.hpp"
+#include "net/rtp/audio_transcoder.hpp"
+#include "net/rtp/transcoded_rtp_stream.hpp"
+#include "protocols/supported_codecs.hpp"
 
 namespace SbcEngine {
 

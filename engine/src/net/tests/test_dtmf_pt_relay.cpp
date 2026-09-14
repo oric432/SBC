@@ -4,7 +4,7 @@
 #include <optional>
 #include <vector>
 
-#include "net/rtp/DtmfPtRelay.hpp"
+#include "net/rtp/dtmf_pt_relay.hpp"
 
 using namespace SbcEngine;
 

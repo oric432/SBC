@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "net/rtp/PjmediaEndpoint.hpp"
+#include "net/rtp/pjmedia_endpoint.hpp"
 
 namespace SbcEngine {
 

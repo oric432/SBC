@@ -8,8 +8,8 @@
 #include <pjmedia/resample.h>
 
 #include "core/utils/error.hpp"
-#include "net/rtp/CodecSession.hpp"
-#include "protocols/SupportedCodecs.hpp"
+#include "net/rtp/codec_session.hpp"
+#include "protocols/supported_codecs.hpp"
 
 namespace SbcEngine {
 

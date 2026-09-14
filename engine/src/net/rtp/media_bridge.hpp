@@ -13,8 +13,8 @@
 #include <boost/asio/ip/udp.hpp>
 
 #include "core/utils/error.hpp"
-#include "net/rtp/PjmediaEndpoint.hpp"
-#include "protocols/SupportedCodecs.hpp"
+#include "net/rtp/pjmedia_endpoint.hpp"
+#include "protocols/supported_codecs.hpp"
 
 namespace SbcEngine {
 

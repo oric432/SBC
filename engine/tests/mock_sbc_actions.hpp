@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <optional>
 
-#include "protocols/SupportedCodecs.hpp"
+#include "protocols/supported_codecs.hpp"
 #include "sm/isbc_actions.hpp"
 
 namespace SbcEngine {

@@ -4,8 +4,8 @@
 #include <flat_map>
 #include <string>
 #include <glaze/glaze.hpp>
-#include "Api.hpp"
-#include "SupportedCodecs.hpp"
+#include "api.hpp"
+#include "supported_codecs.hpp"
 
 // NOLINTBEGIN(readability-identifier-naming)
 

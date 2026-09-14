@@ -6,7 +6,7 @@
 
 #include <pjlib.h>
 
-#include "protocols/SupportedCodecs.hpp"
+#include "protocols/supported_codecs.hpp"
 #include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
