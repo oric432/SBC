@@ -8,7 +8,7 @@
 #include "sip/router/extract_utils.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
-#include "sip/routes/routes_store.hpp"
+#include "sip/route_table/routes_store.hpp"
 
 namespace SbcEngine {
 

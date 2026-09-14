@@ -14,7 +14,7 @@
 #pragma clang diagnostic ignored "-Wkeyword-macro"
 #define private public
 #pragma clang diagnostic pop
-#include "sip/routes/routes_manager.hpp"
+#include "sip/route_table/routes_manager.hpp"
 #undef private
 namespace SbcEngine {
 

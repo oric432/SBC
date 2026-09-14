@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sip/router/options_actions.hpp"
+#include "sip/sm/options_actions.hpp"
 #include "sip/router/sip_request_actions.hpp"
 #include "sip/sm/options_sm_runner.hpp"
 

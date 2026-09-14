@@ -5,8 +5,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <boost/sml.hpp>
 
-#include "../sm/events.hpp"
-#include "../sm/dialog_sm.hpp"
+#include "../events.hpp"
+#include "../dialog_sm.hpp"
 #include "mock_sbc_actions.hpp"
 #include "sip/sm/isbc_actions.hpp"
 #include "sip/sm/offer_answer_sm_runner.hpp"

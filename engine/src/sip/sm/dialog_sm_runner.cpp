@@ -2,7 +2,7 @@
 
 #include <queue>
 
-#include "sip/router/real_dialog_actions.hpp"
+#include "sip/sm/real_dialog_actions.hpp"
 #include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/sm_logger.hpp"
 

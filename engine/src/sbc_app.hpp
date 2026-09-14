@@ -7,7 +7,7 @@
 #include "sip/call/call_manager.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/router/message_router.hpp"
-#include "sip/routes/routes_store.hpp"
+#include "sip/route_table/routes_store.hpp"
 #include "sip/stack/pjsip_init.hpp"
 
 namespace SbcEngine {

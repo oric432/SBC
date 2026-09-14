@@ -4,10 +4,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <boost/sml.hpp>
 
-#include "../router/options_actions.hpp"
-#include "../sm/events.hpp"
-#include "../sm/options_sm.hpp"
-#include "../sm/options_sm_runner.hpp"
+#include "../options_actions.hpp"
+#include "../events.hpp"
+#include "../options_sm.hpp"
+#include "../options_sm_runner.hpp"
 #include "mock_sbc_actions.hpp"
 
 namespace Sml = boost::sml;
