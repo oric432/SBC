@@ -73,16 +73,20 @@ bool RealDialogActions::send_reinvite_response(
         return false;
     }
 
-    if (answer != nullptr) {
-        const pj_status_t set_status = pjsip_inv_set_sdp_answer(inv, answer);
-        if (set_status != PJ_SUCCESS) {
-            Log::sip()->error("[{}] failed to set re-INVITE SDP answer ({})", session_.call_id(), set_status);
-            return false;
-        }
+    // pjsip clears inv->last_answer once the initial INVITE transaction
+    // confirms (see mod_inv_on_tsx_state in pjsip's sip_inv.c), so
+    // pjsip_inv_answer() alone would hit "PJ_ASSERT_RETURN(inv->last_answer,
+    // ...)" and abort the process for any re-INVITE response. Building the
+    // response from the re-INVITE's own rdata via pjsip_inv_initial_answer()
+    // is the one-shot equivalent that also negotiates `answer`, if given.
+    pjsip_rx_data* rdata = session_.reinvite_rdata();
+    if (rdata == nullptr) {
+        Log::sip()->error("[{}] no rdata for re-INVITE response {}", session_.call_id(), status_code);
+        return false;
     }
 
     pjsip_tx_data* data = nullptr;
-    pj_status_t status = pjsip_inv_answer(inv, status_code, nullptr, nullptr, &data);
+    pj_status_t status = pjsip_inv_initial_answer(inv, rdata, status_code, nullptr, answer, &data);
     if (status == PJ_SUCCESS) {
         status = pjsip_inv_send_msg(inv, data);
     }
@@ -100,7 +104,7 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, bool
     }
 
     if (offer.empty()) {
-        offerless_reinvite_leg_ = inv;
+        (from_caller ? offerless_reinvite_leg_caller_ : offerless_reinvite_leg_callee_) = inv;
         Log::call()->debug(
             "[{}] received offerless re-INVITE from {}; awaiting answer in ACK",
             session_.call_id(),
@@ -114,13 +118,18 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, bool
     const pj_status_t local_status = pjmedia_sdp_neg_get_active_local(inv->neg, &active_local);
     if (remote_status != PJ_SUCCESS || local_status != PJ_SUCCESS) {
         Log::sip()->error("[{}] re-INVITE leg has no active SDP", session_.call_id());
-        send_reinvite_response(inv, PJSIP_SC_INTERNAL_SERVER_ERROR);
+        // Outcome is kFailed either way (call teardown follows via
+        // handle_call_error), so a failed send here needs no extra handling
+        // beyond send_reinvite_response's own error log.
+        [[maybe_unused]] const bool sent = send_reinvite_response(inv, PJSIP_SC_INTERNAL_SERVER_ERROR);
         return ExchangeOutcome::kFailed;
     }
 
     if (offer != Sdp::serialize(active_remote)) {
         Log::call()->debug("[{}] changed-SDP re-INVITE is not implemented", session_.call_id());
-        send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE);
+        if (!send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE)) {
+            return ExchangeOutcome::kFailed;
+        }
         return ExchangeOutcome::kRolledBack;
     }
 
@@ -135,7 +144,13 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, bool
 }
 
 void RealDialogActions::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
-    if (offer == nullptr || inv != offerless_reinvite_leg_ || inv->neg == nullptr) {
+    if (offer == nullptr || inv->neg == nullptr) {
+        return;
+    }
+    if (inv != offerless_reinvite_leg_caller_ && inv != offerless_reinvite_leg_callee_) {
+        Log::sip()->warn(
+            "[{}] on_create_offer fired for a leg with no pending offerless re-INVITE",
+            session_.call_id());
         return;
     }
 
@@ -150,11 +165,18 @@ void RealDialogActions::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_sess
 }
 
 void RealDialogActions::on_media_update(pjsip_inv_session* inv, pj_status_t status) {
-    if (inv != offerless_reinvite_leg_) {
+    pjsip_inv_session** tracked_leg = nullptr;
+    if (inv == offerless_reinvite_leg_caller_) {
+        tracked_leg = &offerless_reinvite_leg_caller_;
+    }
+    else if (inv == offerless_reinvite_leg_callee_) {
+        tracked_leg = &offerless_reinvite_leg_callee_;
+    }
+    if (tracked_leg == nullptr) {
         return;
     }
 
-    offerless_reinvite_leg_ = nullptr;
+    *tracked_leg = nullptr;
     const ExchangeOutcome outcome = status == PJ_SUCCESS ? ExchangeOutcome::kCommitted : ExchangeOutcome::kFailed;
     Log::call()->info(
         "[{}] offerless re-INVITE answer in ACK {}",
@@ -194,7 +216,8 @@ void RealDialogActions::stop_exchange() {
 }
 
 void RealDialogActions::terminate_call() {
-    offerless_reinvite_leg_ = nullptr;
+    offerless_reinvite_leg_caller_ = nullptr;
+    offerless_reinvite_leg_callee_ = nullptr;
     end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT, "terminate_call caller");
     end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT, "terminate_call callee");
 }

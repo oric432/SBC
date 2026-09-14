@@ -51,11 +51,11 @@ void on_inv_state_changed(pjsip_inv_session* inv, pjsip_event* event) {
 
 void on_inv_new_session(pjsip_inv_session* /*inv*/, pjsip_event* /*e*/) {}
 
-pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* /*rdata*/) {
+pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata) {
     if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
         return PJ_ENOTFOUND;
     }
-    return g_active_stack->router()->on_rx_reinvite(inv, offer);
+    return g_active_stack->router()->on_rx_reinvite(inv, offer, rdata);
 }
 
 void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {

@@ -31,14 +31,18 @@ public:
     void cleanup() override;
 
 private:
-    bool send_reinvite_response(pjsip_inv_session* inv, int status_code, const pjmedia_sdp_session* answer = nullptr);
+    [[nodiscard]] bool
+    send_reinvite_response(pjsip_inv_session* inv, int status_code, const pjmedia_sdp_session* answer = nullptr);
     ExchangeOutcome receive_exchange_answer(const std::string& answer);
     ExchangeOutcome reject_exchange(int status_code);
     ExchangeOutcome confirm_exchange();
     ExchangeOutcome exchange_confirmation_timeout();
 
     CallSession& session_;
-    pjsip_inv_session* offerless_reinvite_leg_ = nullptr;
+    // One instance serves both legs of the call, so each leg tracks its own
+    // pending offerless re-INVITE independently.
+    pjsip_inv_session* offerless_reinvite_leg_caller_ = nullptr;
+    pjsip_inv_session* offerless_reinvite_leg_callee_ = nullptr;
 };
 
 } // namespace SbcEngine
