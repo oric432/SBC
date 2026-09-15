@@ -7,11 +7,13 @@
 #include <optional>
 
 #include "protocols/supported_codecs.hpp"
-#include "sm/isbc_actions.hpp"
+#include "sm/i_dialog_actions.hpp"
+#include "sm/i_options_actions.hpp"
+#include "sm/i_setup_actions.hpp"
 
 namespace SbcEngine {
 
-class MockSetupActions : public ISetupContext {
+class MockSetupActions : public ISetupActions {
 public:
     std::vector<std::string> calls_;
 
@@ -53,7 +55,7 @@ public:
     void reset() { calls_.clear(); }
 };
 
-class MockDialogActions : public IDialogContext {
+class MockDialogActions : public IDialogActions {
 public:
     std::vector<std::string> calls_;
     ExchangeOutcome start_result_ = ExchangeOutcome::kPending;
@@ -82,7 +84,7 @@ public:
     void reset() { calls_.clear(); }
 };
 
-class MockOptionsActions : public IOptionsContext {
+class MockOptionsActions : public IOptionsActions {
 public:
     std::vector<std::string> calls_;
 

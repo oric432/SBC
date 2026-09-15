@@ -1,9 +1,13 @@
 add_library(sip STATIC
     stack/pjsip_init.cpp
     stack/sdp.cpp
+    stack/inv_session.cpp
     call/call_manager.cpp
     call/call_session.cpp
     call/offer_answer_exchange.cpp
+    call/setup_actions.cpp
+    call/dialog_actions.cpp
+    call/offer_answer_actions.cpp
     router/message_router.cpp
     router/sip_request_actions.cpp
     router/extract_utils.cpp
@@ -14,9 +18,6 @@ add_library(sip STATIC
     sm/offer_answer_sm_runner.cpp
     sm/options_sm_runner.cpp
     sm/options_actions.cpp
-    sm/real_dialog_actions.cpp
-    sm/real_setup_actions.cpp
-    sm/real_offer_answer_actions.cpp
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(sip PUBLIC

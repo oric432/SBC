@@ -2,16 +2,16 @@
 
 #include <queue>
 
-#include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/i_setup_actions.hpp"
 #include "sip/sm/setup_sm.hpp"
 #include "sip/sm/sm_logger.hpp"
 
 namespace SbcEngine {
 
 struct SetupSmRunner::Impl {
-    using Machine = Sml::sm<SetupSm<ISetupContext>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
+    using Machine = Sml::sm<SetupSm<ISetupActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
 
-    Impl(ISetupContext& actions, std::string_view call_id)
+    Impl(ISetupActions& actions, std::string_view call_id)
         : logger_("setup", call_id)
         , sm_(actions, logger_) {}
 
@@ -28,7 +28,7 @@ struct SetupSmRunner::Impl {
     Machine sm_;
 };
 
-SetupSmRunner::SetupSmRunner(ISetupContext& actions, std::string_view call_id)
+SetupSmRunner::SetupSmRunner(ISetupActions& actions, std::string_view call_id)
     : impl_(std::make_unique<Impl>(actions, call_id)) {}
 
 SetupSmRunner::~SetupSmRunner() = default;

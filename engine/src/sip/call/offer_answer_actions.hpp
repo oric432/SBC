@@ -6,7 +6,7 @@
 #include <string>
 
 #include "protocols/supported_codecs.hpp"
-#include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/i_offer_answer_actions.hpp"
 #include "sip/sm/leg.hpp"
 #include "sip/stack/sdp.hpp"
 
@@ -15,9 +15,9 @@ class CallSession;
 
 // SIP adapter for one initial INVITE exchange. CallSession owns this object
 // alongside its temporary runner; neither survives exchange cleanup.
-class RealOfferAnswerActions : public IOfferAnswerActions {
+class OfferAnswerActions : public IOfferAnswerActions {
 public:
-    RealOfferAnswerActions(
+    OfferAnswerActions(
         CallSession& session,
         std::string destination,
         std::optional<Protocols::SupportedCodec> required_codec)
@@ -51,7 +51,6 @@ private:
 
     bool create_outbound_leg(const std::string& destination);
     bool send_outbound_invite();
-    bool send_response(int code, const pjmedia_sdp_session* sdp = nullptr);
     // Pushes the negotiated per-leg codec/DTMF-PT info into MediaBridge, once
     // both legs' codecs are known but before the caller-facing 200 OK is
     // sent — so a pjmedia codec/resampler allocation failure can still be

@@ -3,7 +3,8 @@
 #include <optional>
 
 #include "protocols/supported_codecs.hpp"
-#include "sip/sm/real_offer_answer_actions.hpp"
+#include "sip/call/offer_answer_actions.hpp"
+#include "sip/sm/events.hpp"
 #include "sip/sm/offer_answer_sm_runner.hpp"
 
 namespace SbcEngine {
@@ -35,7 +36,7 @@ private:
         runner_.process_event(event);
         return finish_operation();
     }
-    RealOfferAnswerActions actions_;
+    OfferAnswerActions actions_;
     OfferAnswerSmRunner runner_;
     bool processing_ = false;
 };

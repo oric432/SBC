@@ -1,4 +1,4 @@
-#include "real_offer_answer_actions.hpp"
+#include "offer_answer_actions.hpp"
 
 #include <array>
 #include <string_view>
@@ -7,37 +7,25 @@
 
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
+#include "sip/stack/inv_session.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
-namespace {
-bool send_inv_msg(pjsip_inv_session* inv, pjsip_tx_data* data) {
-    if (data == nullptr) {
-        return false;
-    }
-    const pj_status_t status = pjsip_inv_send_msg(inv, data);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->error("Offer-answer send failed ({})", status);
-    }
-    return status == PJ_SUCCESS && inv->state != PJSIP_INV_STATE_DISCONNECTED;
-}
-} // namespace
-
-bool RealOfferAnswerActions::offer_usable(const std::string& sdp) const {
+bool OfferAnswerActions::offer_usable(const std::string& sdp) const {
     return Sdp::is_valid_sdp(sdp);
 }
-bool RealOfferAnswerActions::answer_usable(const std::string& sdp) const {
+bool OfferAnswerActions::answer_usable(const std::string& sdp) const {
     return Sdp::is_valid_sdp(sdp);
 }
 
-void RealOfferAnswerActions::relay_offer(const std::string& sdp) {
+void OfferAnswerActions::relay_offer(const std::string& sdp) {
     offer_ = sdp;
     const auto* caller = session_.inv_caller();
     offer_sent_ = caller != nullptr && caller->state != PJSIP_INV_STATE_DISCONNECTED &&
                   create_outbound_leg(destination_) && send_outbound_invite();
 }
 
-bool RealOfferAnswerActions::create_outbound_leg(const std::string& destination) {
+bool OfferAnswerActions::create_outbound_leg(const std::string& destination) {
     const PjContext* ctx = session_.ctx();
     const PjsipConfig& cfg = ctx->config_;
 
@@ -137,7 +125,7 @@ bool RealOfferAnswerActions::create_outbound_leg(const std::string& destination)
     return true;
 }
 
-bool RealOfferAnswerActions::send_outbound_invite() {
+bool OfferAnswerActions::send_outbound_invite() {
     pjsip_inv_session* inv = session_.inv_callee();
     if (inv == nullptr) {
         Log::sip()->error("[{}] send_outbound_invite: no callee leg", session_.call_id());
@@ -173,25 +161,11 @@ bool RealOfferAnswerActions::send_outbound_invite() {
         pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(new_hdr));
     }
 
-    return send_inv_msg(inv, tdata);
+    return Inv::send(inv, tdata);
 }
 
 
-bool RealOfferAnswerActions::send_response(int code, const pjmedia_sdp_session* sdp) {
-    auto* inv = session_.inv_caller();
-    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
-        return false;
-    }
-    pjsip_tx_data* data = nullptr;
-    const pj_status_t status = pjsip_inv_answer(inv, code, nullptr, sdp, &data);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->error("Offer-answer response {} creation failed ({})", code, status);
-        return false;
-    }
-    return send_inv_msg(inv, data);
-}
-
-void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
+void OfferAnswerActions::relay_answer(const std::string& sdp) {
     answer_ = sdp;
     auto* callee_answer = Sdp::parse(session_.pool(), answer_);
     if (callee_answer == nullptr) {
@@ -234,7 +208,7 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     // allocation failure here can still be answered with a SIP error rather
     // than one that's already committed (see issue #177).
     if (!configure_media_bridge()) {
-        send_response(PJSIP_SC_INTERNAL_SERVER_ERROR);
+        Inv::answer(session_.inv_caller(), PJSIP_SC_INTERNAL_SERVER_ERROR);
         return;
     }
 
@@ -243,7 +217,7 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
         caller_answer,
         session_.ctx()->config_.local_ip_,
         session_.media_bridge()->leg_a_port().value());
-    answer_sent_ = send_response(PJSIP_SC_OK, caller_answer);
+    answer_sent_ = Inv::answer(session_.inv_caller(), PJSIP_SC_OK, caller_answer);
     if (!answer_sent_) {
         return;
     }
@@ -252,7 +226,7 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     session_.media_bridge()->start_bridge_loop();
 }
 
-bool RealOfferAnswerActions::configure_media_bridge() {
+bool OfferAnswerActions::configure_media_bridge() {
     if (!leg(Leg::kCaller).codec_ || !leg(Leg::kCallee).codec_) {
         Log::call()->error("[{}] configure_media_bridge: missing negotiated codec info", session_.call_id());
         return false;
@@ -285,7 +259,7 @@ bool RealOfferAnswerActions::configure_media_bridge() {
     return true;
 }
 
-void RealOfferAnswerActions::reject_offer(OfferAnswer::Reason reason) {
+void OfferAnswerActions::reject_offer(OfferAnswer::Reason reason) {
     int code = PJSIP_SC_INTERNAL_SERVER_ERROR;
     if (reason == OfferAnswer::Reason::kUnusableOffer) {
         code = PJSIP_SC_NOT_ACCEPTABLE_HERE;
@@ -293,14 +267,14 @@ void RealOfferAnswerActions::reject_offer(OfferAnswer::Reason reason) {
     else if (reason == OfferAnswer::Reason::kAnswerTimeout) {
         code = PJSIP_SC_REQUEST_TIMEOUT;
     }
-    send_response(code);
+    Inv::answer(session_.inv_caller(), code);
 }
 
-void RealOfferAnswerActions::relay_rejection(int status_code) {
-    send_response(status_code);
+void OfferAnswerActions::relay_rejection(int status_code) {
+    Inv::answer(session_.inv_caller(), status_code);
 }
 
-void RealOfferAnswerActions::commit() {
+void OfferAnswerActions::commit() {
     session_.commit_offer_answer(
         std::move(offer_),
         std::move(answer_),
@@ -310,20 +284,21 @@ void RealOfferAnswerActions::commit() {
         leg(Leg::kCallee).dtmf_pt_);
 }
 
-void RealOfferAnswerActions::rollback([[maybe_unused]] OfferAnswer::Reason reason) {
+void OfferAnswerActions::rollback([[maybe_unused]] OfferAnswer::Reason reason) {
     // Pending data is discarded by cleanup; committed session data is untouched.
 }
 
-void RealOfferAnswerActions::fail(OfferAnswer::Reason reason) {
+void OfferAnswerActions::fail(OfferAnswer::Reason reason) {
     if (!answer_sent_) {
-        send_response(
+        Inv::answer(
+            session_.inv_caller(),
             reason == OfferAnswer::Reason::kUnusableAnswer ? PJSIP_SC_NOT_ACCEPTABLE_HERE
                                                            : PJSIP_SC_INTERNAL_SERVER_ERROR);
     }
     // Setup owns call teardown; PJSIP owns ACK on the callee-facing leg.
 }
 
-void RealOfferAnswerActions::cleanup() {
+void OfferAnswerActions::cleanup() {
     offer_.clear();
     answer_.clear();
     legs_ = {};

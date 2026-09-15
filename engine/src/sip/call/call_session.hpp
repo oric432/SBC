@@ -13,8 +13,8 @@
 
 #include "sip/call/pj_context.hpp"
 #include "sip/sm/leg.hpp"
-#include "sip/sm/real_dialog_actions.hpp"
-#include "sip/sm/real_setup_actions.hpp"
+#include "sip/call/dialog_actions.hpp"
+#include "sip/call/setup_actions.hpp"
 #include "net/rtp/media_bridge.hpp"
 #include "sip/sm/dialog_sm_runner.hpp"
 #include "sip/sm/setup_sm_runner.hpp"
@@ -40,7 +40,7 @@ public:
     };
 
     // request_uri/caller_offer_sdp are extracted from rdata internally. routes_store
-    // is forwarded to RealSetupActions only — CallSession does not retain it.
+    // is forwarded to SetupActions only — CallSession does not retain it.
     CallSession(
         std::string call_id,
         PjContext* ctx,
@@ -60,8 +60,8 @@ public:
     [[nodiscard]] CallManager* call_manager() const { return call_manager_; }
     [[nodiscard]] pj_pool_t* pool() const { return pool_; }
 
-    RealSetupActions& setup_actions() { return setup_actions_; }
-    RealDialogActions& dialog_actions() { return dialog_actions_; }
+    SetupActions& setup_actions() { return setup_actions_; }
+    DialogActions& dialog_actions() { return dialog_actions_; }
 
     SetupSmRunner& setup_sm() { return setup_sm_; }
     DialogSmRunner& dialog_sm() { return dialog_sm_; }
@@ -115,12 +115,9 @@ public:
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
     void clear_rdata() { current_rdata_ = nullptr; }
 
-    // rx_data of the re-INVITE currently being answered: pjsip requires the
-    // triggering request to build a response once the initial INVITE
-    // transaction has confirmed (pjsip_inv_answer() alone asserts past that
-    // point — see RealDialogActions::send_reinvite_response). MessageRouter
-    // sets this immediately before dispatching ReinviteReceived and clears
-    // it right after, so it never lingers as ambient state either.
+    // rx_data of the re-INVITE currently being answered (see Inv::answer_request
+    // for why the response must be built from it). MessageRouter sets it right
+    // before dispatching ReinviteReceived and clears it right after.
     [[nodiscard]] pjsip_rx_data* reinvite_rdata() const { return reinvite_rdata_; }
     void set_reinvite_rdata(pjsip_rx_data* rdata) { reinvite_rdata_ = rdata; }
 
@@ -145,8 +142,8 @@ private:
     std::string outbound_destination_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.
-    RealSetupActions setup_actions_;
-    RealDialogActions dialog_actions_;
+    SetupActions setup_actions_;
+    DialogActions dialog_actions_;
 
     SetupSmRunner setup_sm_;
     DialogSmRunner dialog_sm_;

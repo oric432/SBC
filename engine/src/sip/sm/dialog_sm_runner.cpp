@@ -2,16 +2,16 @@
 
 #include <queue>
 
-#include "sip/sm/real_dialog_actions.hpp"
+#include "sip/sm/i_dialog_actions.hpp"
 #include "sip/sm/dialog_sm.hpp"
 #include "sip/sm/sm_logger.hpp"
 
 namespace SbcEngine {
 
 struct DialogSmRunner::Impl {
-    using Machine = Sml::sm<DialogSm<RealDialogActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
+    using Machine = Sml::sm<DialogSm<IDialogActions>, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
 
-    Impl(RealDialogActions& actions, std::string_view call_id)
+    Impl(IDialogActions& actions, std::string_view call_id)
         : logger_("dialog", call_id)
         , sm_(actions, logger_) {}
 
@@ -20,7 +20,7 @@ struct DialogSmRunner::Impl {
     Machine sm_;
 };
 
-DialogSmRunner::DialogSmRunner(RealDialogActions& actions, std::string_view call_id)
+DialogSmRunner::DialogSmRunner(IDialogActions& actions, std::string_view call_id)
     : impl_(std::make_unique<Impl>(actions, call_id)) {}
 
 DialogSmRunner::~DialogSmRunner() = default;

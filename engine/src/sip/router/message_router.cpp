@@ -6,32 +6,17 @@
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/sm/events.hpp"
+#include "sip/stack/inv_session.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
 
 namespace {
 
-// Manually reject a re-INVITE. Per pjsip's on_rx_reinvite contract, a
-// non-PJ_SUCCESS return does NOT reject the request — it tells pjsip to
-// auto-answer with whatever SDP was set via pjsip_inv_set_sdp_answer() (or
-// the active SDP, if none was set), so an actual rejection must be sent
-// here and the callback must still return PJ_SUCCESS. pjsip_inv_initial_
-// answer() (not pjsip_inv_answer()) is required: pjsip clears inv->
-// last_answer once the initial INVITE transaction confirms, and
-// pjsip_inv_answer() asserts on that being unset for any later transaction.
+// Per pjsip's on_rx_reinvite contract a non-PJ_SUCCESS return auto-answers
+// with the active SDP, so a rejection must be sent explicitly.
 void reject_reinvite(pjsip_inv_session* inv, pjsip_rx_data* rdata, int status_code) {
-    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
-        return;
-    }
-    pjsip_tx_data* data = nullptr;
-    pj_status_t status = pjsip_inv_initial_answer(inv, rdata, status_code, nullptr, nullptr, &data);
-    if (status == PJ_SUCCESS) {
-        status = pjsip_inv_send_msg(inv, data);
-    }
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("failed to reject re-INVITE with {} ({})", status_code, status);
-    }
+    Inv::answer_request(inv, rdata, status_code);
 }
 
 } // namespace
@@ -81,10 +66,9 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
 
     const Leg leg = session->leg_for(inv);
     const std::string sdp = offer != nullptr ? Sdp::serialize(offer) : std::string{};
-    // RealDialogActions needs this rdata to build a manual response
-    // (pjsip_inv_answer() alone can't, once the initial INVITE has
-    // confirmed), but the SM's ReinviteReceived event stays pjsip-free, so
-    // it is stashed on the session for the duration of this dispatch only.
+    // The response must be built from this rdata (see Inv::answer_request),
+    // but the SM's ReinviteReceived event stays pjsip-free, so it is stashed
+    // on the session for the duration of this dispatch only.
     session->set_reinvite_rdata(rdata);
     const bool handled = session->dialog_sm().process_event(ReinviteReceived{.sdp_ = sdp, .leg_ = leg});
     session->set_reinvite_rdata(nullptr);

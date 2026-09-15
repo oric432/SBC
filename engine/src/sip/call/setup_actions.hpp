@@ -5,16 +5,16 @@
 #include <pjsip_ua.h>
 
 #include "protocols/supported_codecs.hpp"
-#include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/i_setup_actions.hpp"
 
 namespace SbcEngine {
 class CallSession;
 class RoutesStore;
 
 // Per-call protocol adapter for the generic setup lifecycle.
-class RealSetupActions : public ISetupContext {
+class SetupActions : public ISetupActions {
 public:
-    RealSetupActions(CallSession& session, RoutesStore* routes_store)
+    SetupActions(CallSession& session, RoutesStore* routes_store)
         : session_(session)
         , routes_store_(routes_store) {}
 
@@ -36,7 +36,6 @@ public:
 
 private:
     void handle_disconnect(pjsip_inv_session* inv);
-    void send_response(int code);
     CallSession& session_;
     RoutesStore* routes_store_;
 };

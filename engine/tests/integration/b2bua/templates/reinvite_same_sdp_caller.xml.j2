@@ -55,7 +55,7 @@
 
   <!-- Mid-call re-INVITE carrying the exact same SDP as the initial offer.
        The SBC should answer 200 OK locally on this leg without touching
-       either leg's media (RealDialogActions::start_exchange, unchanged-SDP
+       either leg's media (DialogActions::answer_reinvite, unchanged-SDP
        path) and without forwarding anything to the callee. -->
   <send retrans="500">
     <![CDATA[

@@ -7,7 +7,7 @@
 #include <pjsip_ua.h>
 
 #include "protocols/supported_codecs.hpp"
-#include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/i_dialog_actions.hpp"
 #include "sip/sm/leg.hpp"
 
 namespace SbcEngine {
@@ -16,9 +16,9 @@ class CallSession;
 
 // Per-call implementation of the DialogSm action interface (confirmed-dialog
 // phase: BYE teardown and re-INVITE handling).
-class RealDialogActions : public IDialogContext {
+class DialogActions : public IDialogActions {
 public:
-    explicit RealDialogActions(CallSession& session)
+    explicit DialogActions(CallSession& session)
         : session_(session) {}
 
     void on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
@@ -34,8 +34,6 @@ public:
     void cleanup() override;
 
 private:
-    [[nodiscard]] bool
-    send_reinvite_response(pjsip_inv_session* inv, int status_code, const pjmedia_sdp_session* answer = nullptr);
     [[nodiscard]] bool
     reconfigure_media_bridge(Leg leg, const Protocols::SupportedCodec& codec, std::optional<std::uint8_t> dtmf_pt);
 

@@ -68,11 +68,9 @@ TEST_CASE("OptionsSm action invocation", "[options_sm]") {
 // the mocks do, so these use process_event()'s bool return (true = a
 // transition matched) as the observable instead.
 //
-// SetupSmRunner/DialogSmRunner don't get the same treatment: they're
-// hardcoded to RealSetupActions/RealDialogActions, which need a live
-// CallSession (itself built from real pjsip_rx_data) to construct — not
-// practical to stand up in a unit test without templating the runners on
-// the Actions type, a larger change than this fix warrants on its own.
+// SetupSmRunner/DialogSmRunner take their I*Actions interface, so the same
+// could be done with the mocks; the machines themselves are covered in
+// test_setup_sm.cpp / test_dialog_sm.cpp.
 
 // Test: OptionsSmRunner drives a fresh machine to completion
 // Verifies: the pimpl wrapper's process_event() forwards through to the real

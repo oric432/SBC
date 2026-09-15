@@ -44,7 +44,7 @@ read it before touching `src/sip/` or `src/net/rtp/`. Build/style conventions li
 ### State machines (`src/sip/sm/`)
 
 Three Boost.SML machines, each templated on an `Actions` type implementing the matching interface
-in `isbc_actions.hpp` (`ISetupContext`, `IDialogContext`, `IOptionsContext`):
+in `sip/sm/i_*_actions.hpp` (`ISetupActions`, `IDialogActions`, `IOptionsActions`):
 
 - **`SetupSm`** (`setup_sm.hpp`) — drives call setup end-to-end:
   `Idle → Routing → Calling → WaitingForAnswer → Ringing → WaitingForAck → Done`, with
@@ -86,7 +86,7 @@ machine). **Never call `process_event()` from inside an action.**
 
 ### RTP
 
-`RealSetupActions`/`RealDialogActions` bind each leg's socket via `MediaBridge::bind_leg_a()` /
+`SetupActions`/`DialogActions` bind each leg's socket via `MediaBridge::bind_leg_a()` /
 `bind_leg_b()`, set the negotiated remote endpoint via `set_remote_leg_a()`/`set_remote_leg_b()`
 as each leg's SDP answer arrives, then start relaying via `start_bridge_loop()`. From that point
 the relay runs on the `io_context` thread (see Threading model above).

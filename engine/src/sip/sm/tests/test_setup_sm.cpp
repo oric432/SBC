@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "sip/sm/setup_sm_runner.hpp"
+#include "sip/sm/i_offer_answer_actions.hpp"
 #include "sip/sm/offer_answer_sm_runner.hpp"
 #include "mock_sbc_actions.hpp"
 

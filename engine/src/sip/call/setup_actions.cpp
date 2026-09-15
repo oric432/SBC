@@ -1,4 +1,4 @@
-#include "real_setup_actions.hpp"
+#include "setup_actions.hpp"
 
 #include <algorithm>
 #include <format>
@@ -9,6 +9,7 @@
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/route_table/routes_store.hpp"
+#include "sip/stack/inv_session.hpp"
 #include "sip/stack/sdp.hpp"
 #include "core/utils/log.hpp"
 
@@ -22,53 +23,15 @@ void finish_exchange(CallSession& session, ExchangeOutcome outcome) {
     session.release_exchange();
     session.setup_sm().process_event(Setup::ExchangeFinished{outcome});
 }
-void end_session(pjsip_inv_session* inv, int code) {
-    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
-        return;
-    }
-    pjsip_tx_data* data = nullptr;
-    pj_status_t status = pjsip_inv_end_session(inv, code, nullptr, &data);
-    if (status == PJ_SUCCESS && data != nullptr) {
-        status = pjsip_inv_send_msg(inv, data);
-    }
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("Ending setup leg failed ({})", status);
-    }
-}
 } // namespace
 
-void RealSetupActions::begin_setup() {
-    pjsip_tx_data* data = nullptr;
-    auto* inv = session_.inv_caller();
-    auto* request = session_.current_rdata();
-    if (inv == nullptr || request == nullptr) {
-        return;
-    }
-    pj_status_t status = pjsip_inv_initial_answer(inv, request, PJSIP_SC_TRYING, nullptr, nullptr, &data);
-    if (status == PJ_SUCCESS) {
-        status = pjsip_inv_send_msg(inv, data);
-    }
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("Initial setup response failed ({})", status);
+void SetupActions::begin_setup() {
+    if (!Inv::answer_request(session_.inv_caller(), session_.current_rdata(), PJSIP_SC_TRYING)) {
+        Log::sip()->warn("[{}] initial 100 Trying failed", session_.call_id());
     }
 }
 
-void RealSetupActions::send_response(int code) {
-    auto* inv = session_.inv_caller();
-    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
-        return;
-    }
-    pjsip_tx_data* data = nullptr;
-    pj_status_t status = pjsip_inv_answer(inv, code, nullptr, nullptr, &data);
-    if (status == PJ_SUCCESS) {
-        status = pjsip_inv_send_msg(inv, data);
-    }
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("Setup response {} failed ({})", code, status);
-    }
-}
-
-RouteResolution RealSetupActions::resolve_route() {
+RouteResolution SetupActions::resolve_route() {
     const PjContext* ctx = session_.ctx();
     const std::string& request_uri = session_.request_uri();
 
@@ -132,16 +95,16 @@ RouteResolution RealSetupActions::resolve_route() {
     return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest, .required_codec_ = required_codec};
 }
 
-void RealSetupActions::route_failed() {
-    send_response(PJSIP_SC_TEMPORARILY_UNAVAILABLE);
+void SetupActions::route_failed() {
+    Inv::answer(session_.inv_caller(), PJSIP_SC_TEMPORARILY_UNAVAILABLE);
 }
-void RealSetupActions::routing_loop_detected() {
-    send_response(PJSIP_SC_LOOP_DETECTED);
+void SetupActions::routing_loop_detected() {
+    Inv::answer(session_.inv_caller(), PJSIP_SC_LOOP_DETECTED);
 }
-void RealSetupActions::codec_mismatch_detected() {
-    send_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
+void SetupActions::codec_mismatch_detected() {
+    Inv::answer(session_.inv_caller(), PJSIP_SC_NOT_ACCEPTABLE_HERE);
 }
-ExchangeOutcome RealSetupActions::start_exchange(
+ExchangeOutcome SetupActions::start_exchange(
     const std::string& destination,
     std::optional<Protocols::SupportedCodec> required_codec) {
     if (!session_.create_exchange(destination, required_codec)) {
@@ -153,20 +116,20 @@ ExchangeOutcome RealSetupActions::start_exchange(
     }
     return outcome;
 }
-void RealSetupActions::report_progress() {
-    send_response(PJSIP_SC_RINGING);
+void SetupActions::report_progress() {
+    Inv::answer(session_.inv_caller(), PJSIP_SC_RINGING);
 }
 
-bool RealSetupActions::cancel_call() {
+bool SetupActions::cancel_call() {
     if (session_.exchange() != nullptr) {
         session_.exchange()->stop();
         session_.release_exchange();
     }
-    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED);
+    Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED);
     return session_.inv_callee() == nullptr || session_.inv_callee()->state == PJSIP_INV_STATE_DISCONNECTED;
 }
 
-void RealSetupActions::establish_call() {
+void SetupActions::establish_call() {
     // The exchange has committed; the permanent lifecycle is now established.
     const auto caller_relay_port = session_.media_bridge()->leg_a_port();
     const auto callee_relay_port = session_.media_bridge()->leg_b_port();
@@ -184,23 +147,23 @@ void RealSetupActions::establish_call() {
         callee_relay_port.value_or(0));
 }
 
-void RealSetupActions::terminate_call() {
+void SetupActions::terminate_call() {
     if (session_.exchange() != nullptr) {
         session_.exchange()->stop();
         session_.release_exchange();
     }
-    end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
-    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);
+    Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
+    Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);
 }
 
-void RealSetupActions::cleanup() {
+void SetupActions::cleanup() {
     session_.media_bridge()->close();
 
     session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] setup cleanup complete", session_.call_id());
 }
 
-void RealSetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
+void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
     const Leg leg = session_.leg_for(inv);
     auto& setup = session_.setup_sm();
     // PJSIP reports local state changes synchronously during sends/termination.
@@ -257,7 +220,7 @@ void RealSetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_dat
     }
 }
 
-void RealSetupActions::handle_disconnect(pjsip_inv_session* inv) {
+void SetupActions::handle_disconnect(pjsip_inv_session* inv) {
     auto& setup = session_.setup_sm();
     const Leg leg = session_.leg_for(inv);
     const int cause = static_cast<int>(inv->cause);

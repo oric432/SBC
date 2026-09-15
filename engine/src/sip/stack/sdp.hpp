@@ -64,7 +64,7 @@ RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 // non-declined audio media line. Returns nullopt if there is no active audio
 // stream. Groundwork for future codec-aware work (e.g. a transcoder) — pass
 // it the decided offer/answer body directly (not necessarily one read back
-// out of pjmedia_sdp_neg — see RealSetupActions::forward_200_ok for why).
+// out of pjmedia_sdp_neg — see OfferAnswerActions::relay_answer for why).
 std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp);
 
 // Every format offered on the first non-declined audio media line, in the

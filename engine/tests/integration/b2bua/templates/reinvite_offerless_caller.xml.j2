@@ -54,7 +54,7 @@
   <pause milliseconds="2000"/>
 
   <!-- Offerless mid-call re-INVITE: no SDP body at all. The SBC must
-       generate the offer itself (RealDialogActions::on_create_offer,
+       generate the offer itself (DialogActions::on_create_offer,
        cloned from the leg's active local SDP) and send it in the 200 OK;
        the answer then arrives in our ACK below and is applied via
        on_media_update. -->

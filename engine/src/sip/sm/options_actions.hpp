@@ -3,7 +3,7 @@
 #include <pjsip.h>
 
 #include "sip/call/pj_context.hpp"
-#include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/i_options_actions.hpp"
 
 namespace SbcEngine {
 
@@ -15,7 +15,7 @@ namespace SbcEngine {
 // constructed in SbcApp's member-init list, before SbcApp::init() populates
 // ctx_.endpt_ (see sbc_app.cpp), so capturing the endpoint by value at
 // construction time would permanently freeze it at nullptr.
-class OptionsActions : public IOptionsContext {
+class OptionsActions : public IOptionsActions {
 public:
     explicit OptionsActions(PjContext* ctx)
         : ctx_(ctx) {}
