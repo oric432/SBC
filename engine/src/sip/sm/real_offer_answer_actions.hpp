@@ -1,11 +1,13 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
 
 #include "protocols/supported_codecs.hpp"
 #include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/leg.hpp"
 #include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
@@ -38,6 +40,15 @@ public:
     [[nodiscard]] bool answer_sent() const { return answer_sent_; }
 
 private:
+    // Negotiated codec/DTMF-PT for one leg, staged during this exchange and
+    // handed to CallSession::commit_offer_answer() once both are known.
+    struct LegNegotiation {
+        std::optional<Sdp::AudioCodecInfo> codec_;
+        std::optional<std::uint8_t> dtmf_pt_;
+    };
+
+    LegNegotiation& leg(Leg which) { return legs_[static_cast<std::size_t>(which)]; }
+
     bool create_outbound_leg(const std::string& destination);
     bool send_outbound_invite();
     bool send_response(int code, const pjmedia_sdp_session* sdp = nullptr);
@@ -52,10 +63,7 @@ private:
     std::optional<Protocols::SupportedCodec> required_codec_;
     std::string offer_;
     std::string answer_;
-    std::optional<Sdp::AudioCodecInfo> caller_leg_codec_;
-    std::optional<Sdp::AudioCodecInfo> callee_leg_codec_;
-    std::optional<std::uint8_t> caller_leg_dtmf_pt_;
-    std::optional<std::uint8_t> callee_leg_dtmf_pt_;
+    std::array<LegNegotiation, 2> legs_;
     bool offer_sent_ = false;
     bool answer_sent_ = false;
 };
