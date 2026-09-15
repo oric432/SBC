@@ -92,7 +92,15 @@ public:
 
     void start_bridge_loop();
 
-    std::expected<void, std::error_code> close();
+    // Marks the bridge as closing and closes both legs' sockets. Posted onto
+    // this bridge's own executor, the same reason as retarget_remote_leg_a/b
+    // and configure_legs: closing a socket directly from a foreign thread
+    // races the relay loop, and a send/receive completion that re-arms
+    // listen() afterward on the now-closed socket fails with a synchronous
+    // bad_descriptor (not operation_aborted) and spins forever re-arming
+    // itself (see issue #208). Safe to call even if neither leg was ever
+    // bound, and safe to call more than once.
+    void close();
 
 private:
     struct Impl;
