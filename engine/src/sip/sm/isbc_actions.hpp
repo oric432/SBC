@@ -81,12 +81,11 @@ public:
     ~IDialogContext() override = default;
 
     // BYE handling
-    virtual void send_200_ok_to_bye_sender() = 0;
     virtual void forward_bye_to_other_leg(Leg leg) = 0;
 
-    // An unchanged offer completes locally; later cases may create an exchange.
-    virtual ExchangeOutcome start_exchange(const std::string& offer, Leg leg) = 0;
-    virtual void stop_exchange() = 0;
+    // Answered locally on the offering leg; kPending only while an offerless
+    // re-INVITE waits for the answer carried in the ACK.
+    virtual ExchangeOutcome answer_reinvite(const std::string& offer, Leg leg) = 0;
     virtual void reject_reinvite_491_request_pending(Leg leg) = 0;
 
     // Call termination

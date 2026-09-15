@@ -3,13 +3,11 @@
 #include <string>
 #include <string_view>
 
-#include <boost/sml.hpp>
+#include "types.hpp"
 
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
-
-namespace Sml = boost::sml;
 
 // Boost.SML logger policy, plugged into a machine via Sml::logger<SmLogger>.
 // tag_ names the machine instance (setup/dialog/options + owning call) so

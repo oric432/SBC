@@ -1,13 +1,9 @@
 #pragma once
 
-#include <boost/sml.hpp>
-
 #include "events.hpp"
 #include "types.hpp"
 
 namespace SbcEngine {
-
-namespace Sml = boost::sml;
 
 // State tags
 struct Active {};
@@ -16,41 +12,37 @@ struct Terminating {};
 struct Terminated {};
 struct DialogDone {};
 
-using DialogSelfFireQueue = Sml::back::process<Dialog::ExchangeFinished, Cleanup>;
+using DialogSelfFireQueue = Sml::back::process<Dialog::ReinviteFinished, Cleanup>;
 
 template <typename Actions>
 struct DialogSm {
     auto operator()() const {
         const auto publish_outcome = [](ExchangeOutcome outcome, DialogSelfFireQueue result) {
             if (outcome != ExchangeOutcome::kPending) {
-                result(Dialog::ExchangeFinished{outcome});
+                result(Dialog::ReinviteFinished{outcome});
             }
         };
 
-        auto handle_bye = [](Actions& actions, const ByeReceived& evt) {
-            actions.stop_exchange();
-            actions.send_200_ok_to_bye_sender();
-            actions.forward_bye_to_other_leg(evt.leg_);
-        };
+        auto handle_bye = [](Actions& actions, const ByeReceived& evt) { actions.forward_bye_to_other_leg(evt.leg_); };
 
         auto handle_reinvite =
             [publish_outcome](Actions& actions, const ReinviteReceived& evt, DialogSelfFireQueue result) {
-                publish_outcome(actions.start_exchange(evt.sdp_, evt.leg_), result);
+                publish_outcome(actions.answer_reinvite(evt.sdp_, evt.leg_), result);
             };
 
         auto handle_reinvite_collision = [](Actions& actions, const ReinviteReceived& evt) {
             actions.reject_reinvite_491_request_pending(evt.leg_);
         };
 
-        auto committed = [](const Dialog::ExchangeFinished& event) {
+        auto committed = [](const Dialog::ReinviteFinished& event) {
             return event.outcome_ == ExchangeOutcome::kCommitted;
         };
 
-        auto rolled_back = [](const Dialog::ExchangeFinished& event) {
+        auto rolled_back = [](const Dialog::ReinviteFinished& event) {
             return event.outcome_ == ExchangeOutcome::kRolledBack;
         };
 
-        auto failed = [](const Dialog::ExchangeFinished& event) { return event.outcome_ == ExchangeOutcome::kFailed; };
+        auto failed = [](const Dialog::ReinviteFinished& event) { return event.outcome_ == ExchangeOutcome::kFailed; };
 
         auto handle_call_error = [](Actions& actions) { actions.terminate_call(); };
 
@@ -67,9 +59,9 @@ struct DialogSm {
 
              // Reinviting state
              Sml::state<Reinviting>            + (Sml::event<ReinviteReceived>                                                      / handle_reinvite_collision)  = Sml::state<Reinviting>,
-             Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[committed]                                  = Sml::state<Active>,
-             Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[rolled_back]                                = Sml::state<Active>,
-             Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[failed] / handle_call_error                 = Sml::state<Terminating>,
+             Sml::state<Reinviting>            + Sml::event<Dialog::ReinviteFinished>[committed]                                  = Sml::state<Active>,
+             Sml::state<Reinviting>            + Sml::event<Dialog::ReinviteFinished>[rolled_back]                                = Sml::state<Active>,
+             Sml::state<Reinviting>            + Sml::event<Dialog::ReinviteFinished>[failed] / handle_call_error                 = Sml::state<Terminating>,
 
              // Terminating state
              Sml::state<Terminating>           + (Sml::event<CallEnded>                                                              / handle_call_ended)          = Sml::state<Terminated>,

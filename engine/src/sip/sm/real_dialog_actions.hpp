@@ -15,7 +15,7 @@ namespace SbcEngine {
 class CallSession;
 
 // Per-call implementation of the DialogSm action interface (confirmed-dialog
-// phase: BYE teardown and, later, re-INVITE handling).
+// phase: BYE teardown and re-INVITE handling).
 class RealDialogActions : public IDialogContext {
 public:
     explicit RealDialogActions(CallSession& session)
@@ -25,11 +25,9 @@ public:
     void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer);
     void on_media_update(pjsip_inv_session* inv, pj_status_t status);
 
-    void send_200_ok_to_bye_sender() override;
     void forward_bye_to_other_leg(Leg leg) override;
 
-    ExchangeOutcome start_exchange(const std::string& offer, Leg leg) override;
-    void stop_exchange() override;
+    ExchangeOutcome answer_reinvite(const std::string& offer, Leg leg) override;
     void reject_reinvite_491_request_pending(Leg leg) override;
 
     void terminate_call() override;
@@ -38,10 +36,6 @@ public:
 private:
     [[nodiscard]] bool
     send_reinvite_response(pjsip_inv_session* inv, int status_code, const pjmedia_sdp_session* answer = nullptr);
-    ExchangeOutcome receive_exchange_answer(const std::string& answer);
-    ExchangeOutcome reject_exchange(int status_code);
-    ExchangeOutcome confirm_exchange();
-    ExchangeOutcome exchange_confirmation_timeout();
     [[nodiscard]] bool
     reconfigure_media_bridge(Leg leg, const Protocols::SupportedCodec& codec, std::optional<std::uint8_t> dtmf_pt);
 

@@ -8,14 +8,12 @@
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
-#include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
 
 namespace {
 constexpr const char* kSessionTimerExpiredCause = "No session refresh received.";
-constexpr int kMinFinalErrorCode = 300;
 bool is_session_timer_expiry(const pjsip_inv_session* inv) {
     return inv->cause == PJSIP_SC_REQUEST_TIMEOUT && pj_stricmp2(&inv->cause_text, kSessionTimerExpiredCause) == 0;
 }
@@ -39,21 +37,7 @@ void end_session(pjsip_inv_session* inv, int code, const char* what) {
     }
 }
 
-void finish_exchange(CallSession& session, ExchangeOutcome outcome) {
-    if (outcome == ExchangeOutcome::kPending) {
-        return;
-    }
-    session.release_exchange();
-    session.dialog_sm().process_event(Dialog::ExchangeFinished{outcome});
-}
-
 } // namespace
-
-void RealDialogActions::send_200_ok_to_bye_sender() {
-    // The PJSIP invite session answers an in-dialog BYE with 200 OK itself;
-    // by the time we see DISCONNECTED the response is already on the wire.
-    Log::call()->debug("[{}] BYE acknowledged by PJSIP", session_.call_id());
-}
 
 void RealDialogActions::forward_bye_to_other_leg(Leg leg) {
     end_session(session_.leg(other(leg)).inv_, PJSIP_SC_OK, "forward_bye_to_other_leg");
@@ -101,7 +85,7 @@ bool RealDialogActions::send_reinvite_response(
     return true;
 }
 
-ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, Leg leg) {
+ExchangeOutcome RealDialogActions::answer_reinvite(const std::string& offer, Leg leg) {
     pjsip_inv_session* inv = session_.leg(leg).inv_;
     if (inv == nullptr || inv->neg == nullptr) {
         return ExchangeOutcome::kFailed;
@@ -242,36 +226,13 @@ void RealDialogActions::on_media_update(pjsip_inv_session* inv, pj_status_t stat
         "[{}] offerless re-INVITE answer in ACK {}",
         session_.call_id(),
         status == PJ_SUCCESS ? "accepted" : "failed");
-    session_.dialog_sm().process_event(Dialog::ExchangeFinished{outcome});
+    session_.dialog_sm().process_event(Dialog::ReinviteFinished{outcome});
 }
 
 void RealDialogActions::reject_reinvite_491_request_pending(Leg leg) {
     pjsip_inv_session* inv = session_.leg(leg).inv_;
     if (!send_reinvite_response(inv, PJSIP_SC_REQUEST_PENDING)) {
         Log::call()->warn("[{}] failed to reject colliding re-INVITE with 491", session_.call_id());
-    }
-}
-
-ExchangeOutcome RealDialogActions::receive_exchange_answer(const std::string& answer) {
-    return session_.exchange() != nullptr ? session_.exchange()->receive_answer(answer) : ExchangeOutcome::kFailed;
-}
-
-ExchangeOutcome RealDialogActions::reject_exchange(int status_code) {
-    return session_.exchange() != nullptr ? session_.exchange()->reject(status_code) : ExchangeOutcome::kFailed;
-}
-
-ExchangeOutcome RealDialogActions::confirm_exchange() {
-    return session_.exchange() != nullptr ? session_.exchange()->confirm() : ExchangeOutcome::kFailed;
-}
-
-ExchangeOutcome RealDialogActions::exchange_confirmation_timeout() {
-    return session_.exchange() != nullptr ? session_.exchange()->confirmation_timeout() : ExchangeOutcome::kFailed;
-}
-
-void RealDialogActions::stop_exchange() {
-    if (session_.exchange() != nullptr) {
-        session_.exchange()->stop();
-        session_.release_exchange();
     }
 }
 
@@ -288,12 +249,9 @@ void RealDialogActions::cleanup() {
     Log::call()->info("[{}] dialog cleanup complete", session_.call_id());
 }
 
-void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
+void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* /*rdata*/) {
     auto& dialog = session_.dialog_sm();
     const Leg leg = session_.leg_for(inv);
-    if ((session_.exchange() != nullptr) && session_.exchange()->is_processing()) {
-        return;
-    }
 
     switch (inv->state) {
     case PJSIP_INV_STATE_EARLY:
@@ -302,22 +260,14 @@ void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_da
 
     case PJSIP_INV_STATE_CONNECTING:
         Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_CONNECTING", session_.call_id());
-        if (leg == Leg::kCallee && session_.exchange() != nullptr) {
-            finish_exchange(session_, receive_exchange_answer(extract_sdp(rdata)));
-        }
         break;
 
     case PJSIP_INV_STATE_CONFIRMED:
         Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_CONFIRMED", session_.call_id());
-        if (leg == Leg::kCaller && session_.exchange() != nullptr) {
-            finish_exchange(session_, confirm_exchange());
-        }
         break;
 
-    case PJSIP_INV_STATE_DISCONNECTED: {
+    case PJSIP_INV_STATE_DISCONNECTED:
         Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
-        const int cause = static_cast<int>(inv->cause);
-
         if (is_session_timer_expiry(inv)) {
             Log::call()->warn(
                 "[{}] RFC 4028 session timer expired on {} leg; PJSIP sent BYE because the session refresh was "
@@ -326,32 +276,17 @@ void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_da
                 leg == Leg::kCaller ? "caller" : "callee");
         }
 
+        // A leg dropping mid-re-INVITE can't be answered anymore; tear the call down.
         if (dialog.is_reinviting()) {
-            if ((session_.exchange() != nullptr) && session_.exchange()->awaiting_confirmation()) {
-                if (leg == Leg::kCaller && cause == PJSIP_SC_REQUEST_TIMEOUT) {
-                    finish_exchange(session_, exchange_confirmation_timeout());
-                }
-                else {
-                    finish_exchange(session_, ExchangeOutcome::kFailed);
-                }
-            }
-            else if (leg == Leg::kCallee && cause >= kMinFinalErrorCode && session_.exchange() != nullptr) {
-                finish_exchange(session_, reject_exchange(cause));
-            }
-            else {
-                finish_exchange(session_, ExchangeOutcome::kFailed);
-            }
-            break;
+            dialog.process_event(Dialog::ReinviteFinished{ExchangeOutcome::kFailed});
         }
-
-        if (dialog.is_active()) {
+        else if (dialog.is_active()) {
             dialog.process_event(ByeReceived{leg});
         }
         else if (dialog.is_terminating()) {
             dialog.process_event(CallEnded{});
         }
         break;
-    }
 
     default: break;
     }

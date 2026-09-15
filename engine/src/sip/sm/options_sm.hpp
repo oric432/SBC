@@ -1,12 +1,10 @@
 #pragma once
 
-#include <boost/sml.hpp>
+#include "types.hpp"
 
 #include "events.hpp"
 
 namespace SbcEngine {
-
-namespace Sml = boost::sml;
 
 struct OptionsIdle {};
 struct OptionsResponding {};
