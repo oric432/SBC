@@ -67,11 +67,11 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
     const Leg leg = session->leg_for(inv);
     const std::string sdp = offer != nullptr ? Sdp::serialize(offer) : std::string{};
     // The response must be built from this rdata (see Inv::answer_request),
-    // but the SM's ReinviteReceived event stays pjsip-free, so it is stashed
-    // on the session for the duration of this dispatch only.
-    session->set_reinvite_rdata(rdata);
+    // but the SM's ReinviteReceived event stays pjsip-free, so the handler
+    // holds it for the duration of this dispatch only.
+    session->dialog_actions().set_pending_reinvite(rdata);
     const bool handled = session->dialog_sm().process_event(ReinviteReceived{.sdp_ = sdp, .leg_ = leg});
-    session->set_reinvite_rdata(nullptr);
+    session->dialog_actions().set_pending_reinvite(nullptr);
     if (!handled) {
         reject_reinvite(inv, rdata, PJSIP_SC_INTERNAL_SERVER_ERROR);
         return PJ_SUCCESS;

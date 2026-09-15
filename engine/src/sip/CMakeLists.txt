@@ -7,6 +7,8 @@ add_library(sip STATIC
     call/offer_answer_exchange.cpp
     call/setup_actions.cpp
     call/dialog_actions.cpp
+    call/handlers/bye_handler.cpp
+    call/handlers/reinvite_handler.cpp
     call/offer_answer_actions.cpp
     router/message_router.cpp
     router/sip_request_actions.cpp
@@ -35,6 +37,7 @@ target_precompile_headers(sip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
 
 if(BUILD_TESTS)
     add_executable(sip_tests
+        call/handlers/tests/test_reinvite_handler.cpp
         route_table/tests/test_routes_manager.cpp
         router/tests/test_extract_utils.cpp
         sm/tests/test_setup_sm.cpp
