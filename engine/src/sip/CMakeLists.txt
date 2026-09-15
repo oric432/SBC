@@ -39,6 +39,7 @@ if(BUILD_TESTS)
         router/tests/test_extract_utils.cpp
         sm/tests/test_setup_sm.cpp
         sm/tests/test_dialog_sm.cpp
+        sm/tests/test_offer_answer_sm.cpp
         sm/tests/test_options_sm.cpp
         stack/tests/test_sdp.cpp
     )
