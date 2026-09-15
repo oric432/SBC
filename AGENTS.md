@@ -44,7 +44,7 @@ read it before touching `src/sip/` or `src/net/rtp/`. Build/style conventions li
 ### State machines (`src/sip/sm/`)
 
 Three Boost.SML machines, each templated on an `Actions` type implementing the matching interface
-in `isbc_actions.hpp` (`ISetupContext`, `IDialogContext`, `IOptionsContext`):
+in `sip/sm/i_*_actions.hpp` (`ISetupActions`, `IDialogActions`, `IOptionsActions`):
 
 - **`SetupSm`** (`setup_sm.hpp`) — drives call setup end-to-end:
   `Idle → Routing → Calling → WaitingForAnswer → Ringing → WaitingForAck → Done`, with

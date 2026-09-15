@@ -8,7 +8,7 @@
 #include "../events.hpp"
 #include "../dialog_sm.hpp"
 #include "mock_sbc_actions.hpp"
-#include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/i_offer_answer_actions.hpp"
 #include "sip/sm/offer_answer_sm_runner.hpp"
 
 namespace Sml = boost::sml;

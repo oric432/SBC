@@ -6,13 +6,13 @@
 #include "events.hpp"
 
 namespace SbcEngine {
-class ISetupContext;
+class ISetupActions;
 
 // Owns the generic setup machine and logger; actions must outlive this runner.
 // Transport adapters report synchronous results after each operation returns.
 class SetupSmRunner {
 public:
-    SetupSmRunner(ISetupContext& actions, std::string_view call_id);
+    SetupSmRunner(ISetupActions& actions, std::string_view call_id);
     ~SetupSmRunner();
     SetupSmRunner(const SetupSmRunner&) = delete;
     SetupSmRunner& operator=(const SetupSmRunner&) = delete;

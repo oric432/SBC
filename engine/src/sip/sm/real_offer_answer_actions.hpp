@@ -6,7 +6,7 @@
 #include <string>
 
 #include "protocols/supported_codecs.hpp"
-#include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/i_offer_answer_actions.hpp"
 #include "sip/sm/leg.hpp"
 #include "sip/stack/sdp.hpp"
 

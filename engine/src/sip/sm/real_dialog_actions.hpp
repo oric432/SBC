@@ -7,7 +7,7 @@
 #include <pjsip_ua.h>
 
 #include "protocols/supported_codecs.hpp"
-#include "sip/sm/isbc_actions.hpp"
+#include "sip/sm/i_dialog_actions.hpp"
 #include "sip/sm/leg.hpp"
 
 namespace SbcEngine {
@@ -16,7 +16,7 @@ class CallSession;
 
 // Per-call implementation of the DialogSm action interface (confirmed-dialog
 // phase: BYE teardown and re-INVITE handling).
-class RealDialogActions : public IDialogContext {
+class RealDialogActions : public IDialogActions {
 public:
     explicit RealDialogActions(CallSession& session)
         : session_(session) {}
