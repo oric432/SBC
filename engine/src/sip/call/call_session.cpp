@@ -77,10 +77,14 @@ void CallSession::commit_offer_answer(
     std::optional<std::uint8_t> callee_dtmf_pt) {
     negotiated_offer_ = std::move(offer);
     negotiated_answer_ = std::move(answer);
-    caller_leg_codec_ = std::move(caller_codec);
-    callee_leg_codec_ = std::move(callee_codec);
-    caller_leg_dtmf_pt_ = caller_dtmf_pt;
-    callee_leg_dtmf_pt_ = callee_dtmf_pt;
+    leg(Leg::kCaller).codec_ = std::move(caller_codec);
+    leg(Leg::kCallee).codec_ = std::move(callee_codec);
+    leg(Leg::kCaller).dtmf_pt_ = caller_dtmf_pt;
+    leg(Leg::kCallee).dtmf_pt_ = callee_dtmf_pt;
+}
+
+Leg CallSession::leg_for(const pjsip_inv_session* inv) const {
+    return inv == leg(Leg::kCallee).inv_ ? Leg::kCallee : Leg::kCaller;
 }
 
 } // namespace SbcEngine

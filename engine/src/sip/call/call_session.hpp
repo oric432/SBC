@@ -2,6 +2,7 @@
 
 #include <boost/asio.hpp>
 
+#include <array>
 #include <boost/asio/any_io_executor.hpp>
 #include <cstdint>
 #include <optional>
@@ -11,6 +12,7 @@
 #include <pjsip_ua.h>
 
 #include "sip/call/pj_context.hpp"
+#include "sip/sm/leg.hpp"
 #include "sip/sm/real_dialog_actions.hpp"
 #include "sip/sm/real_setup_actions.hpp"
 #include "net/rtp/media_bridge.hpp"
@@ -29,6 +31,14 @@ class RoutesStore;
 // action objects. Non-copyable/movable — held by CallManager via unique_ptr.
 class CallSession {
 public:
+    // Per-leg PJSIP session pointer and negotiated codec/DTMF metadata (see
+    // issue #128: the SBC negotiates each leg independently, so these can differ).
+    struct CallLeg {
+        pjsip_inv_session* inv_ = nullptr;
+        std::optional<Sdp::AudioCodecInfo> codec_;
+        std::optional<std::uint8_t> dtmf_pt_;
+    };
+
     // request_uri/caller_offer_sdp are extracted from rdata internally. routes_store
     // is forwarded to RealSetupActions only — CallSession does not retain it.
     CallSession(
@@ -72,10 +82,20 @@ public:
     [[nodiscard]] const std::string& negotiated_offer() const { return negotiated_offer_; }
     [[nodiscard]] const std::string& negotiated_answer() const { return negotiated_answer_; }
 
-    [[nodiscard]] pjsip_inv_session* inv_caller() const { return inv_caller_; }
-    [[nodiscard]] pjsip_inv_session* inv_callee() const { return inv_callee_; }
-    void set_inv_caller(pjsip_inv_session* inv) { inv_caller_ = inv; }
-    void set_inv_callee(pjsip_inv_session* inv) { inv_callee_ = inv; }
+    [[nodiscard]] pjsip_inv_session* inv_caller() const { return leg(Leg::kCaller).inv_; }
+    [[nodiscard]] pjsip_inv_session* inv_callee() const { return leg(Leg::kCallee).inv_; }
+    void set_inv_caller(pjsip_inv_session* inv) { leg(Leg::kCaller).inv_ = inv; }
+    void set_inv_callee(pjsip_inv_session* inv) { leg(Leg::kCallee).inv_ = inv; }
+
+    // Indexed access for call sites that resolve "which leg" generically
+    // (as opposed to a call site that always means one specific leg, which
+    // should keep using the named accessors above).
+    [[nodiscard]] CallLeg& leg(Leg which) { return legs_[static_cast<std::size_t>(which)]; }
+    [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_[static_cast<std::size_t>(which)]; }
+    // Which leg's pjsip_inv_session this is. Matches only against inv_callee();
+    // anything else (including nullptr) is reported as the caller leg, same
+    // fallback semantics the ad-hoc `inv == inv_callee()` comparisons had.
+    [[nodiscard]] Leg leg_for(const pjsip_inv_session* inv) const;
 
     std::shared_ptr<MediaBridge> media_bridge() { return media_bridge_; }
 
@@ -105,12 +125,14 @@ public:
     void set_reinvite_rdata(pjsip_rx_data* rdata) { reinvite_rdata_ = rdata; }
 
     // Negotiated codec/DTMF metadata is published with the exchange commit.
-    // The two legs may differ — see issue #128: the SBC negotiates each leg
-    // independently rather than relaying one leg's answer to the other.
-    [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& caller_leg_codec() const { return caller_leg_codec_; }
-    [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& callee_leg_codec() const { return callee_leg_codec_; }
-    [[nodiscard]] std::optional<std::uint8_t> caller_leg_dtmf_pt() const { return caller_leg_dtmf_pt_; }
-    [[nodiscard]] std::optional<std::uint8_t> callee_leg_dtmf_pt() const { return callee_leg_dtmf_pt_; }
+    [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& caller_leg_codec() const {
+        return leg(Leg::kCaller).codec_;
+    }
+    [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& callee_leg_codec() const {
+        return leg(Leg::kCallee).codec_;
+    }
+    [[nodiscard]] std::optional<std::uint8_t> caller_leg_dtmf_pt() const { return leg(Leg::kCaller).dtmf_pt_; }
+    [[nodiscard]] std::optional<std::uint8_t> callee_leg_dtmf_pt() const { return leg(Leg::kCallee).dtmf_pt_; }
 
 private:
     std::string call_id_;
@@ -118,8 +140,7 @@ private:
     CallManager* call_manager_;
     pj_pool_t* pool_ = nullptr;
 
-    pjsip_inv_session* inv_caller_ = nullptr;
-    pjsip_inv_session* inv_callee_ = nullptr;
+    std::array<CallLeg, 2> legs_;
 
     std::shared_ptr<MediaBridge> media_bridge_;
 
@@ -131,11 +152,6 @@ private:
     std::string caller_uri_;
     std::string caller_display_name_;
     std::string outbound_destination_;
-
-    std::optional<Sdp::AudioCodecInfo> caller_leg_codec_;
-    std::optional<Sdp::AudioCodecInfo> callee_leg_codec_;
-    std::optional<std::uint8_t> caller_leg_dtmf_pt_;
-    std::optional<std::uint8_t> callee_leg_dtmf_pt_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.
     RealSetupActions setup_actions_;
