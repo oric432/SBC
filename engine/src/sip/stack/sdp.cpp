@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstring>
 #include <string_view>
 
@@ -220,6 +221,14 @@ pjmedia_sdp_media* find_active_audio_media(pjmedia_sdp_session* sdp) {
 
 namespace {
 
+// RTP encoding names (RFC 3551/4855) are case-insensitive; a peer's rtpmap
+// can legally spell "g722" or "Telephone-Event".
+bool names_equal_ci(std::string_view lhs, std::string_view rhs) {
+    return std::ranges::equal(lhs, rhs, [](unsigned char lhs_ch, unsigned char rhs_ch) {
+        return std::tolower(lhs_ch) == std::tolower(rhs_ch);
+    });
+}
+
 AudioCodecInfo make_codec_info(const pjmedia_sdp_media* media, const pj_str_t& payload_type_str) {
     AudioCodecInfo info;
     info.payload_type_ = static_cast<uint8_t>(pj_strtoul(&payload_type_str));
@@ -297,7 +306,7 @@ std::vector<AudioCodecInfo> extract_all_audio_codecs(const pjmedia_sdp_session* 
 
 std::optional<uint8_t> extract_telephone_event_pt(const pjmedia_sdp_session* sdp) {
     for (const auto& codec : extract_all_audio_codecs(sdp)) {
-        if (codec.name_ == "telephone-event") {
+        if (names_equal_ci(codec.name_, "telephone-event")) {
             return codec.payload_type_;
         }
     }
@@ -308,12 +317,17 @@ std::optional<Protocols::SupportedCodec> pick_answer_codec(
     const std::optional<AudioCodecInfo>& preferred,
     const std::vector<AudioCodecInfo>& offered) {
     const auto offers = [&](std::string_view name) {
-        return std::ranges::any_of(offered, [name](const auto& codec) { return codec.name_ == name; });
+        return std::ranges::any_of(offered, [name](const auto& codec) { return names_equal_ci(codec.name_, name); });
     };
+    // Protocols::find_supported_codec_by_name() is deliberately case-sensitive
+    // (it also matches a route's configured codec string) — scan
+    // kSupportedCodecs directly here instead, so a peer's non-canonical
+    // casing doesn't stop this from finding its own preferred codec.
     if (preferred) {
-        if (const auto* supported = Protocols::find_supported_codec_by_name(preferred->name_);
-            supported != nullptr && offers(supported->name_)) {
-            return *supported;
+        for (const auto& supported : Protocols::kSupportedCodecs) {
+            if (names_equal_ci(supported.name_, preferred->name_) && offers(supported.name_)) {
+                return supported;
+            }
         }
     }
     for (const auto& supported : Protocols::kSupportedCodecs) {

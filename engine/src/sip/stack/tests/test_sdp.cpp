@@ -115,6 +115,16 @@ TEST_CASE("extract_telephone_event_pt reads the DTMF payload type, if any", "[sd
                                 "t=0 0\r\n"
                                 "m=audio 10000 RTP/AVP 0 8\r\n";
     CHECK_FALSE(Sdp::extract_telephone_event_pt(Sdp::parse(pj_scope.pool(), no_dtmf)).has_value());
+
+    // RFC 4733's encoding name is case-insensitive; a peer may spell it differently.
+    const std::string mixed_case_dtmf = "v=0\r\n"
+                                        "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                        "s=-\r\n"
+                                        "c=IN IP4 127.0.0.1\r\n"
+                                        "t=0 0\r\n"
+                                        "m=audio 10000 RTP/AVP 0 101\r\n"
+                                        "a=rtpmap:101 Telephone-Event/8000\r\n";
+    CHECK(Sdp::extract_telephone_event_pt(Sdp::parse(pj_scope.pool(), mixed_case_dtmf)) == std::optional<uint8_t>{101});
 }
 
 TEST_CASE("pick_answer_codec prefers the other leg's codec, then SBC priority, else nothing", "[sdp]") {
@@ -139,6 +149,16 @@ TEST_CASE("pick_answer_codec prefers the other leg's codec, then SBC priority, e
 
     const std::vector<Sdp::AudioCodecInfo> unsupported_only{opus};
     CHECK_FALSE(Sdp::pick_answer_codec(pcma, unsupported_only).has_value());
+
+    // Codec names are matched case-insensitively, both against `preferred`
+    // and against the offer, since RTP encoding names are (RFC 3551/4855).
+    const Sdp::AudioCodecInfo lowercase_pcma{.payload_type_ = 8, .name_ = "pcma", .clock_rate_ = 8000};
+    const std::vector<Sdp::AudioCodecInfo> mixed_case_offer{
+        Sdp::AudioCodecInfo{.payload_type_ = 9, .name_ = "g722", .clock_rate_ = 16000},
+        Sdp::AudioCodecInfo{.payload_type_ = 8, .name_ = "Pcma", .clock_rate_ = 8000}};
+    chosen = Sdp::pick_answer_codec(lowercase_pcma, mixed_case_offer);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "PCMA");
 }
 
 TEST_CASE("restrict_audio_codecs narrows to a single codec for an answer, preserving telephone-event", "[sdp]") {
