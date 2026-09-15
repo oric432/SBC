@@ -40,7 +40,7 @@ struct Cleanup {};
 
 // Dialog SM Events
 namespace Dialog {
-struct ExchangeFinished {
+struct ReinviteFinished {
     ExchangeOutcome outcome_;
 };
 } // namespace Dialog

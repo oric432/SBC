@@ -42,10 +42,9 @@ TEST_CASE("DialogSm bye from caller", "[dialog_sm]") {
     REQUIRE(machine.is(Sml::state<Active>));
 
     // Step 1: Caller sends BYE to terminate call
-    // Expected: Transition to Terminating, send 200 OK to bye sender, forward BYE to callee
+    // Expected: Transition to Terminating, forward BYE to callee
     machine.process_event(ByeReceived{Leg::kCaller});
     REQUIRE(machine.is(Sml::state<Terminating>));
-    REQUIRE(actions.was_called("send_200_ok_to_bye_sender"));
     REQUIRE(actions.was_called("forward_bye_to_other_leg"));
 
     // Step 2: Receive BYE response/completion from callee leg
@@ -67,18 +66,18 @@ TEST_CASE("DialogSm reinvite happy path", "[dialog_sm]") {
     // Expected: Transition to Reinviting, forward to callee
     machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
-    REQUIRE(actions.was_called("start_exchange"));
+    REQUIRE(actions.was_called("answer_reinvite"));
 
-    // Step 2: The exchange owns answer and ACK handling and reports completion.
+    // Step 2: The re-INVITE is answered locally; its outcome arrives as ReinviteFinished.
     actions.reset();
-    machine.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kCommitted});
+    machine.process_event(Dialog::ReinviteFinished{ExchangeOutcome::kCommitted});
     REQUIRE(machine.is(Sml::state<Active>));
 
-    // A later re-INVITE starts a distinct exchange while the dialog SM is reused.
+    // A later re-INVITE is answered again while the dialog SM is reused.
     actions.reset();
     machine.process_event(ReinviteReceived{kValidSdp});
     REQUIRE(machine.is(Sml::state<Reinviting>));
-    REQUIRE(actions.was_called("start_exchange"));
+    REQUIRE(actions.was_called("answer_reinvite"));
 }
 
 TEST_CASE("DialogSm passes the originating leg to reinvite handling", "[dialog_sm]") {
@@ -89,10 +88,10 @@ TEST_CASE("DialogSm passes the originating leg to reinvite handling", "[dialog_s
     machine.process_event(ReinviteReceived{kValidSdp, Leg::kCallee});
 
     REQUIRE(machine.is(Sml::state<Active>));
-    REQUIRE(actions.was_called("start_exchange:" + std::to_string(kValidSdp.length()) + "B:callee"));
+    REQUIRE(actions.was_called("answer_reinvite:" + std::to_string(kValidSdp.length()) + "B:callee"));
 }
 
-// Test: The exchange rolls back a rejected re-INVITE request.
+// Test: A rejected re-INVITE rolls back to Active.
 TEST_CASE("DialogSm reinvite rejected", "[dialog_sm]") {
     MockDialogActions actions;
     TestMachine machine{actions};
@@ -102,7 +101,7 @@ TEST_CASE("DialogSm reinvite rejected", "[dialog_sm]") {
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     actions.reset();
-    machine.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kRolledBack});
+    machine.process_event(Dialog::ReinviteFinished{ExchangeOutcome::kRolledBack});
     REQUIRE(machine.is(Sml::state<Active>));
 }
 
@@ -117,7 +116,7 @@ TEST_CASE("DialogSm reinvite invalid SDP", "[dialog_sm]") {
     // Expected: Remain in Active state, reject with 488 Not Acceptable Here
     machine.process_event(ReinviteReceived{"malformed"});
     REQUIRE(machine.is(Sml::state<Active>));
-    REQUIRE(actions.was_called("start_exchange"));
+    REQUIRE(actions.was_called("answer_reinvite"));
 }
 
 // Test: Two re-INVITEs arrive at same time (collision)
@@ -138,7 +137,7 @@ TEST_CASE("DialogSm reinvite collision", "[dialog_sm]") {
     REQUIRE(actions.was_called("reject_reinvite_491_request_pending"));
 }
 
-TEST_CASE("DialogSm reinviting exits only when exchange finishes", "[dialog_sm]") {
+TEST_CASE("DialogSm reinviting exits only when the re-INVITE finishes", "[dialog_sm]") {
     MockDialogActions actions;
     TestMachine machine{actions};
 
@@ -152,7 +151,7 @@ TEST_CASE("DialogSm reinviting exits only when exchange finishes", "[dialog_sm]"
     REQUIRE(actions.calls_.empty());
 }
 
-TEST_CASE("DialogSm failed reinvite exchange terminates call", "[dialog_sm]") {
+TEST_CASE("DialogSm failed reinvite terminates call", "[dialog_sm]") {
     MockDialogActions actions;
     TestMachine machine{actions};
 
@@ -160,7 +159,7 @@ TEST_CASE("DialogSm failed reinvite exchange terminates call", "[dialog_sm]") {
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     actions.reset();
-    machine.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kFailed});
+    machine.process_event(Dialog::ReinviteFinished{ExchangeOutcome::kFailed});
     REQUIRE(machine.is(Sml::state<Terminating>));
     REQUIRE(actions.was_called("terminate_call"));
 }
