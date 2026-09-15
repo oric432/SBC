@@ -115,12 +115,6 @@ public:
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
     void clear_rdata() { current_rdata_ = nullptr; }
 
-    // rx_data of the re-INVITE currently being answered (see Inv::answer_request
-    // for why the response must be built from it). MessageRouter sets it right
-    // before dispatching ReinviteReceived and clears it right after.
-    [[nodiscard]] pjsip_rx_data* reinvite_rdata() const { return reinvite_rdata_; }
-    void set_reinvite_rdata(pjsip_rx_data* rdata) { reinvite_rdata_ = rdata; }
-
 
 private:
     std::string call_id_;
@@ -134,7 +128,6 @@ private:
 
     std::string caller_offer_sdp_;
     pjsip_rx_data* current_rdata_;
-    pjsip_rx_data* reinvite_rdata_ = nullptr;
 
     std::string request_uri_;
     std::string caller_uri_;

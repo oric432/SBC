@@ -1,12 +1,10 @@
 #pragma once
 
-#include <array>
-#include <cstdint>
-#include <optional>
 #include <string>
 #include <pjsip_ua.h>
 
-#include "protocols/supported_codecs.hpp"
+#include "sip/call/handlers/bye_handler.hpp"
+#include "sip/call/handlers/reinvite_handler.hpp"
 #include "sip/sm/i_dialog_actions.hpp"
 #include "sip/sm/leg.hpp"
 
@@ -14,33 +12,32 @@ namespace SbcEngine {
 
 class CallSession;
 
-// Per-call implementation of the DialogSm action interface (confirmed-dialog
-// phase: BYE teardown and re-INVITE handling).
+// Per-call DialogSm actions for the confirmed-dialog phase. Each SIP method's
+// pjsip logic lives in its own handler; this is the single entry point the SM
+// and MessageRouter drive.
 class DialogActions : public IDialogActions {
 public:
     explicit DialogActions(CallSession& session)
-        : session_(session) {}
+        : session_(session)
+        , bye_(session)
+        , reinvite_(session) {}
 
     void on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
-    void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer);
-    void on_media_update(pjsip_inv_session* inv, pj_status_t status);
+    void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) { reinvite_.on_create_offer(inv, offer); }
+    void on_media_update(pjsip_inv_session* inv, pj_status_t status) { reinvite_.on_media_update(inv, status); }
+    void set_pending_reinvite(pjsip_rx_data* rdata) { reinvite_.set_pending_request(rdata); }
 
-    void forward_bye_to_other_leg(Leg leg) override;
-
-    ExchangeOutcome answer_reinvite(const std::string& offer, Leg leg) override;
-    void reject_reinvite_491_request_pending(Leg leg) override;
+    void forward_bye_to_other_leg(Leg leg) override { bye_.forward_to_other_leg(leg); }
+    ExchangeOutcome answer_reinvite(const std::string& offer, Leg leg) override { return reinvite_.answer(offer, leg); }
+    void reject_reinvite_491_request_pending(Leg leg) override { reinvite_.reject_491(leg); }
 
     void terminate_call() override;
     void cleanup() override;
 
 private:
-    [[nodiscard]] bool
-    reconfigure_media_bridge(Leg leg, const Protocols::SupportedCodec& codec, std::optional<std::uint8_t> dtmf_pt);
-
     CallSession& session_;
-    // One instance serves both legs of the call, so each leg tracks its own
-    // pending offerless re-INVITE independently.
-    std::array<pjsip_inv_session*, 2> offerless_reinvite_leg_{};
+    ByeHandler bye_;
+    ReinviteHandler reinvite_;
 };
 
 } // namespace SbcEngine
