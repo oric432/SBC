@@ -171,38 +171,12 @@ void OfferAnswerActions::relay_answer(const std::string& sdp) {
     if (callee_answer == nullptr) {
         return;
     }
-    const auto endpoint = Sdp::extract_rtp_endpoint(callee_answer);
-    if (!endpoint.ip_.empty()) {
-        session_.media_bridge()->set_remote_leg_b(endpoint.ip_, endpoint.port_);
-    }
-    // Read the decided codec directly: PJSIP's active SDP may not yet be set
-    // during its CONNECTING callback.
-    leg(Leg::kCallee).codec_ = Sdp::extract_active_audio_codec(callee_answer);
-    leg(Leg::kCallee).dtmf_pt_ = Sdp::extract_telephone_event_pt(callee_answer);
+    capture_callee_media(callee_answer);
 
-    // The caller-facing answer is negotiated independently from the callee's:
-    // re-parse the caller's own original offer (not the copy create_outbound_leg()
-    // already mangled/restricted for the callee specifically) and pick a codec
-    // biased toward the callee's choice, falling back to the SBC's own
-    // priority pick intersected with what the caller actually offered.
-    auto* caller_answer = Sdp::parse(session_.pool(), offer_);
+    pjmedia_sdp_session* caller_answer = build_caller_answer();
     if (caller_answer == nullptr) {
-        Log::call()->error("[{}] cannot re-parse caller's original offer for answer", session_.call_id());
         return;
     }
-    const auto caller_offered = Sdp::extract_all_audio_codecs(caller_answer);
-    const auto chosen = Sdp::pick_answer_codec(leg(Leg::kCallee).codec_, caller_offered);
-    if (!chosen) {
-        Log::call()->error(
-            "[{}] no codec in common between caller's offer and callee's answer ({})",
-            session_.call_id(),
-            leg(Leg::kCallee).codec_ ? leg(Leg::kCallee).codec_->name_ : "none");
-        return;
-    }
-    const std::array<Protocols::SupportedCodec, 1> allowed{*chosen};
-    Sdp::restrict_audio_codecs(session_.pool(), caller_answer, allowed);
-    leg(Leg::kCaller).codec_ = Sdp::extract_active_audio_codec(caller_answer);
-    leg(Leg::kCaller).dtmf_pt_ = Sdp::extract_telephone_event_pt(caller_answer);
 
     // Configured before the 200 OK goes out: a CodecSession/resampler
     // allocation failure here can still be answered with a SIP error rather
@@ -224,6 +198,41 @@ void OfferAnswerActions::relay_answer(const std::string& sdp) {
     // Preserve existing media timing: arm relay on the answer, publish committed
     // session descriptions/codecs only when the exchange is confirmed.
     session_.media_bridge()->start_bridge_loop();
+}
+
+void OfferAnswerActions::capture_callee_media(pjmedia_sdp_session* callee_answer) {
+    const auto endpoint = Sdp::extract_rtp_endpoint(callee_answer);
+    if (!endpoint.ip_.empty()) {
+        session_.media_bridge()->set_remote_leg_b(endpoint.ip_, endpoint.port_);
+    }
+    // Read the decided codec directly: PJSIP's active SDP may not yet be set
+    // during its CONNECTING callback.
+    leg(Leg::kCallee).codec_ = Sdp::extract_active_audio_codec(callee_answer);
+    leg(Leg::kCallee).dtmf_pt_ = Sdp::extract_telephone_event_pt(callee_answer);
+}
+
+pjmedia_sdp_session* OfferAnswerActions::build_caller_answer() {
+    // Negotiated independently from the callee's answer: re-parse the caller's
+    // original offer (not the copy already restricted for the callee) and pick
+    // a codec biased toward the callee's choice, else the SBC's own priority.
+    auto* caller_answer = Sdp::parse(session_.pool(), offer_);
+    if (caller_answer == nullptr) {
+        Log::call()->error("[{}] cannot re-parse caller's original offer for answer", session_.call_id());
+        return nullptr;
+    }
+    const auto chosen = Sdp::pick_answer_codec(leg(Leg::kCallee).codec_, Sdp::extract_all_audio_codecs(caller_answer));
+    if (!chosen) {
+        Log::call()->error(
+            "[{}] no codec in common between caller's offer and callee's answer ({})",
+            session_.call_id(),
+            leg(Leg::kCallee).codec_ ? leg(Leg::kCallee).codec_->name_ : "none");
+        return nullptr;
+    }
+    const std::array<Protocols::SupportedCodec, 1> allowed{*chosen};
+    Sdp::restrict_audio_codecs(session_.pool(), caller_answer, allowed);
+    leg(Leg::kCaller).codec_ = Sdp::extract_active_audio_codec(caller_answer);
+    leg(Leg::kCaller).dtmf_pt_ = Sdp::extract_telephone_event_pt(caller_answer);
+    return caller_answer;
 }
 
 bool OfferAnswerActions::configure_media_bridge() {
