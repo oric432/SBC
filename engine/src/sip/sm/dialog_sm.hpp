@@ -1,13 +1,9 @@
 #pragma once
 
-#include <boost/sml.hpp>
-
 #include "events.hpp"
 #include "types.hpp"
 
 namespace SbcEngine {
-
-namespace Sml = boost::sml;
 
 // State tags
 struct Active {};
@@ -27,9 +23,7 @@ struct DialogSm {
             }
         };
 
-        auto handle_bye = [](Actions& actions, const ByeReceived& evt) {
-            actions.forward_bye_to_other_leg(evt.leg_);
-        };
+        auto handle_bye = [](Actions& actions, const ByeReceived& evt) { actions.forward_bye_to_other_leg(evt.leg_); };
 
         auto handle_reinvite =
             [publish_outcome](Actions& actions, const ReinviteReceived& evt, DialogSelfFireQueue result) {
