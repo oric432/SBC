@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "protocols/supported_codecs.hpp"
+#include "sip/sm/leg.hpp"
 
 namespace SbcEngine {
 
@@ -45,12 +46,12 @@ struct ExchangeFinished {
 } // namespace Dialog
 
 struct ByeReceived {
-    bool from_caller_ = true;
+    Leg leg_ = Leg::kCaller;
 };
 
 struct ReinviteReceived {
     std::string sdp_;
-    bool from_caller_ = true;
+    Leg leg_ = Leg::kCaller;
 };
 
 struct ReinviteAccepted {

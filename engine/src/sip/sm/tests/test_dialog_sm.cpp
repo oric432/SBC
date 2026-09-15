@@ -43,7 +43,7 @@ TEST_CASE("DialogSm bye from caller", "[dialog_sm]") {
 
     // Step 1: Caller sends BYE to terminate call
     // Expected: Transition to Terminating, send 200 OK to bye sender, forward BYE to callee
-    machine.process_event(ByeReceived{true});
+    machine.process_event(ByeReceived{Leg::kCaller});
     REQUIRE(machine.is(Sml::state<Terminating>));
     REQUIRE(actions.was_called("send_200_ok_to_bye_sender"));
     REQUIRE(actions.was_called("forward_bye_to_other_leg"));
@@ -86,7 +86,7 @@ TEST_CASE("DialogSm passes the originating leg to reinvite handling", "[dialog_s
     actions.start_result_ = ExchangeOutcome::kCommitted;
     TestMachine machine{actions};
 
-    machine.process_event(ReinviteReceived{kValidSdp, false});
+    machine.process_event(ReinviteReceived{kValidSdp, Leg::kCallee});
 
     REQUIRE(machine.is(Sml::state<Active>));
     REQUIRE(actions.was_called("start_exchange:" + std::to_string(kValidSdp.length()) + "B:callee"));
@@ -147,7 +147,7 @@ TEST_CASE("DialogSm reinviting exits only when exchange finishes", "[dialog_sm]"
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     actions.reset();
-    REQUIRE_FALSE(machine.process_event(ByeReceived{true}));
+    REQUIRE_FALSE(machine.process_event(ByeReceived{Leg::kCaller}));
     REQUIRE(machine.is(Sml::state<Reinviting>));
     REQUIRE(actions.calls_.empty());
 }
