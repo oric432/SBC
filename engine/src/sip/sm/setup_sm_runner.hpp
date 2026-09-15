@@ -1,34 +1,29 @@
 #pragma once
 
-#include <memory>
 #include <string_view>
 
-#include "events.hpp"
+#include "sip/sm/sm_runner.hpp"
 
 namespace SbcEngine {
+
 class ISetupActions;
+template <typename Context>
+struct SetupSm;
+namespace Setup {
+struct Cancelling;
+struct Done;
+struct Established;
+} // namespace Setup
 
-// Owns the generic setup machine and logger; actions must outlive this runner.
-// Transport adapters report synchronous results after each operation returns.
-class SetupSmRunner {
+// Setup machine runner; actions must outlive it.
+class SetupSmRunner final : public SmRunner<SetupSm<ISetupActions>, ISetupActions> {
 public:
-    SetupSmRunner(ISetupActions& actions, std::string_view call_id);
-    ~SetupSmRunner();
-    SetupSmRunner(const SetupSmRunner&) = delete;
-    SetupSmRunner& operator=(const SetupSmRunner&) = delete;
-    SetupSmRunner(SetupSmRunner&&) = delete;
-    SetupSmRunner& operator=(SetupSmRunner&&) = delete;
+    SetupSmRunner(ISetupActions& actions, std::string_view call_id)
+        : SmRunner(actions, "setup", call_id) {}
 
-    template <typename Event>
-    bool process_event(const Event& event);
-
-    [[nodiscard]] bool is_processing() const;
-    [[nodiscard]] bool is_done() const;
-    [[nodiscard]] bool is_established() const;
-    [[nodiscard]] bool is_cancelling() const;
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
+    [[nodiscard]] bool is_done() const { return is<Setup::Done>(); }
+    [[nodiscard]] bool is_established() const { return is<Setup::Established>(); }
+    [[nodiscard]] bool is_cancelling() const { return is<Setup::Cancelling>(); }
 };
+
 } // namespace SbcEngine
