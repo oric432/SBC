@@ -9,6 +9,7 @@
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/route_table/routes_store.hpp"
+#include "sip/stack/inv_session.hpp"
 #include "sip/stack/sdp.hpp"
 #include "core/utils/log.hpp"
 
@@ -22,49 +23,11 @@ void finish_exchange(CallSession& session, ExchangeOutcome outcome) {
     session.release_exchange();
     session.setup_sm().process_event(Setup::ExchangeFinished{outcome});
 }
-void end_session(pjsip_inv_session* inv, int code) {
-    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
-        return;
-    }
-    pjsip_tx_data* data = nullptr;
-    pj_status_t status = pjsip_inv_end_session(inv, code, nullptr, &data);
-    if (status == PJ_SUCCESS && data != nullptr) {
-        status = pjsip_inv_send_msg(inv, data);
-    }
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("Ending setup leg failed ({})", status);
-    }
-}
 } // namespace
 
 void RealSetupActions::begin_setup() {
-    pjsip_tx_data* data = nullptr;
-    auto* inv = session_.inv_caller();
-    auto* request = session_.current_rdata();
-    if (inv == nullptr || request == nullptr) {
-        return;
-    }
-    pj_status_t status = pjsip_inv_initial_answer(inv, request, PJSIP_SC_TRYING, nullptr, nullptr, &data);
-    if (status == PJ_SUCCESS) {
-        status = pjsip_inv_send_msg(inv, data);
-    }
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("Initial setup response failed ({})", status);
-    }
-}
-
-void RealSetupActions::send_response(int code) {
-    auto* inv = session_.inv_caller();
-    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
-        return;
-    }
-    pjsip_tx_data* data = nullptr;
-    pj_status_t status = pjsip_inv_answer(inv, code, nullptr, nullptr, &data);
-    if (status == PJ_SUCCESS) {
-        status = pjsip_inv_send_msg(inv, data);
-    }
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("Setup response {} failed ({})", code, status);
+    if (!Inv::answer_request(session_.inv_caller(), session_.current_rdata(), PJSIP_SC_TRYING)) {
+        Log::sip()->warn("[{}] initial 100 Trying failed", session_.call_id());
     }
 }
 
@@ -133,13 +96,13 @@ RouteResolution RealSetupActions::resolve_route() {
 }
 
 void RealSetupActions::route_failed() {
-    send_response(PJSIP_SC_TEMPORARILY_UNAVAILABLE);
+    Inv::answer(session_.inv_caller(), PJSIP_SC_TEMPORARILY_UNAVAILABLE);
 }
 void RealSetupActions::routing_loop_detected() {
-    send_response(PJSIP_SC_LOOP_DETECTED);
+    Inv::answer(session_.inv_caller(), PJSIP_SC_LOOP_DETECTED);
 }
 void RealSetupActions::codec_mismatch_detected() {
-    send_response(PJSIP_SC_NOT_ACCEPTABLE_HERE);
+    Inv::answer(session_.inv_caller(), PJSIP_SC_NOT_ACCEPTABLE_HERE);
 }
 ExchangeOutcome RealSetupActions::start_exchange(
     const std::string& destination,
@@ -154,7 +117,7 @@ ExchangeOutcome RealSetupActions::start_exchange(
     return outcome;
 }
 void RealSetupActions::report_progress() {
-    send_response(PJSIP_SC_RINGING);
+    Inv::answer(session_.inv_caller(), PJSIP_SC_RINGING);
 }
 
 bool RealSetupActions::cancel_call() {
@@ -162,7 +125,7 @@ bool RealSetupActions::cancel_call() {
         session_.exchange()->stop();
         session_.release_exchange();
     }
-    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED);
+    Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED);
     return session_.inv_callee() == nullptr || session_.inv_callee()->state == PJSIP_INV_STATE_DISCONNECTED;
 }
 
@@ -189,8 +152,8 @@ void RealSetupActions::terminate_call() {
         session_.exchange()->stop();
         session_.release_exchange();
     }
-    end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
-    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);
+    Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
+    Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);
 }
 
 void RealSetupActions::cleanup() {

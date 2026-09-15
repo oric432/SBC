@@ -7,22 +7,10 @@
 
 #include "sip/call/call_session.hpp"
 #include "sip/router/extract_utils.hpp"
+#include "sip/stack/inv_session.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
-namespace {
-bool send_inv_msg(pjsip_inv_session* inv, pjsip_tx_data* data) {
-    if (data == nullptr) {
-        return false;
-    }
-    const pj_status_t status = pjsip_inv_send_msg(inv, data);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->error("Offer-answer send failed ({})", status);
-    }
-    return status == PJ_SUCCESS && inv->state != PJSIP_INV_STATE_DISCONNECTED;
-}
-} // namespace
-
 bool RealOfferAnswerActions::offer_usable(const std::string& sdp) const {
     return Sdp::is_valid_sdp(sdp);
 }
@@ -173,23 +161,9 @@ bool RealOfferAnswerActions::send_outbound_invite() {
         pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(new_hdr));
     }
 
-    return send_inv_msg(inv, tdata);
+    return Inv::send(inv, tdata);
 }
 
-
-bool RealOfferAnswerActions::send_response(int code, const pjmedia_sdp_session* sdp) {
-    auto* inv = session_.inv_caller();
-    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
-        return false;
-    }
-    pjsip_tx_data* data = nullptr;
-    const pj_status_t status = pjsip_inv_answer(inv, code, nullptr, sdp, &data);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->error("Offer-answer response {} creation failed ({})", code, status);
-        return false;
-    }
-    return send_inv_msg(inv, data);
-}
 
 void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     answer_ = sdp;
@@ -234,7 +208,7 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     // allocation failure here can still be answered with a SIP error rather
     // than one that's already committed (see issue #177).
     if (!configure_media_bridge()) {
-        send_response(PJSIP_SC_INTERNAL_SERVER_ERROR);
+        Inv::answer(session_.inv_caller(), PJSIP_SC_INTERNAL_SERVER_ERROR);
         return;
     }
 
@@ -243,7 +217,7 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
         caller_answer,
         session_.ctx()->config_.local_ip_,
         session_.media_bridge()->leg_a_port().value());
-    answer_sent_ = send_response(PJSIP_SC_OK, caller_answer);
+    answer_sent_ = Inv::answer(session_.inv_caller(), PJSIP_SC_OK, caller_answer);
     if (!answer_sent_) {
         return;
     }
@@ -293,11 +267,11 @@ void RealOfferAnswerActions::reject_offer(OfferAnswer::Reason reason) {
     else if (reason == OfferAnswer::Reason::kAnswerTimeout) {
         code = PJSIP_SC_REQUEST_TIMEOUT;
     }
-    send_response(code);
+    Inv::answer(session_.inv_caller(), code);
 }
 
 void RealOfferAnswerActions::relay_rejection(int status_code) {
-    send_response(status_code);
+    Inv::answer(session_.inv_caller(), status_code);
 }
 
 void RealOfferAnswerActions::commit() {
@@ -316,7 +290,8 @@ void RealOfferAnswerActions::rollback([[maybe_unused]] OfferAnswer::Reason reaso
 
 void RealOfferAnswerActions::fail(OfferAnswer::Reason reason) {
     if (!answer_sent_) {
-        send_response(
+        Inv::answer(
+            session_.inv_caller(),
             reason == OfferAnswer::Reason::kUnusableAnswer ? PJSIP_SC_NOT_ACCEPTABLE_HERE
                                                            : PJSIP_SC_INTERNAL_SERVER_ERROR);
     }

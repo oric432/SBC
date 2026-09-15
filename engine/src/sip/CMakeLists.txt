@@ -1,6 +1,7 @@
 add_library(sip STATIC
     stack/pjsip_init.cpp
     stack/sdp.cpp
+    stack/inv_session.cpp
     call/call_manager.cpp
     call/call_session.cpp
     call/offer_answer_exchange.cpp

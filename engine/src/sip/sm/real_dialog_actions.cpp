@@ -8,6 +8,7 @@
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/stack/inv_session.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
@@ -18,29 +19,10 @@ bool is_session_timer_expiry(const pjsip_inv_session* inv) {
     return inv->cause == PJSIP_SC_REQUEST_TIMEOUT && pj_stricmp2(&inv->cause_text, kSessionTimerExpiredCause) == 0;
 }
 
-void end_session(pjsip_inv_session* inv, int code, const char* what) {
-    if (inv == nullptr) {
-        Log::sip()->warn("{}: no invite session to end", what);
-        return;
-    }
-    pjsip_tx_data* tdata = nullptr;
-    pj_status_t status = pjsip_inv_end_session(inv, code, nullptr, &tdata);
-    if (status != PJ_SUCCESS) {
-        Log::sip()->warn("{}: pjsip_inv_end_session failed ({})", what, status);
-        return;
-    }
-    if (tdata != nullptr) {
-        status = pjsip_inv_send_msg(inv, tdata);
-        if (status != PJ_SUCCESS) {
-            Log::sip()->error("{}: pjsip_inv_send_msg failed ({})", what, status);
-        }
-    }
-}
-
 } // namespace
 
 void RealDialogActions::forward_bye_to_other_leg(Leg leg) {
-    end_session(session_.leg(other(leg)).inv_, PJSIP_SC_OK, "forward_bye_to_other_leg");
+    Inv::end_session(session_.leg(other(leg)).inv_, PJSIP_SC_OK);
     const bool from_caller = leg == Leg::kCaller;
     const std::string& sender_uri = from_caller ? session_.caller_uri() : session_.outbound_destination();
     const std::string& recipient_uri = from_caller ? session_.outbound_destination() : session_.caller_uri();
@@ -51,38 +33,6 @@ void RealDialogActions::forward_bye_to_other_leg(Leg leg) {
         sender_uri,
         from_caller ? "callee" : "caller",
         recipient_uri);
-}
-
-bool RealDialogActions::send_reinvite_response(
-    pjsip_inv_session* inv,
-    int status_code,
-    const pjmedia_sdp_session* answer) {
-    if (inv == nullptr || inv->state == PJSIP_INV_STATE_DISCONNECTED) {
-        return false;
-    }
-
-    // pjsip clears inv->last_answer once the initial INVITE transaction
-    // confirms (see mod_inv_on_tsx_state in pjsip's sip_inv.c), so
-    // pjsip_inv_answer() alone would hit "PJ_ASSERT_RETURN(inv->last_answer,
-    // ...)" and abort the process for any re-INVITE response. Building the
-    // response from the re-INVITE's own rdata via pjsip_inv_initial_answer()
-    // is the one-shot equivalent that also negotiates `answer`, if given.
-    pjsip_rx_data* rdata = session_.reinvite_rdata();
-    if (rdata == nullptr) {
-        Log::sip()->error("[{}] no rdata for re-INVITE response {}", session_.call_id(), status_code);
-        return false;
-    }
-
-    pjsip_tx_data* data = nullptr;
-    pj_status_t status = pjsip_inv_initial_answer(inv, rdata, status_code, nullptr, answer, &data);
-    if (status == PJ_SUCCESS) {
-        status = pjsip_inv_send_msg(inv, data);
-    }
-    if (status != PJ_SUCCESS) {
-        Log::sip()->error("[{}] failed to send re-INVITE response {} ({})", session_.call_id(), status_code, status);
-        return false;
-    }
-    return true;
 }
 
 ExchangeOutcome RealDialogActions::answer_reinvite(const std::string& offer, Leg leg) {
@@ -102,8 +52,9 @@ ExchangeOutcome RealDialogActions::answer_reinvite(const std::string& offer, Leg
     }
 
     const auto reject_488 = [&] {
-        return send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE) ? ExchangeOutcome::kRolledBack
-                                                                         : ExchangeOutcome::kFailed;
+        return Inv::answer_request(inv, session_.reinvite_rdata(), PJSIP_SC_NOT_ACCEPTABLE_HERE)
+                   ? ExchangeOutcome::kRolledBack
+                   : ExchangeOutcome::kFailed;
     };
 
     pjmedia_sdp_session* offer_sdp = Sdp::parse(session_.pool(), offer);
@@ -149,7 +100,7 @@ ExchangeOutcome RealDialogActions::answer_reinvite(const std::string& offer, Leg
         session_.media_bridge()->retarget_remote_leg_b(offer_endpoint.ip_, offer_endpoint.port_);
     }
 
-    if (!send_reinvite_response(inv, PJSIP_SC_OK, offer_sdp)) {
+    if (!Inv::answer_request(inv, session_.reinvite_rdata(), PJSIP_SC_OK, offer_sdp)) {
         return ExchangeOutcome::kFailed;
     }
     current.codec_ = Sdp::extract_active_audio_codec(offer_sdp);
@@ -231,15 +182,15 @@ void RealDialogActions::on_media_update(pjsip_inv_session* inv, pj_status_t stat
 
 void RealDialogActions::reject_reinvite_491_request_pending(Leg leg) {
     pjsip_inv_session* inv = session_.leg(leg).inv_;
-    if (!send_reinvite_response(inv, PJSIP_SC_REQUEST_PENDING)) {
+    if (!Inv::answer_request(inv, session_.reinvite_rdata(), PJSIP_SC_REQUEST_PENDING)) {
         Log::call()->warn("[{}] failed to reject colliding re-INVITE with 491", session_.call_id());
     }
 }
 
 void RealDialogActions::terminate_call() {
     offerless_reinvite_leg_ = {};
-    end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT, "terminate_call caller");
-    end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT, "terminate_call callee");
+    Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
+    Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);
 }
 
 void RealDialogActions::cleanup() {

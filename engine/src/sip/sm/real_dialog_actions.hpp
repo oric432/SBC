@@ -35,8 +35,6 @@ public:
 
 private:
     [[nodiscard]] bool
-    send_reinvite_response(pjsip_inv_session* inv, int status_code, const pjmedia_sdp_session* answer = nullptr);
-    [[nodiscard]] bool
     reconfigure_media_bridge(Leg leg, const Protocols::SupportedCodec& codec, std::optional<std::uint8_t> dtmf_pt);
 
     CallSession& session_;

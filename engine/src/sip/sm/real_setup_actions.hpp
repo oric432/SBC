@@ -36,7 +36,6 @@ public:
 
 private:
     void handle_disconnect(pjsip_inv_session* inv);
-    void send_response(int code);
     CallSession& session_;
     RoutesStore* routes_store_;
 };
