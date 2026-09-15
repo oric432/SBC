@@ -85,20 +85,9 @@ public:
     // the SIP thread. It is the default time point until the relay is started.
     [[nodiscard]] std::chrono::steady_clock::time_point last_packet_time() const;
 
-    // Configures per-leg codec/DTMF-PT info for the call. Opens pjmedia codec
-    // sessions (and a resampler, if the two legs' audio clock rates differ)
-    // only when the two legs' codec names don't match — passthrough calls pay
-    // no pjmedia cost. Must be called before start_bridge_loop() (same
-    // not-thread-safe-against-a-running-loop constraint as
-    // set_error_handler()) and before any SIP response has committed the
-    // call, so a failure here can still be answered with an error response
-    // instead of one that's already gone out. `endpoint` is used transiently
-    // to open codec/resampler resources — MediaBridge does not retain it.
-    //
-    // Returns the project's Error type rather than std::error_code (unlike
-    // the rest of this class): failures here originate from pjmedia codec/
-    // resampler allocation, not socket I/O — see AGENTS.md's error-handling
-    // guidance on preferring the project's own error type for that.
+    // Opens codec/resampler resources synchronously (only when the codec names
+    // differ, so a failure precedes any SIP response), then posts the swap onto
+    // the bridge's executor — safe on a running relay loop. `endpoint` isn't retained.
     VoidResult configure_legs(PjmediaEndpoint& endpoint, LegCodec leg_a, LegCodec leg_b);
 
     void start_bridge_loop();

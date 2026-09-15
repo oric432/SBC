@@ -53,9 +53,8 @@ struct MediaBridge::Impl {
         , session_b_(make_raw_rtp_session(executor))
         , last_packet_time_(std::chrono::steady_clock::now()) {}
 
-    // Lets retarget_remote_leg_a/b() marshal a live update onto this bridge's
-    // own single-threaded executor, so it never races the relay loop's reads
-    // of dest_a_/dest_b_ (see those methods' doc comments in MediaBridge.hpp).
+    // retarget_remote_leg_a/b() and configure_legs() post live updates here
+    // so they never race the relay loop's reads on this single-threaded executor.
     boost::asio::any_io_executor executor_;
     RtpSession<BasicRawRtpSender> session_a_;
     RtpSession<BasicRawRtpSender> session_b_;
@@ -73,17 +72,16 @@ struct MediaBridge::Impl {
     std::optional<std::uint8_t> leg_a_dtmf_pt_;
     std::optional<std::uint8_t> leg_b_dtmf_pt_;
 
-    // Present only when configure_legs() found the two legs' negotiated
-    // audio codecs differ. Absent for a passthrough call, or for a bridge
-    // configure_legs() was never called on at all (e.g. tests exercising
-    // only the original passthrough behavior).
-    std::optional<TranscodeSession> transcode_session_;
+    // Engaged only while the two legs' codecs differ; written solely via
+    // configure_legs()'s posted swap, read by process_packet(). shared_ptr
+    // (not optional): process_packet() keeps a copy alive through its
+    // send's completion, so a concurrent configure_legs() swap can never
+    // free the TranscodedRtpStream send buffer an in-flight async_send_pkt
+    // still points at (that send is zero-copy into it).
+    std::shared_ptr<TranscodeSession> transcode_session_;
 
-    // Shared receive/error-handling/re-arm loop for both do_relay() and
-    // do_transcode_relay() — they differ only in what happens to a
-    // successfully-received packet, supplied via `process` (a function
-    // pointer, never a closure: everything it needs travels as an
-    // argument, so re-arming just means calling listen() again with it).
+    // Receive/error-handling/re-arm loop; `process` is a function pointer
+    // (never a closure) so re-arming just means calling listen() again.
     template <typename ProcessPacket>
     static void listen(
         std::shared_ptr<MediaBridge> self,
@@ -143,105 +141,67 @@ struct MediaBridge::Impl {
         };
     }
 
-    static void relay_process(
+    // Passthrough vs. transcoding is decided per packet, so configure_legs()
+    // can swap transcode_session_ underneath a running loop.
+    static void process_packet(
         std::shared_ptr<MediaBridge> self,
         RelayLeg src_leg,
         RtpSession<BasicRawRtpSender>& src,
         RtpSession<BasicRawRtpSender>& dst,
         boost::asio::ip::udp::endpoint& dst_ep,
         const RtpPacketView& pkt) {
+        const Impl& impl = *self->impl_;
         const bool from_a = (src_leg == RelayLeg::kLegA);
         const auto dtmf = relay_dtmf_pt(
             pkt,
-            from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
-            from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_);
+            from_a ? impl.leg_a_dtmf_pt_ : impl.leg_b_dtmf_pt_,
+            from_a ? impl.leg_b_dtmf_pt_ : impl.leg_a_dtmf_pt_);
         if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
             Log::rtp()->trace(
                 "media bridge: dropping DTMF packet with no destination PT mapping on {}",
                 to_string(src_leg));
-            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::relay_process);
+            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::process_packet);
             return;
         }
+        auto on_sent = send_completion(self, src_leg, src, dst, dst_ep, &Impl::process_packet);
 
-        dst.sender().async_send_pkt(
-            pkt.packet(),
-            dst_ep,
-            send_completion(self, src_leg, src, dst, dst_ep, &Impl::relay_process));
-    }
+        // Copied, not referenced: a configure_legs() swap posted from the SIP
+        // thread can run on this executor between this send and its
+        // completion, so the completion handler below carries this copy to
+        // keep the TranscodeSession (and the send buffer async_send_pkt
+        // points into) alive regardless of what impl.transcode_session_
+        // gets reassigned to in the meantime.
+        const std::shared_ptr<TranscodeSession> session = impl.transcode_session_;
+        if (!session) {
+            dst.sender().async_send_pkt(pkt.packet(), dst_ep, std::move(on_sent));
+            return;
+        }
+        auto keep_session_alive = [session, on_sent = std::move(on_sent)](
+                                      std::size_t bytes_sent,
+                                      const std::error_code& err) mutable { on_sent(bytes_sent, err); };
 
-    static void do_relay(
-        std::shared_ptr<MediaBridge> self,
-        RelayLeg src_leg,
-        RtpSession<BasicRawRtpSender>& src,
-        RtpSession<BasicRawRtpSender>& dst,
-        boost::asio::ip::udp::endpoint& dst_ep) {
-        listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::relay_process);
-    }
-
-    // Used instead of relay_process() for a call whose two legs negotiated
-    // different audio codecs. Telephone-event packets still bypass
-    // AudioTranscoder entirely (same DTMF-PT check as relay_process(),
-    // relayed through this direction's TranscodedRtpStream identity instead
-    // of a raw byte copy). Everything else is decoded, resampled if needed,
-    // and re-encoded for the destination leg's codec via TranscodeSession.
-    static void transcode_process(
-        std::shared_ptr<MediaBridge> self,
-        RelayLeg src_leg,
-        RtpSession<BasicRawRtpSender>& src,
-        RtpSession<BasicRawRtpSender>& dst,
-        boost::asio::ip::udp::endpoint& dst_ep,
-        const RtpPacketView& pkt) {
-        // Only reached when configure_legs() built a TranscodeSession.
-        auto& session = *self->impl_->transcode_session_;
-        const bool from_a = (src_leg == RelayLeg::kLegA);
-        auto& out_stream = from_a ? session.stream_towards_b() : session.stream_towards_a();
-
-        const auto dtmf = relay_dtmf_pt(
-            pkt,
-            from_a ? self->impl_->leg_a_dtmf_pt_ : self->impl_->leg_b_dtmf_pt_,
-            from_a ? self->impl_->leg_b_dtmf_pt_ : self->impl_->leg_a_dtmf_pt_);
+        auto& out_stream = from_a ? session->stream_towards_b() : session->stream_towards_a();
         if (dtmf.outcome_ == DtmfRelayOutcome::kRelay) {
             out_stream.send_dtmf(
                 dtmf.payload_type_,
                 pkt.payload(),
                 pkt.get_header().is_marked_,
                 dst_ep,
-                send_completion(self, src_leg, src, dst, dst_ep, &Impl::transcode_process));
+                std::move(keep_session_alive));
             return;
         }
-        if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
-            Log::rtp()->trace(
-                "media bridge: dropping DTMF packet with no destination PT mapping on {}",
-                to_string(src_leg));
-            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::transcode_process);
-            return;
-        }
-
-        auto transcoded = from_a ? session.transcoder().transcode_a_to_b(pkt.payload())
-                                 : session.transcoder().transcode_b_to_a(pkt.payload());
+        auto transcoded = from_a ? session->transcoder().transcode_a_to_b(pkt.payload())
+                                 : session->transcoder().transcode_b_to_a(pkt.payload());
         if (!transcoded) {
             Log::rtp()->trace(
                 "media bridge: dropping untranscodable packet on {} ({} bytes)",
                 to_string(src_leg),
                 pkt.payload().size());
-            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::transcode_process);
+            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::process_packet);
             return;
         }
-
-        out_stream.send_audio(
-            transcoded->encoded_,
-            transcoded->timestamp_delta_,
-            dst_ep,
-            send_completion(self, src_leg, src, dst, dst_ep, &Impl::transcode_process));
-    }
-
-    static void do_transcode_relay(
-        std::shared_ptr<MediaBridge> self,
-        RelayLeg src_leg,
-        RtpSession<BasicRawRtpSender>& src,
-        RtpSession<BasicRawRtpSender>& dst,
-        boost::asio::ip::udp::endpoint& dst_ep) {
-        listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::transcode_process);
+        out_stream
+            .send_audio(transcoded->encoded_, transcoded->timestamp_delta_, dst_ep, std::move(keep_session_alive));
     }
 };
 
@@ -327,57 +287,56 @@ std::chrono::steady_clock::time_point MediaBridge::last_packet_time() const {
 }
 
 VoidResult MediaBridge::configure_legs(PjmediaEndpoint& endpoint, LegCodec leg_a, LegCodec leg_b) {
-    impl_->leg_a_dtmf_pt_ = leg_a.dtmf_pt_;
-    impl_->leg_b_dtmf_pt_ = leg_b.dtmf_pt_;
-
-    if (leg_a.audio_.name_ == leg_b.audio_.name_) {
-        return {};
+    std::shared_ptr<TranscodeSession> session;
+    if (leg_a.audio_.name_ != leg_b.audio_.name_) {
+        auto opened = TranscodeSession::open(
+            endpoint,
+            leg_a.audio_,
+            leg_b.audio_,
+            impl_->session_a_.sender(),
+            impl_->session_b_.sender());
+        if (!opened) {
+            return std::unexpected(opened.error());
+        }
+        session = std::make_shared<TranscodeSession>(std::move(*opened));
     }
 
-    auto session = TranscodeSession::open(
-        endpoint,
-        leg_a.audio_,
-        leg_b.audio_,
-        impl_->session_a_.sender(),
-        impl_->session_b_.sender());
-    if (!session) {
-        return std::unexpected(session.error());
-    }
-    impl_->transcode_session_.emplace(std::move(*session));
-
+    // A plain assignment, not reset()-then-emplace(): the old session (if
+    // any) stays alive under any copy process_packet() is still holding for
+    // an in-flight send, released only once that send's completion runs.
+    boost::asio::post(
+        impl_->executor_,
+        [self = shared_from_this(),
+         session = std::move(session),
+         a_pt = leg_a.dtmf_pt_,
+         b_pt = leg_b.dtmf_pt_]() mutable {
+            self->impl_->leg_a_dtmf_pt_ = a_pt;
+            self->impl_->leg_b_dtmf_pt_ = b_pt;
+            self->impl_->transcode_session_ = std::move(session);
+        });
     return {};
 }
 
 void MediaBridge::start_bridge_loop() {
     impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
 
-    const bool transcoding = impl_->transcode_session_.has_value();
-
     if (impl_->dest_b_) {
-        if (transcoding) {
-            Impl::do_transcode_relay(
-                shared_from_this(),
-                RelayLeg::kLegA,
-                impl_->session_a_,
-                impl_->session_b_,
-                *impl_->dest_b_);
-        }
-        else {
-            Impl::do_relay(shared_from_this(), RelayLeg::kLegA, impl_->session_a_, impl_->session_b_, *impl_->dest_b_);
-        }
+        Impl::listen(
+            shared_from_this(),
+            RelayLeg::kLegA,
+            impl_->session_a_,
+            impl_->session_b_,
+            *impl_->dest_b_,
+            &Impl::process_packet);
     }
     if (impl_->dest_a_) {
-        if (transcoding) {
-            Impl::do_transcode_relay(
-                shared_from_this(),
-                RelayLeg::kLegB,
-                impl_->session_b_,
-                impl_->session_a_,
-                *impl_->dest_a_);
-        }
-        else {
-            Impl::do_relay(shared_from_this(), RelayLeg::kLegB, impl_->session_b_, impl_->session_a_, *impl_->dest_a_);
-        }
+        Impl::listen(
+            shared_from_this(),
+            RelayLeg::kLegB,
+            impl_->session_b_,
+            impl_->session_a_,
+            *impl_->dest_a_,
+            &Impl::process_packet);
     }
 }
 

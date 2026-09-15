@@ -74,6 +74,18 @@ std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_sessi
 // all?"). Empty if there is no active audio stream.
 std::vector<AudioCodecInfo> extract_all_audio_codecs(const pjmedia_sdp_session* sdp);
 
+// Payload type of the first non-declined audio line's telephone-event (RFC
+// 2833 DTMF) format, if it declares one.
+std::optional<uint8_t> extract_telephone_event_pt(const pjmedia_sdp_session* sdp);
+
+// The codec an answer should pick from `offered`: `preferred` (the other
+// leg's codec, so no transcoding is needed) if offered and supported, else the
+// SBC's own priority order intersected with `offered`. nullopt if `offered`
+// contains no supported codec at all.
+std::optional<Protocols::SupportedCodec> pick_answer_codec(
+    const std::optional<AudioCodecInfo>& preferred,
+    const std::vector<AudioCodecInfo>& offered);
+
 // Rewrites the first non-declined audio media line's format list to exactly
 // `allowed`, in that order, dropping any now-stale rtpmap/fmtp attributes
 // (none of `allowed`'s codecs need one — all are RFC 3551 static types). If

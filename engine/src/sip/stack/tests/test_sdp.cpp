@@ -2,7 +2,9 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include <pjlib.h>
 
@@ -98,6 +100,65 @@ TEST_CASE("extract_all_audio_codecs returns empty for SDP with no active audio",
 
     auto codecs = Sdp::extract_all_audio_codecs(sdp);
     CHECK(codecs.empty());
+}
+
+TEST_CASE("extract_telephone_event_pt reads the DTMF payload type, if any", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    const pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), kMultiCodecOffer);
+    REQUIRE(sdp != nullptr);
+    CHECK(Sdp::extract_telephone_event_pt(sdp) == std::optional<uint8_t>{101});
+
+    const std::string no_dtmf = "v=0\r\n"
+                                "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                "s=-\r\n"
+                                "c=IN IP4 127.0.0.1\r\n"
+                                "t=0 0\r\n"
+                                "m=audio 10000 RTP/AVP 0 8\r\n";
+    CHECK_FALSE(Sdp::extract_telephone_event_pt(Sdp::parse(pj_scope.pool(), no_dtmf)).has_value());
+
+    // RFC 4733's encoding name is case-insensitive; a peer may spell it differently.
+    const std::string mixed_case_dtmf = "v=0\r\n"
+                                        "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                        "s=-\r\n"
+                                        "c=IN IP4 127.0.0.1\r\n"
+                                        "t=0 0\r\n"
+                                        "m=audio 10000 RTP/AVP 0 101\r\n"
+                                        "a=rtpmap:101 Telephone-Event/8000\r\n";
+    CHECK(Sdp::extract_telephone_event_pt(Sdp::parse(pj_scope.pool(), mixed_case_dtmf)) == std::optional<uint8_t>{101});
+}
+
+TEST_CASE("pick_answer_codec prefers the other leg's codec, then SBC priority, else nothing", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    const auto offered = Sdp::extract_all_audio_codecs(Sdp::parse(pj_scope.pool(), kMultiCodecOffer));
+    REQUIRE(offered.size() == 4);
+
+    const Sdp::AudioCodecInfo pcma{.payload_type_ = 8, .name_ = "PCMA", .clock_rate_ = 8000};
+    auto chosen = Sdp::pick_answer_codec(pcma, offered);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "PCMA");
+
+    // Preferred codec not in the offer: fall back to the SBC's own priority (G722 first).
+    const Sdp::AudioCodecInfo opus{.payload_type_ = 111, .name_ = "opus", .clock_rate_ = 48000};
+    chosen = Sdp::pick_answer_codec(opus, offered);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "G722");
+
+    chosen = Sdp::pick_answer_codec(std::nullopt, offered);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "G722");
+
+    const std::vector<Sdp::AudioCodecInfo> unsupported_only{opus};
+    CHECK_FALSE(Sdp::pick_answer_codec(pcma, unsupported_only).has_value());
+
+    // Codec names are matched case-insensitively, both against `preferred`
+    // and against the offer, since RTP encoding names are (RFC 3551/4855).
+    const Sdp::AudioCodecInfo lowercase_pcma{.payload_type_ = 8, .name_ = "pcma", .clock_rate_ = 8000};
+    const std::vector<Sdp::AudioCodecInfo> mixed_case_offer{
+        Sdp::AudioCodecInfo{.payload_type_ = 9, .name_ = "g722", .clock_rate_ = 16000},
+        Sdp::AudioCodecInfo{.payload_type_ = 8, .name_ = "Pcma", .clock_rate_ = 8000}};
+    chosen = Sdp::pick_answer_codec(lowercase_pcma, mixed_case_offer);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "PCMA");
 }
 
 TEST_CASE("restrict_audio_codecs narrows to a single codec for an answer, preserving telephone-event", "[sdp]") {

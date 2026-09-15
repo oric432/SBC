@@ -1,9 +1,12 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <pjsip_ua.h>
 
+#include "protocols/supported_codecs.hpp"
 #include "sip/sm/isbc_actions.hpp"
 #include "sip/sm/leg.hpp"
 
@@ -39,6 +42,8 @@ private:
     ExchangeOutcome reject_exchange(int status_code);
     ExchangeOutcome confirm_exchange();
     ExchangeOutcome exchange_confirmation_timeout();
+    [[nodiscard]] bool
+    reconfigure_media_bridge(Leg leg, const Protocols::SupportedCodec& codec, std::optional<std::uint8_t> dtmf_pt);
 
     CallSession& session_;
     // One instance serves both legs of the call, so each leg tracks its own
