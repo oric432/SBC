@@ -10,6 +10,7 @@ add_library(sip STATIC
     call/handlers/bye_handler.cpp
     call/handlers/mid_dialog_offer.cpp
     call/handlers/reinvite_handler.cpp
+    call/handlers/update_handler.cpp
     call/offer_answer_actions.cpp
     router/message_router.cpp
     router/sip_request_actions.cpp
