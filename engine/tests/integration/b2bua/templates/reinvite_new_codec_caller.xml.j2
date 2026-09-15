@@ -56,7 +56,7 @@
   <!-- Mid-call re-INVITE switching this leg's codec from PCMU to G722. The
        SBC answers locally with G722 (never forwarding to the callee, which
        stays on PCMU) and live-swaps MediaBridge onto the transcode path
-       (RealDialogActions::start_exchange, issue #195). -->
+       (DialogActions::answer_reinvite, issue #195). -->
   <send retrans="500">
     <![CDATA[
       INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0

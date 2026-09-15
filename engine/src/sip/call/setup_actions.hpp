@@ -12,9 +12,9 @@ class CallSession;
 class RoutesStore;
 
 // Per-call protocol adapter for the generic setup lifecycle.
-class RealSetupActions : public ISetupActions {
+class SetupActions : public ISetupActions {
 public:
-    RealSetupActions(CallSession& session, RoutesStore* routes_store)
+    SetupActions(CallSession& session, RoutesStore* routes_store)
         : session_(session)
         , routes_store_(routes_store) {}
 

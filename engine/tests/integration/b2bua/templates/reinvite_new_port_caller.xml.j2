@@ -58,7 +58,7 @@
        see conftest.py's Ports.caller_media_port). The SBC should retarget
        MediaBridge's relay for this leg live and answer 200 OK locally,
        without forwarding anything to the callee
-       (RealDialogActions::start_exchange, endpoint/port-only path). -->
+       (DialogActions::answer_reinvite, endpoint/port-only path). -->
   <send retrans="500">
     <![CDATA[
       INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0

@@ -5,7 +5,7 @@
 
 namespace SbcEngine {
 
-class RealDialogActions;
+class DialogActions;
 
 // Pimpl wrapper owning the Dialog boost::sml machine and its SmLogger — same
 // rationale as SetupSmRunner: the SML transition table is instantiated exactly
@@ -14,12 +14,12 @@ class RealDialogActions;
 // event, plus named queries for the states external code branches on.
 //
 // No dedicated unit test, same reason as SetupSmRunner: hardcoded to
-// RealDialogActions, which needs a live CallSession to construct. See
+// DialogActions, which needs a live CallSession to construct. See
 // setup_sm_runner.hpp for the full rationale and what testing it properly
 // would require.
 class DialogSmRunner {
 public:
-    DialogSmRunner(RealDialogActions& actions, std::string_view call_id);
+    DialogSmRunner(DialogActions& actions, std::string_view call_id);
     ~DialogSmRunner();
 
     DialogSmRunner(const DialogSmRunner&) = delete;

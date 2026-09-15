@@ -1,4 +1,4 @@
-#include "real_dialog_actions.hpp"
+#include "dialog_actions.hpp"
 
 #include <algorithm>
 #include <array>
@@ -21,7 +21,7 @@ bool is_session_timer_expiry(const pjsip_inv_session* inv) {
 
 } // namespace
 
-void RealDialogActions::forward_bye_to_other_leg(Leg leg) {
+void DialogActions::forward_bye_to_other_leg(Leg leg) {
     Inv::end_session(session_.leg(other(leg)).inv_, PJSIP_SC_OK);
     const bool from_caller = leg == Leg::kCaller;
     const std::string& sender_uri = from_caller ? session_.caller_uri() : session_.outbound_destination();
@@ -35,7 +35,7 @@ void RealDialogActions::forward_bye_to_other_leg(Leg leg) {
         recipient_uri);
 }
 
-ExchangeOutcome RealDialogActions::answer_reinvite(const std::string& offer, Leg leg) {
+ExchangeOutcome DialogActions::answer_reinvite(const std::string& offer, Leg leg) {
     pjsip_inv_session* inv = session_.leg(leg).inv_;
     if (inv == nullptr || inv->neg == nullptr) {
         return ExchangeOutcome::kFailed;
@@ -115,7 +115,7 @@ ExchangeOutcome RealDialogActions::answer_reinvite(const std::string& offer, Leg
     return ExchangeOutcome::kCommitted;
 }
 
-bool RealDialogActions::reconfigure_media_bridge(
+bool DialogActions::reconfigure_media_bridge(
     Leg leg,
     const Protocols::SupportedCodec& codec,
     std::optional<std::uint8_t> dtmf_pt) {
@@ -143,7 +143,7 @@ bool RealDialogActions::reconfigure_media_bridge(
     return true;
 }
 
-void RealDialogActions::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
+void DialogActions::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
     if (offer == nullptr || inv->neg == nullptr) {
         return;
     }
@@ -164,7 +164,7 @@ void RealDialogActions::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_sess
     *offer = pjmedia_sdp_session_clone(inv->pool_prov, active_local);
 }
 
-void RealDialogActions::on_media_update(pjsip_inv_session* inv, pj_status_t status) {
+void DialogActions::on_media_update(pjsip_inv_session* inv, pj_status_t status) {
     const auto found = std::ranges::find(offerless_reinvite_leg_, inv);
     if (found == offerless_reinvite_leg_.end()) {
         return;
@@ -180,27 +180,27 @@ void RealDialogActions::on_media_update(pjsip_inv_session* inv, pj_status_t stat
     session_.dialog_sm().process_event(Dialog::ReinviteFinished{outcome});
 }
 
-void RealDialogActions::reject_reinvite_491_request_pending(Leg leg) {
+void DialogActions::reject_reinvite_491_request_pending(Leg leg) {
     pjsip_inv_session* inv = session_.leg(leg).inv_;
     if (!Inv::answer_request(inv, session_.reinvite_rdata(), PJSIP_SC_REQUEST_PENDING)) {
         Log::call()->warn("[{}] failed to reject colliding re-INVITE with 491", session_.call_id());
     }
 }
 
-void RealDialogActions::terminate_call() {
+void DialogActions::terminate_call() {
     offerless_reinvite_leg_ = {};
     Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
     Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);
 }
 
-void RealDialogActions::cleanup() {
+void DialogActions::cleanup() {
     session_.media_bridge()->close();
 
     session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] dialog cleanup complete", session_.call_id());
 }
 
-void RealDialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* /*rdata*/) {
+void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* /*rdata*/) {
     auto& dialog = session_.dialog_sm();
     const Leg leg = session_.leg_for(inv);
 

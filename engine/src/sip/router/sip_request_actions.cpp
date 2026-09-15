@@ -37,7 +37,7 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
     // header must be rejected here. This is what stops a routing loop (e.g.
     // this engine routing an INVITE back to itself) from spinning forever and
     // exhausting sockets/ports: each hop's outbound leg carries a decremented
-    // value (see RealOfferAnswerActions::send_outbound_invite) and eventually lands
+    // value (see OfferAnswerActions::send_outbound_invite) and eventually lands
     // back here at zero.
     if (rx_data->msg_info.max_fwd != nullptr && rx_data->msg_info.max_fwd->ivalue == 0) {
         Log::sip()->warn("[{}] Max-Forwards exhausted, rejecting to break routing loop", call_id);

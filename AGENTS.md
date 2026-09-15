@@ -86,7 +86,7 @@ machine). **Never call `process_event()` from inside an action.**
 
 ### RTP
 
-`RealSetupActions`/`RealDialogActions` bind each leg's socket via `MediaBridge::bind_leg_a()` /
+`SetupActions`/`DialogActions` bind each leg's socket via `MediaBridge::bind_leg_a()` /
 `bind_leg_b()`, set the negotiated remote endpoint via `set_remote_leg_a()`/`set_remote_leg_b()`
 as each leg's SDP answer arrives, then start relaying via `start_bridge_loop()`. From that point
 the relay runs on the `io_context` thread (see Threading model above).

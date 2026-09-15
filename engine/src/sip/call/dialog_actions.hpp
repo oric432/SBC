@@ -16,9 +16,9 @@ class CallSession;
 
 // Per-call implementation of the DialogSm action interface (confirmed-dialog
 // phase: BYE teardown and re-INVITE handling).
-class RealDialogActions : public IDialogActions {
+class DialogActions : public IDialogActions {
 public:
-    explicit RealDialogActions(CallSession& session)
+    explicit DialogActions(CallSession& session)
         : session_(session) {}
 
     void on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);

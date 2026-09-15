@@ -69,7 +69,7 @@ TEST_CASE("OptionsSm action invocation", "[options_sm]") {
 // transition matched) as the observable instead.
 //
 // SetupSmRunner/DialogSmRunner don't get the same treatment: they're
-// hardcoded to RealSetupActions/RealDialogActions, which need a live
+// hardcoded to SetupActions/DialogActions, which need a live
 // CallSession (itself built from real pjsip_rx_data) to construct — not
 // practical to stand up in a unit test without templating the runners on
 // the Actions type, a larger change than this fix warrants on its own.

@@ -15,9 +15,9 @@ class CallSession;
 
 // SIP adapter for one initial INVITE exchange. CallSession owns this object
 // alongside its temporary runner; neither survives exchange cleanup.
-class RealOfferAnswerActions : public IOfferAnswerActions {
+class OfferAnswerActions : public IOfferAnswerActions {
 public:
-    RealOfferAnswerActions(
+    OfferAnswerActions(
         CallSession& session,
         std::string destination,
         std::optional<Protocols::SupportedCodec> required_codec)
