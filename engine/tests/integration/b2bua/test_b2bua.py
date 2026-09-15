@@ -81,3 +81,21 @@ def test_b2bua_reinvite_new_codec(sbc_engine, render_scenario, run_sipp_pair):
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
     _log.info("scenario '%s' passed", scenario_name)
+
+
+def test_b2bua_update_new_codec(sbc_engine, render_scenario, run_sipp_pair):
+    """Issue #116: a mid-call UPDATE that switches the caller's codec
+    (PCMU -> G722) is answered locally on that leg with the new codec,
+    without being forwarded to the callee (which stays on PCMU), and the
+    relay switches to transcoding for the rest of the call -- same as
+    reinvite_new_codec, but via UPDATE (RFC 3311) instead of re-INVITE."""
+    scenario_name = "update_new_codec"
+    caller_xml = render_scenario(
+        "update_new_codec_caller.xml.j2", scenario_name=scenario_name, g722_pcap_path=_PCAP_PATHS["g722"]
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
