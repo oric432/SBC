@@ -390,6 +390,79 @@ TEST_CASE(
     }
 }
 
+TEST_CASE(
+    "MediaBridge configure_legs swaps transcoding on and off under a running relay loop",
+    "[MediaBridge][transcode]") {
+    io_context ioc;
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+
+    auto leg_a_port = bridge->bind_leg_a();
+    REQUIRE(leg_a_port.has_value());
+    REQUIRE(bridge->bind_leg_b().has_value());
+
+    udp::socket caller_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    udp::socket callee_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    bridge->set_remote_leg_a("127.0.0.1", caller_sock.local_endpoint().port());
+    bridge->set_remote_leg_b("127.0.0.1", callee_sock.local_endpoint().port());
+
+    const auto* pcmu = Protocols::find_supported_codec_by_name("PCMU");
+    const auto* g722 = Protocols::find_supported_codec_by_name("G722");
+    REQUIRE(pcmu != nullptr);
+    REQUIRE(g722 != nullptr);
+    const LegCodec pcmu_leg{.audio_ = *pcmu, .dtmf_pt_ = std::nullopt};
+    const LegCodec g722_leg{.audio_ = *g722, .dtmf_pt_ = std::nullopt};
+
+    REQUIRE(bridge->configure_legs(shared_test_pjmedia_endpoint(), pcmu_leg, pcmu_leg).has_value());
+    bridge->start_bridge_loop();
+    const udp::endpoint bridge_leg_a_ep(make_address("127.0.0.1"), leg_a_port.value());
+
+    auto pcmu_codec = CodecSession::open(shared_test_pjmedia_endpoint(), pcmu->payload_type_);
+    REQUIRE(pcmu_codec.has_value());
+    std::vector<std::uint8_t> pcm_in(pcmu_codec->pcm_frame_samples() * 2);
+    for (unsigned i = 0; i < pcmu_codec->pcm_frame_samples(); ++i) {
+        write_sample(pcm_in, i, static_cast<std::int16_t>(500 + (10 * static_cast<int>(i))));
+    }
+    std::vector<std::uint8_t> encoded(pcmu_codec->encoded_frame_bytes());
+    REQUIRE(pcmu_codec->encode(pcm_in, encoded).has_value());
+
+    constexpr std::uint32_t kSourceSsrc = 0x0BAD'F00D;
+    std::uint16_t seq = 1;
+    const auto relay_one = [&]() {
+        auto packet = build_rtp_packet(pcmu->payload_type_, seq++, 8000, kSourceSsrc, false, encoded);
+        caller_sock.send_to(buffer(packet), bridge_leg_a_ep);
+        std::vector<std::uint8_t> recv_buf(kReceiveBufferSize);
+        udp::endpoint recv_ep;
+        bool received = false;
+        callee_sock.async_receive_from(
+            buffer(recv_buf),
+            recv_ep,
+            [&](const boost::system::error_code& errc, std::size_t bytes_recvd) {
+                REQUIRE(!errc);
+                recv_buf.resize(bytes_recvd);
+                received = true;
+            });
+        ioc.run_for(kRelayRunWindow);
+        ioc.restart();
+        REQUIRE(received);
+        return recv_buf;
+    };
+
+    auto passthrough = relay_one();
+    CHECK(packet_payload_type(passthrough) == pcmu->payload_type_);
+    CHECK(packet_ssrc(passthrough) == kSourceSsrc);
+
+    // Same call sites a re-INVITE codec change uses: the loop is live now.
+    REQUIRE(bridge->configure_legs(shared_test_pjmedia_endpoint(), pcmu_leg, g722_leg).has_value());
+    auto transcoded = relay_one();
+    CHECK(packet_payload_type(transcoded) == g722->payload_type_);
+    CHECK(packet_ssrc(transcoded) != kSourceSsrc);
+
+    REQUIRE(bridge->configure_legs(shared_test_pjmedia_endpoint(), pcmu_leg, pcmu_leg).has_value());
+    auto passthrough_again = relay_one();
+    CHECK(packet_payload_type(passthrough_again) == pcmu->payload_type_);
+    CHECK(packet_ssrc(passthrough_again) == kSourceSsrc);
+}
+
 TEST_CASE("RtpInactivityTimer exposes a pending periodic scan", "[RtpInactivityTimer]") {
     io_context ioc;
     int scan_count = 0;

@@ -65,7 +65,7 @@ private:
     std::uint32_t timestamp_ = RtpCpp::Utils::generate_timestamp_offset();
     // Reused in place (not copied) by each send — callers must let one
     // send's callback fire before starting the next, or risk corrupting a
-    // packet still in flight. MediaBridge::do_transcode_relay() already
+    // packet still in flight. MediaBridge's relay loop already
     // guarantees this by only re-arming its receive loop from inside the
     // send callback.
     std::array<std::uint8_t, RtpCpp::kMaxRtpPacketSize> send_buffer_{};
