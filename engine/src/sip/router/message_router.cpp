@@ -82,6 +82,30 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
     return offer != nullptr ? PJ_SUCCESS : PJ_EIGNORED;
 }
 
+void MessageRouter::on_rx_offer(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata) {
+    // Only UPDATE reaches here in practice: pjsip claims the initial INVITE's
+    // offer and every re-INVITE offer via on_rx_reinvite before this fires.
+    if (extract_method(rdata) != "UPDATE") {
+        return;
+    }
+    auto* session = call_manager_->find_by_inv(inv);
+    if (session == nullptr || !session->setup_sm().is_established()) {
+        // An offer-bearing UPDATE before the initial INVITE completes is only
+        // valid per RFC 3311 S5.1 once a reliable provisional response (100rel)
+        // + PRACK have already resolved that leg's own offer/answer -- this SBC
+        // never orchestrates PRACK (see pjsip_init.cpp), so no compliant peer
+        // can satisfy that precondition here. Leave the negotiator unanswered;
+        // pjsip auto-rejects (typically 500, since this leg's own initial offer
+        // is itself still outstanding at this point -- see PJSIP's sip_inv.c
+        // inv_respond_incoming_update -- or 488 once it isn't).
+        return;
+    }
+
+    const Leg leg = session->leg_for(inv);
+    const std::string sdp = offer != nullptr ? Sdp::serialize(offer) : std::string{};
+    session->dialog_sm().process_event(UpdateReceived{.sdp_ = sdp, .leg_ = leg});
+}
+
 void MessageRouter::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
     auto* session = call_manager_->find_by_inv(inv);
     if (session != nullptr && session->setup_sm().is_established()) {

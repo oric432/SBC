@@ -26,6 +26,13 @@ public:
     virtual ExchangeOutcome answer_reinvite(const std::string& offer, Leg leg) = 0;
     virtual void reject_reinvite_491_request_pending(Leg leg) = 0;
 
+    // Answered locally, same as answer_reinvite; never kPending, since UPDATE
+    // has no ACK to carry a deferred answer.
+    virtual ExchangeOutcome answer_update(const std::string& offer, Leg leg) = 0;
+    // No explicit status code is available for a colliding UPDATE (see #116);
+    // this only logs, PJSIP auto-rejects with 488 when no answer is set.
+    virtual void reject_update_collision(Leg leg) = 0;
+
     virtual void terminate_call() = 0;
 };
 

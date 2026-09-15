@@ -34,7 +34,7 @@ struct Cleanup {};
 
 // Dialog SM Events
 namespace Dialog {
-struct ReinviteFinished {
+struct ExchangeFinished {
     ExchangeOutcome outcome_;
 };
 } // namespace Dialog
@@ -44,6 +44,11 @@ struct ByeReceived {
 };
 
 struct ReinviteReceived {
+    std::string sdp_;
+    Leg leg_ = Leg::kCaller;
+};
+
+struct UpdateReceived {
     std::string sdp_;
     Leg leg_ = Leg::kCaller;
 };

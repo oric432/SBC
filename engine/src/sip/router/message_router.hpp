@@ -20,6 +20,9 @@ public:
 
     void on_rx_request(pjsip_rx_data* request);
     pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata);
+    // UPDATE only (#116); re-INVITE and the initial INVITE's offer are fully
+    // handled via on_rx_reinvite before this ever sees them.
+    void on_rx_offer(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata);
     void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer);
     void on_inv_media_update(pjsip_inv_session* inv, pj_status_t status);
     void on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* request);

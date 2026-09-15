@@ -66,9 +66,9 @@ TEST_CASE("DialogSm reinvite happy path", "[dialog_sm]") {
     REQUIRE(machine.is(Sml::state<Reinviting>));
     REQUIRE(actions.was_called("answer_reinvite"));
 
-    // Step 2: The re-INVITE is answered locally; its outcome arrives as ReinviteFinished.
+    // Step 2: The re-INVITE is answered locally; its outcome arrives as ExchangeFinished.
     actions.reset();
-    machine.process_event(Dialog::ReinviteFinished{ExchangeOutcome::kCommitted});
+    machine.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kCommitted});
     REQUIRE(machine.is(Sml::state<Active>));
 
     // A later re-INVITE is answered again while the dialog SM is reused.
@@ -99,7 +99,7 @@ TEST_CASE("DialogSm reinvite rejected", "[dialog_sm]") {
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     actions.reset();
-    machine.process_event(Dialog::ReinviteFinished{ExchangeOutcome::kRolledBack});
+    machine.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kRolledBack});
     REQUIRE(machine.is(Sml::state<Active>));
 }
 
@@ -135,6 +135,91 @@ TEST_CASE("DialogSm reinvite collision", "[dialog_sm]") {
     REQUIRE(actions.was_called("reject_reinvite_491_request_pending"));
 }
 
+// Test: Happy path for mid-call UPDATE (#116), same shape as re-INVITE.
+TEST_CASE("DialogSm update happy path", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(UpdateReceived{kValidSdp});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+    REQUIRE(actions.was_called("answer_update"));
+
+    actions.reset();
+    machine.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kCommitted});
+    REQUIRE(machine.is(Sml::state<Active>));
+}
+
+TEST_CASE("DialogSm passes the originating leg to update handling", "[dialog_sm]") {
+    MockDialogActions actions;
+    actions.start_result_ = ExchangeOutcome::kCommitted;
+    TestMachine machine{actions};
+
+    machine.process_event(UpdateReceived{kValidSdp, Leg::kCallee});
+
+    REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("answer_update:" + std::to_string(kValidSdp.length()) + "B:callee"));
+}
+
+// Test: Invalid SDP in UPDATE rolls back to Active without terminating.
+TEST_CASE("DialogSm update invalid SDP", "[dialog_sm]") {
+    MockDialogActions actions;
+    actions.start_result_ = ExchangeOutcome::kRolledBack;
+    TestMachine machine{actions};
+
+    machine.process_event(UpdateReceived{"malformed"});
+    REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("answer_update"));
+}
+
+// Test: A colliding UPDATE while another UPDATE is pending is rejected without
+// an explicit status code (see #116) -- only logged, pjsip sends the 488.
+TEST_CASE("DialogSm update collision", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(UpdateReceived{kValidSdp});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+
+    actions.reset();
+    machine.process_event(UpdateReceived{kValidSdp});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+    REQUIRE(actions.was_called("reject_update_collision"));
+}
+
+// Test: A cross-type collision -- an UPDATE arriving while a re-INVITE is
+// pending on the other leg (or vice versa) -- is rejected the same way,
+// since both share the call-wide Reinviting lock.
+TEST_CASE("DialogSm update collides with a pending reinvite", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(ReinviteReceived{kValidSdp, Leg::kCaller});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+
+    actions.reset();
+    machine.process_event(UpdateReceived{kValidSdp, Leg::kCallee});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+    REQUIRE(actions.was_called("reject_update_collision:callee"));
+
+    actions.reset();
+    machine.process_event(ReinviteReceived{kValidSdp, Leg::kCallee});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+    REQUIRE(actions.was_called("reject_reinvite_491_request_pending:callee"));
+}
+
+TEST_CASE("DialogSm failed update terminates call", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(UpdateReceived{kValidSdp});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+
+    actions.reset();
+    machine.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kFailed});
+    REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("terminate_call"));
+}
+
 TEST_CASE("DialogSm reinviting exits only when the re-INVITE finishes", "[dialog_sm]") {
     MockDialogActions actions;
     TestMachine machine{actions};
@@ -157,7 +242,7 @@ TEST_CASE("DialogSm failed reinvite terminates call", "[dialog_sm]") {
     REQUIRE(machine.is(Sml::state<Reinviting>));
 
     actions.reset();
-    machine.process_event(Dialog::ReinviteFinished{ExchangeOutcome::kFailed});
+    machine.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kFailed});
     REQUIRE(machine.is(Sml::state<Terminating>));
     REQUIRE(actions.was_called("terminate_call"));
 }
