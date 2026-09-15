@@ -80,6 +80,13 @@ struct MediaBridge::Impl {
     // still points at (that send is zero-copy into it).
     std::shared_ptr<TranscodeSession> transcode_session_;
 
+    // Set by close()'s posted task, before it closes either socket. Checked
+    // first in both re-arm sites below so a completion that fires once the
+    // bridge is tearing down never re-arms listen() on an already-closed
+    // socket — see close()'s doc comment for why that specific ordering
+    // matters (issue #208).
+    bool closing_ = false;
+
     // Receive/error-handling/re-arm loop; `process` is a function pointer
     // (never a closure) so re-arming just means calling listen() again.
     template <typename ProcessPacket>
@@ -94,6 +101,9 @@ struct MediaBridge::Impl {
                                              const RtpPacketView& pkt,
                                              [[maybe_unused]] const boost::asio::ip::udp::endpoint& src_ep,
                                              const std::error_code& err) mutable {
+            if (self->impl_->closing_) {
+                return;
+            }
             // TODO: Implement Symmetric RTP latching using src_ep here
             if (err) {
                 if (is_operation_aborted(err)) {
@@ -129,6 +139,9 @@ struct MediaBridge::Impl {
         return [self, src_leg, &src, &dst, &dst_ep, process](
                    std::size_t /*bytes_sent*/,
                    const std::error_code& send_err) mutable {
+            if (self->impl_->closing_) {
+                return;
+            }
             if (send_err) {
                 if (is_operation_aborted(send_err)) {
                     return;
@@ -340,12 +353,20 @@ void MediaBridge::start_bridge_loop() {
     }
 }
 
-std::expected<void, std::error_code> MediaBridge::close() {
-    auto err = impl_->session_a_.close();
-    if (!err) {
-        return err;
-    }
-    return impl_->session_b_.close();
+void MediaBridge::close() {
+    boost::asio::post(impl_->executor_, [self = shared_from_this()] {
+        // Set before closing so a completion already queued behind this task
+        // on the executor sees the bridge tearing down and skips re-arming,
+        // rather than hitting a synchronous bad_descriptor from the socket
+        // this closes next.
+        self->impl_->closing_ = true;
+        if (auto res = self->impl_->session_a_.close(); !res) {
+            Log::rtp()->warn("media bridge: failed to close leg_a: {}", res.error().message());
+        }
+        if (auto res = self->impl_->session_b_.close(); !res) {
+            Log::rtp()->warn("media bridge: failed to close leg_b: {}", res.error().message());
+        }
+    });
 }
 
 } // namespace SbcEngine

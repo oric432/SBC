@@ -194,10 +194,7 @@ void RealSetupActions::terminate_call() {
 }
 
 void RealSetupActions::cleanup() {
-    auto err = session_.media_bridge()->close();
-    if (!err.has_value()) {
-        Log::call()->error("[{}] failed to close session media bridge : {}", session_.call_id(), err.error().message());
-    }
+    session_.media_bridge()->close();
 
     session_.call_manager()->schedule_remove(session_.call_id());
     Log::call()->info("[{}] setup cleanup complete", session_.call_id());
