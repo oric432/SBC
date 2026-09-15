@@ -58,6 +58,19 @@ pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* of
     return g_active_stack->router()->on_rx_reinvite(inv, offer, rdata);
 }
 
+// Fires for every new offer pjsip receives (initial INVITE, re-INVITE, and
+// UPDATE alike), but the router only acts on UPDATE -- the other two are
+// already fully handled via on_rx_reinvite. param->rdata is const here even
+// though pjsip's own on_rx_reinvite takes it non-const; this callback never
+// mutates it, so the cast is safe.
+void on_rx_offer2(pjsip_inv_session* inv, pjsip_inv_on_rx_offer_cb_param* param) {
+    if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
+        return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — PJSIP C API
+    g_active_stack->router()->on_rx_offer(inv, param->offer, const_cast<pjsip_rx_data*>(param->rdata));
+}
+
 void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
     if (g_active_stack != nullptr && g_active_stack->router() != nullptr) {
         g_active_stack->router()->on_create_offer(inv, offer);
@@ -133,6 +146,7 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
     inv_cb.on_state_changed = &on_inv_state_changed;
     inv_cb.on_new_session = &on_inv_new_session;
     inv_cb.on_rx_reinvite = &on_rx_reinvite;
+    inv_cb.on_rx_offer2 = &on_rx_offer2;
     inv_cb.on_create_offer = &on_create_offer;
     inv_cb.on_media_update = &on_inv_media_update;
 

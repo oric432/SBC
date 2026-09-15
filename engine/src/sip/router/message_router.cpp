@@ -82,6 +82,23 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
     return offer != nullptr ? PJ_SUCCESS : PJ_EIGNORED;
 }
 
+void MessageRouter::on_rx_offer(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata) {
+    // Only UPDATE reaches here in practice: pjsip claims the initial INVITE's
+    // offer and every re-INVITE offer via on_rx_reinvite before this fires.
+    if (extract_method(rdata) != "UPDATE") {
+        return;
+    }
+    auto* session = call_manager_->find_by_inv(inv);
+    if (session == nullptr || !session->setup_sm().is_established()) {
+        // Leave the negotiator unanswered; pjsip auto-rejects with 488.
+        return;
+    }
+
+    const Leg leg = session->leg_for(inv);
+    const std::string sdp = offer != nullptr ? Sdp::serialize(offer) : std::string{};
+    session->dialog_sm().process_event(UpdateReceived{.sdp_ = sdp, .leg_ = leg});
+}
+
 void MessageRouter::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
     auto* session = call_manager_->find_by_inv(inv);
     if (session != nullptr && session->setup_sm().is_established()) {
