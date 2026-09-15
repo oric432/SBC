@@ -15,14 +15,33 @@ routing table. Three components:
 
 ## Known Limitations
 
-SIP features not currently supported by the engine: PRACK (100rel), UPDATE, session timers, REFER,
-SIP forking, transcoding, ICE, SRTP, WebRTC.
+SIP features not currently supported by the engine: PRACK (100rel) orchestration, app-level
+UPDATE, REFER, hold (a re-INVITE without an active audio line is rejected with 488), SIP forking,
+ICE, SRTP, WebRTC.
 
 ## Engine architecture
 
 This section covers the parts of the engine's design that aren't obvious from file names alone —
 read it before touching `src/sip/` or `src/net/rtp/`. Build/style conventions live in
 `engine/AGENTS.md`; this is architecture and invariants only.
+
+### Layout (`engine/src/sip/`)
+
+- `stack/` — PJSIP bring-up (`PjsipStack`) and stateless helpers over the C API: `Sdp` (parse,
+  extract, rewrite) and `Inv` (the invite-session send/answer/end wrappers every adapter uses).
+- `router/` — `MessageRouter`, the single entry point for PJSIP callbacks: dispatches
+  out-of-dialog requests by method, and routes invite-session callbacks to the owning
+  `CallSession`'s setup or dialog adapter depending on the setup machine's state.
+- `sm/` — the Boost.SML machines (`setup_sm.hpp`, `dialog_sm.hpp`, `offer_answer_sm.hpp`,
+  `options_sm.hpp`), their events, the `I*Actions` interface each machine drives, and `SmRunner`,
+  the one pimpl owning a machine plus its logger (`*_sm_runner.hpp` are thin subclasses adding
+  named state queries). Nothing in `sm/` touches PJSIP.
+- `call/` — one call's state and its PJSIP adapters: `CallSession` (both legs, the `MediaBridge`,
+  the two machines and their adapters), `SetupActions`, `OfferAnswerExchange` + `OfferAnswerActions`
+  (the initial INVITE's offer/answer relay), and `DialogActions`, a facade over one handler per
+  in-dialog method in `call/handlers/` (`ByeHandler`, `ReinviteHandler`). A new in-dialog method
+  (UPDATE, REFER) is a new handler plus a line in the facade.
+- `route_table/` — the route snapshot fetched from the control plane.
 
 ### Threading model
 
@@ -35,37 +54,37 @@ read it before touching `src/sip/` or `src/net/rtp/`. Build/style conventions li
   codebase needs locking, and don't add new cross-thread shared mutable state without equivalent
   protection:
   - `MediaBridge::last_packet_time()` — written by the RTP thread, safely read by the SIP thread
-    (see the comment in `MediaBridge.hpp`).
+    (see the comment in `media_bridge.hpp`).
   - `MediaBridge::set_error_handler()` is explicitly **not** thread-safe against a running relay
     loop — it must be called before `start_bridge_loop()`, never after.
+  - `MediaBridge::configure_legs()` opens the codec session synchronously on the SIP thread and
+    posts the swap to the RTP thread, so it is safe to call on a running relay loop.
   - `RoutesStore`'s route-snapshot swap is mutex-guarded.
   - `RtpInactivityTimer`'s scan-pending flag is atomic.
 
 ### State machines (`src/sip/sm/`)
 
-Three Boost.SML machines, each templated on an `Actions` type implementing the matching interface
-in `sip/sm/i_*_actions.hpp` (`ISetupActions`, `IDialogActions`, `IOptionsActions`):
+Four Boost.SML machines, each templated on the `I*Actions` interface it drives:
 
-- **`SetupSm`** (`setup_sm.hpp`) — drives call setup end-to-end:
-  `Idle → Routing → Calling → WaitingForAnswer → Ringing → WaitingForAck → Done`, with
-  `Failed`/`Cancelled`/`TimedOut` off-ramps from nearly every state. Handles routing resolution,
-  the outbound INVITE, ringing/accept/reject/timeout/cancel.
-- **`DialogSm`** (`dialog_sm.hpp`) — the in-dialog phase once setup completes:
-  `Active → Reinviting → WaitingForReinviteAck → Terminating → Terminated → DialogDone`. Handles
-  BYE, re-INVITE (including collision → 491), ACK, and error-triggered termination.
-- **`OptionsSm`** (`options_sm.hpp`) — trivial stateless-message responder (OPTIONS/INFO).
+- **`SetupSm`** — call setup: `Idle → Routing → Negotiating → Ringing → Established`, with
+  `Cancelling` and `Failed → Done` off-ramps. Routing resolution and the exchange outcome arrive
+  as events; the exchange itself is `OfferAnswerSm`.
+- **`OfferAnswerSm`** — one initial-INVITE offer/answer relay, owned by `OfferAnswerExchange` for
+  the duration of setup only: `Idle → AwaitingAnswer → RelayingAnswer → AwaitingAck → Committed`,
+  or `RolledBack` / `Failed`, then `Done`. It publishes exactly one `ExchangeOutcome` to setup.
+- **`DialogSm`** — the confirmed-dialog phase: `Active → Reinviting → Active` for re-INVITEs
+  (answered locally on the offering leg, never forwarded to the other leg; a colliding re-INVITE
+  gets 491) and `Active → Terminating → Terminated → DialogDone` for BYE and errors. There is no
+  offer/answer exchange in this phase.
+- **`OptionsSm`** — stateless OPTIONS responder; `MessageRouter` keeps one runner and resets it per
+  request.
 
-A generic offer-answer state machine was attempted (see old commit messages referencing
-"offer-answer SM") but was **paused and reverted** due to conflicts with an in-flight refactor —
-it does not exist in the current tree. Verify against `src/sip/sm/` directly rather than trusting
-commit history or branch names for what state machines currently exist.
-
-**Self-fire pattern (all three SMs)**: when an action can deterministically know the next event
-before external code does (e.g. a routing lookup's outcome, or that the outbound INVITE was
-actually sent), it does **not** re-entrantly call `process_event()`. Instead it takes a
-`Sml::back::process<...>` queue parameter by value and calls that; boost::sml drains this queue
-itself once the current `process_event()` returns (`Sml::process_queue<std::queue>` on the
-machine). **Never call `process_event()` from inside an action.**
+**Self-fire pattern (all machines)**: when an action can deterministically know the next event
+before external code does (e.g. a routing lookup's outcome), it does **not** re-entrantly call
+`process_event()`. Instead it takes a `Sml::back::process<...>` queue parameter by value and calls
+that; boost::sml drains this queue itself once the current `process_event()` returns
+(`Sml::process_queue<std::queue>` on every machine). **Never call `process_event()` from inside an
+action.**
 
 ### Ownership & lifetime
 
@@ -75,28 +94,34 @@ machine). **Never call `process_event()` from inside an action.**
   `purge_scheduled()` actually destroys it once PJSIP dispatch has returned. Don't replace this
   with an immediate `erase()`/`reset()` from inside a session's own action.
 - In `CallSession`, `setup_actions_`/`dialog_actions_` are declared **before**
-  `setup_sm_`/`dialog_sm_` — the SM runners hold references into the actions objects, so actions
-  must outlive (and therefore precede) the runners. Don't reorder these members. The same
-  outlive/precede pattern applies to each runner's internal `SmLogger`.
+  `setup_sm_`/`dialog_sm_` — the runners hold references into the actions objects, so actions must
+  outlive (and therefore precede) the runners. Don't reorder these members. The same
+  outlive/precede pattern applies to `SmRunner`'s internal `SmLogger`.
 - `MediaBridge` is `enable_shared_from_this` and held via `shared_ptr` because it does async
   self-referencing work on the RTP thread — don't casually change this to `unique_ptr` or a raw
   pointer.
 - PJSIP-owned objects (`pjsip_inv_session*` on `CallSession`) are non-owning raw pointers — PJSIP,
   not `CallSession`, owns their lifetime.
+- pjsip clears `inv->last_answer` once the initial INVITE transaction confirms, so any later
+  response (every re-INVITE response) must be built from the request's own `rdata` via
+  `Inv::answer_request()`; `pjsip_inv_answer()` asserts. `ReinviteHandler` holds that `rdata` only
+  for the duration of the SM dispatch.
 
 ### RTP
 
-`SetupActions`/`DialogActions` bind each leg's socket via `MediaBridge::bind_leg_a()` /
-`bind_leg_b()`, set the negotiated remote endpoint via `set_remote_leg_a()`/`set_remote_leg_b()`
-as each leg's SDP answer arrives, then start relaying via `start_bridge_loop()`. From that point
-the relay runs on the `io_context` thread (see Threading model above).
+`OfferAnswerActions` binds each leg's socket (`MediaBridge::bind_leg_a()`/`bind_leg_b()`), sets
+each remote endpoint as that leg's SDP answer arrives, configures both legs' codecs
+(`configure_legs()`, which is what transcodes when the two legs differ) and starts relaying
+(`start_bridge_loop()`). `ReinviteHandler` retargets a leg and reconfigures codecs live on a
+re-INVITE. From `start_bridge_loop()` on, the relay runs on the `io_context` thread.
 
-### Known test-coverage gaps
+### Test coverage
 
-Per `engine/README.md`: only the state machines have unit coverage (mocked actions, Catch2,
-`src/sip/tests/`). RTP packet parsing, SDP mangling/validation, `PjsipStack`, and `MessageRouter`
-have **no** unit tests yet. Don't assume behavior here is verified by CI — changes touching them
-need either a live-call check (see `engine/README.md`) or new tests.
+Unit tests (`ctest`) cover the four machines with mocked actions (`src/sip/sm/tests/`), `Sdp`,
+`extract_utils`, `RoutesManager`, `ReinviteHandler::media_changed`, and the RTP/transcoding classes
+(`src/net/rtp/tests/`). `PjsipStack`, `MessageRouter`, and the per-call adapters and handlers have
+**no** unit coverage — verify changes there with `just test-b2bua` (live SIPp calls, see
+`engine/tests/integration/b2bua/README.md`) or add tests.
 
 ## Control-plane
 

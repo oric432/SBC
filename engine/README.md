@@ -59,7 +59,7 @@ This project strictly enforces code formatting and static analysis:
    ```
 2. **Linting (`clang-tidy`)**: Static analysis is deeply integrated into the CMake build. It is automatically enabled when you configure using the `debug` or `relwithdebinfo` presets (which set `ENABLE_CLANG_TIDY=true`). Any clang-tidy warnings will appear as standard compiler warnings/errors during `cmake --build engine/build`.
 
-`tests/` covers the state machines via mocked actions. Everything else in
-this directory (RTP packet parsing, `sdp_mangler`, `SdpValidator`, `PjsipStack`, `MessageRouter`)
-has no unit coverage yet — verify changes there against a live call (see root `AGENTS.md` for build
-commands) until that gap is closed.
+Unit tests cover the state machines (mocked actions), `Sdp`, `extract_utils`, `RoutesManager`,
+`ReinviteHandler::media_changed` and the RTP/transcoding classes under `src/net/rtp/`. `PjsipStack`,
+`MessageRouter` and the per-call adapters/handlers have no unit coverage — verify changes there with
+`just test-b2bua` (live SIPp calls, see `tests/integration/b2bua/README.md`).

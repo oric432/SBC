@@ -15,10 +15,7 @@ add_library(sip STATIC
     router/extract_utils.cpp
     route_table/routes_store.cpp
     route_table/routes_manager.cpp
-    sm/setup_sm_runner.cpp
-    sm/dialog_sm_runner.cpp
-    sm/offer_answer_sm_runner.cpp
-    sm/options_sm_runner.cpp
+    sm/sm_runner.cpp
     sm/options_actions.cpp
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
@@ -42,6 +39,7 @@ if(BUILD_TESTS)
         router/tests/test_extract_utils.cpp
         sm/tests/test_setup_sm.cpp
         sm/tests/test_dialog_sm.cpp
+        sm/tests/test_offer_answer_sm.cpp
         sm/tests/test_options_sm.cpp
         stack/tests/test_sdp.cpp
     )
