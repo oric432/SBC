@@ -60,16 +60,18 @@ public:
 
     void send_200_ok_to_bye_sender() override { calls_.emplace_back("send_200_ok_to_bye_sender"); }
 
-    void forward_bye_to_other_leg(bool /*from_caller*/) override { calls_.emplace_back("forward_bye_to_other_leg"); }
+    void forward_bye_to_other_leg(Leg /*leg*/) override { calls_.emplace_back("forward_bye_to_other_leg"); }
 
-    ExchangeOutcome start_exchange(const std::string& sdp, bool from_caller) override {
+    ExchangeOutcome start_exchange(const std::string& sdp, Leg leg) override {
         calls_.push_back(
-            "start_exchange:" + std::to_string(sdp.length()) + "B:" + (from_caller ? "caller" : "callee"));
+            "start_exchange:" + std::to_string(sdp.length()) + "B:" +
+            (leg == Leg::kCaller ? "caller" : "callee"));
         return start_result_;
     }
     void stop_exchange() override { calls_.emplace_back("stop_exchange"); }
-    void reject_reinvite_491_request_pending(bool from_caller) override {
-        calls_.push_back(std::string("reject_reinvite_491_request_pending:") + (from_caller ? "caller" : "callee"));
+    void reject_reinvite_491_request_pending(Leg leg) override {
+        calls_.push_back(
+            std::string("reject_reinvite_491_request_pending:") + (leg == Leg::kCaller ? "caller" : "callee"));
     }
 
     void terminate_call() override { calls_.emplace_back("terminate_call"); }

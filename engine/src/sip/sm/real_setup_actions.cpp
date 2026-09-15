@@ -204,7 +204,7 @@ void RealSetupActions::cleanup() {
 }
 
 void RealSetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
-    const bool is_callee_leg = (inv == session_.inv_callee());
+    const Leg leg = session_.leg_for(inv);
     auto& setup = session_.setup_sm();
     // PJSIP reports local state changes synchronously during sends/termination.
     // Those operations inspect the send result and leg state before returning;
@@ -217,7 +217,7 @@ void RealSetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_dat
     case PJSIP_INV_STATE_EARLY:
         // 180 from the callee → forward ringing to the caller.
         Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_EARLY", session_.call_id());
-        if (is_callee_leg) {
+        if (leg == Leg::kCallee) {
             setup.process_event(Setup::ProgressReceived{});
         }
         break;
@@ -225,7 +225,7 @@ void RealSetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_dat
     case PJSIP_INV_STATE_CONNECTING:
         // 200 OK from the callee (ACK auto-sent by PJSIP) → forward answer.
         Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_CONNECTING", session_.call_id());
-        if (is_callee_leg) {
+        if (leg == Leg::kCallee) {
             if (setup.is_cancelling()) {
                 // A success raced with cancellation: end the now-accepted leg.
                 setup.process_event(Setup::CancelRequested{});
@@ -241,7 +241,7 @@ void RealSetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_dat
     case PJSIP_INV_STATE_CONFIRMED:
         // ACK from the caller → dialog established.
         Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_CONFIRMED", session_.call_id());
-        if (!is_callee_leg) {
+        if (leg == Leg::kCaller) {
             if (session_.exchange() != nullptr) {
                 finish_exchange(session_, session_.exchange()->confirm());
             }
@@ -262,17 +262,17 @@ void RealSetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_dat
 
 void RealSetupActions::handle_disconnect(pjsip_inv_session* inv) {
     auto& setup = session_.setup_sm();
-    const bool is_callee_leg = (inv == session_.inv_callee());
+    const Leg leg = session_.leg_for(inv);
     const int cause = static_cast<int>(inv->cause);
 
     if (setup.is_cancelling()) {
-        if (is_callee_leg) {
+        if (leg == Leg::kCallee) {
             setup.process_event(Setup::CancellationCompleted{});
         }
         return;
     }
     if ((session_.exchange() != nullptr) && session_.exchange()->awaiting_confirmation()) {
-        if (!is_callee_leg && cause == PJSIP_SC_REQUEST_TIMEOUT) {
+        if (leg == Leg::kCaller && cause == PJSIP_SC_REQUEST_TIMEOUT) {
             finish_exchange(session_, session_.exchange()->confirmation_timeout());
         }
         else {
@@ -280,7 +280,7 @@ void RealSetupActions::handle_disconnect(pjsip_inv_session* inv) {
         }
         return;
     }
-    if (is_callee_leg) {
+    if (leg == Leg::kCallee) {
         if (cause == PJSIP_SC_REQUEST_TIMEOUT) {
             if (session_.exchange() != nullptr) {
                 finish_exchange(session_, session_.exchange()->answer_timeout());

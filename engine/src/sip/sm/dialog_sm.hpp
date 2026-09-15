@@ -30,16 +30,16 @@ struct DialogSm {
         auto handle_bye = [](Actions& actions, const ByeReceived& evt) {
             actions.stop_exchange();
             actions.send_200_ok_to_bye_sender();
-            actions.forward_bye_to_other_leg(evt.from_caller_);
+            actions.forward_bye_to_other_leg(evt.leg_);
         };
 
         auto handle_reinvite =
             [publish_outcome](Actions& actions, const ReinviteReceived& evt, DialogSelfFireQueue result) {
-                publish_outcome(actions.start_exchange(evt.sdp_, evt.from_caller_), result);
+                publish_outcome(actions.start_exchange(evt.sdp_, evt.leg_), result);
             };
 
         auto handle_reinvite_collision = [](Actions& actions, const ReinviteReceived& evt) {
-            actions.reject_reinvite_491_request_pending(evt.from_caller_);
+            actions.reject_reinvite_491_request_pending(evt.leg_);
         };
 
         auto committed = [](const Dialog::ExchangeFinished& event) {

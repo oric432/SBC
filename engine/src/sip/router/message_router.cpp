@@ -79,14 +79,14 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
         return PJ_SUCCESS;
     }
 
-    const bool from_caller = inv == session->inv_caller();
+    const Leg leg = session->leg_for(inv);
     const std::string sdp = offer != nullptr ? Sdp::serialize(offer) : std::string{};
     // RealDialogActions needs this rdata to build a manual response
     // (pjsip_inv_answer() alone can't, once the initial INVITE has
     // confirmed), but the SM's ReinviteReceived event stays pjsip-free, so
     // it is stashed on the session for the duration of this dispatch only.
     session->set_reinvite_rdata(rdata);
-    const bool handled = session->dialog_sm().process_event(ReinviteReceived{.sdp_ = sdp, .from_caller_ = from_caller});
+    const bool handled = session->dialog_sm().process_event(ReinviteReceived{.sdp_ = sdp, .leg_ = leg});
     session->set_reinvite_rdata(nullptr);
     if (!handled) {
         reject_reinvite(inv, rdata, PJSIP_SC_INTERNAL_SERVER_ERROR);

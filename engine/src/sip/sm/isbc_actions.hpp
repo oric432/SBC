@@ -5,6 +5,7 @@
 #include <string>
 
 #include "protocols/supported_codecs.hpp"
+#include "sip/sm/leg.hpp"
 #include "sip/sm/offer_answer_events.hpp"
 #include "events.hpp"
 
@@ -81,12 +82,12 @@ public:
 
     // BYE handling
     virtual void send_200_ok_to_bye_sender() = 0;
-    virtual void forward_bye_to_other_leg(bool from_caller) = 0;
+    virtual void forward_bye_to_other_leg(Leg leg) = 0;
 
     // An unchanged offer completes locally; later cases may create an exchange.
-    virtual ExchangeOutcome start_exchange(const std::string& offer, bool from_caller) = 0;
+    virtual ExchangeOutcome start_exchange(const std::string& offer, Leg leg) = 0;
     virtual void stop_exchange() = 0;
-    virtual void reject_reinvite_491_request_pending(bool from_caller) = 0;
+    virtual void reject_reinvite_491_request_pending(Leg leg) = 0;
 
     // Call termination
     virtual void terminate_call() = 0;
