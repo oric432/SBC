@@ -1,6 +1,9 @@
 #include "real_dialog_actions.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <optional>
 #include <pjsip_ua.h>
 
 #include "sip/call/call_manager.hpp"
@@ -104,47 +107,56 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, Leg 
         return ExchangeOutcome::kFailed;
     }
 
+    const char* leg_name = leg == Leg::kCaller ? "caller" : "callee";
     if (offer.empty()) {
         offerless_reinvite_leg_[static_cast<std::size_t>(leg)] = inv;
         Log::call()->debug(
             "[{}] received offerless re-INVITE from {}; awaiting answer in ACK",
             session_.call_id(),
-            leg == Leg::kCaller ? "caller" : "callee");
+            leg_name);
         return ExchangeOutcome::kPending;
     }
 
-    const pjmedia_sdp_session* active_local = nullptr;
-    if (pjmedia_sdp_neg_get_active_local(inv->neg, &active_local) != PJ_SUCCESS) {
-        Log::sip()->error("[{}] re-INVITE leg has no active local SDP", session_.call_id());
-        // Outcome is kFailed either way (call teardown follows via
-        // handle_call_error), so a failed send here needs no extra handling
-        // beyond send_reinvite_response's own error log.
-        [[maybe_unused]] const bool sent = send_reinvite_response(inv, PJSIP_SC_INTERNAL_SERVER_ERROR);
+    const auto reject_488 = [&] {
+        return send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE) ? ExchangeOutcome::kRolledBack
+                                                                         : ExchangeOutcome::kFailed;
+    };
+
+    pjmedia_sdp_session* offer_sdp = Sdp::parse(session_.pool(), offer);
+    const auto offer_endpoint = Sdp::extract_rtp_endpoint(offer_sdp);
+    if (offer_endpoint.ip_.empty()) {
+        Log::call()->debug("[{}] re-INVITE without an active audio line (hold) is not implemented", session_.call_id());
+        return reject_488();
+    }
+
+    // Answered locally, never forwarded: media is anchored here and
+    // MediaBridge transcodes whatever the two legs end up differing by.
+    const auto chosen =
+        Sdp::pick_answer_codec(session_.leg(other(leg)).codec_, Sdp::extract_all_audio_codecs(offer_sdp));
+    if (!chosen) {
+        Log::call()->warn("[{}] re-INVITE from {} offers no supported codec", session_.call_id(), leg_name);
+        return reject_488();
+    }
+    const auto dtmf_pt = Sdp::extract_telephone_event_pt(offer_sdp);
+
+    CallSession::CallLeg& current = session_.leg(leg);
+    const bool media_changed = !current.codec_ || current.codec_->name_ != chosen->name_ || current.dtmf_pt_ != dtmf_pt;
+    if (media_changed && !reconfigure_media_bridge(leg, *chosen, dtmf_pt)) {
+        return reject_488();
+    }
+
+    const std::array<Protocols::SupportedCodec, 1> allowed{*chosen};
+    Sdp::restrict_audio_codecs(session_.pool(), offer_sdp, allowed);
+    const auto relay_port =
+        leg == Leg::kCaller ? session_.media_bridge()->leg_a_port() : session_.media_bridge()->leg_b_port();
+    if (!relay_port) {
+        Log::call()->error(
+            "[{}] re-INVITE leg has no relay port: {}",
+            session_.call_id(),
+            relay_port.error().message());
         return ExchangeOutcome::kFailed;
     }
-
-    // Compared against the codec MediaBridge actually has configured for this
-    // leg rather than the raw active-remote SDP bytes: a compliant re-INVITE
-    // always bumps the SDP o= line version even when nothing else changed, so
-    // a byte comparison would treat every re-INVITE as "changed".
-    pjmedia_sdp_session* offer_sdp = Sdp::parse(session_.pool(), offer);
-    const auto offer_codec = offer_sdp != nullptr ? Sdp::extract_active_audio_codec(offer_sdp) : std::nullopt;
-    const auto offer_endpoint = offer_sdp != nullptr ? Sdp::extract_rtp_endpoint(offer_sdp) : Sdp::RtpEndpoint{};
-    const auto& current_codec = session_.leg(leg).codec_;
-    const bool codec_unchanged = offer_codec && current_codec && offer_codec->name_ == current_codec->name_;
-
-    // Codec renegotiation (and full hold, which shows up here as no active
-    // audio line at all) isn't implemented yet — only an endpoint/port move
-    // on an already-negotiated codec is, since this SBC fully anchors media
-    // at its own relay sockets and such a change never needs forwarding to
-    // the other leg.
-    if (!codec_unchanged || offer_endpoint.ip_.empty()) {
-        Log::call()->debug("[{}] changed-SDP re-INVITE (codec/media change) is not implemented", session_.call_id());
-        if (!send_reinvite_response(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE)) {
-            return ExchangeOutcome::kFailed;
-        }
-        return ExchangeOutcome::kRolledBack;
-    }
+    Sdp::rewrite_connection_and_port(session_.pool(), offer_sdp, session_.ctx()->config_.local_ip_, *relay_port);
 
     if (leg == Leg::kCaller) {
         session_.media_bridge()->retarget_remote_leg_a(offer_endpoint.ip_, offer_endpoint.port_);
@@ -153,16 +165,47 @@ ExchangeOutcome RealDialogActions::start_exchange(const std::string& offer, Leg 
         session_.media_bridge()->retarget_remote_leg_b(offer_endpoint.ip_, offer_endpoint.port_);
     }
 
-    if (!send_reinvite_response(inv, PJSIP_SC_OK, active_local)) {
+    if (!send_reinvite_response(inv, PJSIP_SC_OK, offer_sdp)) {
         return ExchangeOutcome::kFailed;
     }
+    current.codec_ = Sdp::extract_active_audio_codec(offer_sdp);
+    current.dtmf_pt_ = dtmf_pt;
     Log::call()->info(
-        "[{}] answered re-INVITE from {}; relay retargeted to {}:{}",
+        "[{}] answered re-INVITE from {} with {}; relay retargeted to {}:{}",
         session_.call_id(),
-        leg == Leg::kCaller ? "caller" : "callee",
+        leg_name,
+        chosen->name_,
         offer_endpoint.ip_,
         offer_endpoint.port_);
     return ExchangeOutcome::kCommitted;
+}
+
+bool RealDialogActions::reconfigure_media_bridge(
+    Leg leg,
+    const Protocols::SupportedCodec& codec,
+    std::optional<std::uint8_t> dtmf_pt) {
+    const CallSession::CallLeg& other_leg = session_.leg(other(leg));
+    const auto* other_codec =
+        other_leg.codec_ ? Protocols::find_supported_codec_by_name(other_leg.codec_->name_) : nullptr;
+    PjmediaEndpoint* endpoint = session_.ctx()->pjmedia_endpoint_;
+    if (other_codec == nullptr || endpoint == nullptr) {
+        Log::call()->error(
+            "[{}] reconfigure_media_bridge: other leg codec or PjmediaEndpoint missing",
+            session_.call_id());
+        return false;
+    }
+
+    const LegCodec changed{.audio_ = codec, .dtmf_pt_ = dtmf_pt};
+    const LegCodec unchanged{.audio_ = *other_codec, .dtmf_pt_ = other_leg.dtmf_pt_};
+    auto res = session_.media_bridge()->configure_legs(
+        *endpoint,
+        leg == Leg::kCaller ? changed : unchanged,
+        leg == Leg::kCaller ? unchanged : changed);
+    if (!res) {
+        Log::call()->error("[{}] reconfigure_media_bridge failed: {}", session_.call_id(), res.error().message());
+        return false;
+    }
+    return true;
 }
 
 void RealDialogActions::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
