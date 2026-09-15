@@ -206,16 +206,47 @@ TEST_CASE("MediaBridge retarget_remote_leg_a/b update the live relay target", "[
     REQUIRE(bridge->remote_leg_b()->port() == callee_ep.port());
 }
 
-TEST_CASE("MediaBridge close() succeeds even when neither leg was ever bound", "[MediaBridge]") {
+TEST_CASE("MediaBridge close() is safe when neither leg was ever bound", "[MediaBridge]") {
     // A call rejected before ever dialing out (no route, routing loop, codec
     // mismatch) tears down its MediaBridge without either bind_leg_* ever
-    // having been called — close() must still succeed, not report a
+    // having been called — close() must not crash or report a
     // bad-file-descriptor error for a socket that was simply never opened.
     io_context ioc;
     auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
 
-    auto result = bridge->close();
-    REQUIRE(result.has_value());
+    bridge->close();
+    ioc.run_for(kRelayRunWindow);
+}
+
+// Regression test for issue #208: async_receive_pkt() on an already-closed
+// socket fails synchronously with bad_descriptor (not operation_aborted),
+// so listen() calling it again after close() — start_bridge_loop() here, a
+// send/receive completion re-arming it in production — must not spin
+// forever reporting and re-arming.
+TEST_CASE("MediaBridge does not spin re-arming the relay after close()", "[MediaBridge]") {
+    io_context ioc;
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+
+    REQUIRE(bridge->bind_leg_a().has_value());
+    REQUIRE(bridge->bind_leg_b().has_value());
+    bridge->set_remote_leg_a("127.0.0.1", 1);
+    bridge->set_remote_leg_b("127.0.0.1", 1);
+
+    int error_count = 0;
+    bridge->set_error_handler(
+        [&error_count](RelayLeg /*leg*/, RelayOp /*operation*/, std::error_code /*error*/) { ++error_count; });
+
+    bridge->close();
+    ioc.run_for(kRelayRunWindow);
+    // io_context::run_for() only processes work while there is any; once it
+    // goes idle (as it just did — nothing left but the close task), a later
+    // run_for() call is a no-op until restart() is called first.
+    ioc.restart();
+
+    bridge->start_bridge_loop();
+    ioc.run_for(kRelayRunWindow);
+
+    CHECK(error_count == 0);
 }
 
 // A destination address of a different family than the bound socket (IPv4)
