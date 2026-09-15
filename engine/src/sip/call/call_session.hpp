@@ -124,15 +124,6 @@ public:
     [[nodiscard]] pjsip_rx_data* reinvite_rdata() const { return reinvite_rdata_; }
     void set_reinvite_rdata(pjsip_rx_data* rdata) { reinvite_rdata_ = rdata; }
 
-    // Negotiated codec/DTMF metadata is published with the exchange commit.
-    [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& caller_leg_codec() const {
-        return leg(Leg::kCaller).codec_;
-    }
-    [[nodiscard]] const std::optional<Sdp::AudioCodecInfo>& callee_leg_codec() const {
-        return leg(Leg::kCallee).codec_;
-    }
-    [[nodiscard]] std::optional<std::uint8_t> caller_leg_dtmf_pt() const { return leg(Leg::kCaller).dtmf_pt_; }
-    [[nodiscard]] std::optional<std::uint8_t> callee_leg_dtmf_pt() const { return leg(Leg::kCallee).dtmf_pt_; }
 
 private:
     std::string call_id_;
