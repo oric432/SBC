@@ -1,7 +1,9 @@
 #include "sdp.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
+#include <string_view>
 
 #include "core/utils/log.hpp"
 
@@ -291,6 +293,35 @@ std::vector<AudioCodecInfo> extract_all_audio_codecs(const pjmedia_sdp_session* 
         result.push_back(make_codec_info(media, media->desc.fmt[i]));
     }
     return result;
+}
+
+std::optional<uint8_t> extract_telephone_event_pt(const pjmedia_sdp_session* sdp) {
+    for (const auto& codec : extract_all_audio_codecs(sdp)) {
+        if (codec.name_ == "telephone-event") {
+            return codec.payload_type_;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<Protocols::SupportedCodec> pick_answer_codec(
+    const std::optional<AudioCodecInfo>& preferred,
+    const std::vector<AudioCodecInfo>& offered) {
+    const auto offers = [&](std::string_view name) {
+        return std::ranges::any_of(offered, [name](const auto& codec) { return codec.name_ == name; });
+    };
+    if (preferred) {
+        if (const auto* supported = Protocols::find_supported_codec_by_name(preferred->name_);
+            supported != nullptr && offers(supported->name_)) {
+            return *supported;
+        }
+    }
+    for (const auto& supported : Protocols::kSupportedCodecs) {
+        if (offers(supported.name_)) {
+            return supported;
+        }
+    }
+    return std::nullopt;
 }
 
 void restrict_audio_codecs(

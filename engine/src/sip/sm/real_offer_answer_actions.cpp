@@ -1,6 +1,5 @@
 #include "real_offer_answer_actions.hpp"
 
-#include <algorithm>
 #include <array>
 #include <string_view>
 #include <vector>
@@ -21,40 +20,6 @@ bool send_inv_msg(pjsip_inv_session* inv, pjsip_tx_data* data) {
         Log::sip()->error("Offer-answer send failed ({})", status);
     }
     return status == PJ_SUCCESS && inv->state != PJSIP_INV_STATE_DISCONNECTED;
-}
-
-std::optional<std::uint8_t> find_telephone_event_pt(const std::vector<Sdp::AudioCodecInfo>& codecs) {
-    for (const auto& codec : codecs) {
-        if (codec.name_ == "telephone-event") {
-            return codec.payload_type_;
-        }
-    }
-    return std::nullopt;
-}
-
-// Which codec the caller-facing answer should use: the callee's already-known
-// pick if the caller also offered it (zero transcoding, strictly no worse
-// than picking independently), else the SBC's own priority pick intersected
-// with the caller's offer. std::nullopt if neither exists in the caller's
-// offer at all (caller and callee share no codec the SBC could bridge with).
-std::optional<Protocols::SupportedCodec> pick_caller_answer_codec(
-    const std::optional<Sdp::AudioCodecInfo>& callee_codec,
-    const std::vector<Sdp::AudioCodecInfo>& caller_offered) {
-    const auto caller_offers = [&](std::string_view name) {
-        return std::ranges::any_of(caller_offered, [name](const auto& codec) { return codec.name_ == name; });
-    };
-    if (callee_codec) {
-        if (const auto* supported = Protocols::find_supported_codec_by_name(callee_codec->name_);
-            supported != nullptr && caller_offers(supported->name_)) {
-            return *supported;
-        }
-    }
-    for (const auto& supported : Protocols::kSupportedCodecs) {
-        if (caller_offers(supported.name_)) {
-            return supported;
-        }
-    }
-    return std::nullopt;
 }
 } // namespace
 
@@ -239,7 +204,7 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     // Read the decided codec directly: PJSIP's active SDP may not yet be set
     // during its CONNECTING callback.
     leg(Leg::kCallee).codec_ = Sdp::extract_active_audio_codec(callee_answer);
-    leg(Leg::kCallee).dtmf_pt_ = find_telephone_event_pt(Sdp::extract_all_audio_codecs(callee_answer));
+    leg(Leg::kCallee).dtmf_pt_ = Sdp::extract_telephone_event_pt(callee_answer);
 
     // The caller-facing answer is negotiated independently from the callee's:
     // re-parse the caller's own original offer (not the copy create_outbound_leg()
@@ -252,7 +217,7 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
         return;
     }
     const auto caller_offered = Sdp::extract_all_audio_codecs(caller_answer);
-    const auto chosen = pick_caller_answer_codec(leg(Leg::kCallee).codec_, caller_offered);
+    const auto chosen = Sdp::pick_answer_codec(leg(Leg::kCallee).codec_, caller_offered);
     if (!chosen) {
         Log::call()->error(
             "[{}] no codec in common between caller's offer and callee's answer ({})",
@@ -263,7 +228,7 @@ void RealOfferAnswerActions::relay_answer(const std::string& sdp) {
     const std::array<Protocols::SupportedCodec, 1> allowed{*chosen};
     Sdp::restrict_audio_codecs(session_.pool(), caller_answer, allowed);
     leg(Leg::kCaller).codec_ = Sdp::extract_active_audio_codec(caller_answer);
-    leg(Leg::kCaller).dtmf_pt_ = find_telephone_event_pt(Sdp::extract_all_audio_codecs(caller_answer));
+    leg(Leg::kCaller).dtmf_pt_ = Sdp::extract_telephone_event_pt(caller_answer);
 
     // Configured before the 200 OK goes out: a CodecSession/resampler
     // allocation failure here can still be answered with a SIP error rather
