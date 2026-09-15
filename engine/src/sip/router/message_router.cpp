@@ -90,7 +90,14 @@ void MessageRouter::on_rx_offer(pjsip_inv_session* inv, const pjmedia_sdp_sessio
     }
     auto* session = call_manager_->find_by_inv(inv);
     if (session == nullptr || !session->setup_sm().is_established()) {
-        // Leave the negotiator unanswered; pjsip auto-rejects with 488.
+        // An offer-bearing UPDATE before the initial INVITE completes is only
+        // valid per RFC 3311 S5.1 once a reliable provisional response (100rel)
+        // + PRACK have already resolved that leg's own offer/answer -- this SBC
+        // never orchestrates PRACK (see pjsip_init.cpp), so no compliant peer
+        // can satisfy that precondition here. Leave the negotiator unanswered;
+        // pjsip auto-rejects (typically 500, since this leg's own initial offer
+        // is itself still outstanding at this point -- see PJSIP's sip_inv.c
+        // inv_respond_incoming_update -- or 488 once it isn't).
         return;
     }
 
