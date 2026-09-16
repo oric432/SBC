@@ -83,13 +83,28 @@ def test_b2bua_reinvite_new_codec(sbc_engine, render_scenario, run_sipp_pair):
     _log.info("scenario '%s' passed", scenario_name)
 
 
+def test_b2bua_caller_prack(sbc_engine, render_scenario, run_sipp_pair):
+    """Issue #123: an INVITE that requires 100rel gets reliable provisional
+    responses on the caller-facing leg -- the SBC's 180 carries RSeq and
+    Require: 100rel, the caller's PRACK is acknowledged, and the call
+    completes normally afterward."""
+    scenario_name = "caller_prack"
+    caller_xml = render_scenario("caller_prack.xml.j2", scenario_name=scenario_name)
+    callee_xml = render_scenario("callee_delayed_200.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
 def test_b2bua_update_before_answer(sbc_engine, render_scenario, run_sipp_pair):
     """Issue #116 / RFC 3311 S5.1: an offer-bearing UPDATE sent before the
     initial INVITE's final response (right after the 180) is rejected --
-    this leg's own initial-INVITE offer is still outstanding, and this SBC
-    never orchestrates the 100rel/PRACK exchange RFC 3311 requires before
-    such an UPDATE would be valid -- and the original call still completes
-    normally afterward."""
+    this leg's own initial-INVITE offer is still outstanding, and the SBC's
+    reliable provisional responses (issue #123) never carry SDP, so that
+    precondition can never be satisfied here -- and the original call still
+    completes normally afterward."""
     scenario_name = "update_before_answer"
     caller_xml = render_scenario("update_before_answer_caller.xml.j2", scenario_name=scenario_name)
     callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)

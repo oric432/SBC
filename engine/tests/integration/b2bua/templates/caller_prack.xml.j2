@@ -12,6 +12,8 @@
       Contact: sip:sipp@[local_ip]:[local_port]
       Max-Forwards: 70
       Subject: SBC Test
+      Supported: 100rel
+      Require: 100rel
       Content-Type: application/sdp
       Content-Length: [len]
 
@@ -27,47 +29,36 @@
 
   <recv response="100" optional="true"></recv>
 
-  <!-- callee.xml.j2 always sends 180 before 200; wait for it (not optional --
-       we need the To tag it carries to address the UPDATE below, and the
-       timing is the point of this scenario). -->
-  <recv response="180"></recv>
+  <!-- Require: 100rel makes the caller-facing leg's 180 reliable (issue
+       #123): PJSIP adds RSeq and retransmits until PRACKed. Capture RSeq to
+       build the matching RAck below. -->
+  <recv response="180">
+    <action>
+      <ereg regexp="[0-9]+" search_in="hdr" header="RSeq:" check_it="true" assign_to="rseq"/>
+    </action>
+  </recv>
 
-  <!-- Issue #116 / RFC 3311 S5.1: an offer-bearing UPDATE sent before the
-       initial INVITE's final response requires a reliable provisional
-       response (100rel) + PRACK to have already resolved this leg's offer.
-       This INVITE doesn't require 100rel, so its 180 above is unreliable and
-       carries no SDP either way (see #123) -- this leg's own initial-INVITE
-       offer is still outstanding here, and pjsip rejects the UPDATE
-       automatically (500 + Retry-After, from its own per-session negotiator
-       collision check) before the SBC's own code is ever involved -- see
-       MessageRouter::on_rx_offer. Sent with no pause: the point is that this
-       arrives strictly before the 200 OK to the INVITE below. -->
   <send retrans="500">
     <![CDATA[
-      UPDATE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      PRACK sip:[service]@[remote_ip]:[remote_port] SIP/2.0
       Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
       From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
       To: sut <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
       Call-ID: [call_id]
-      CSeq: 2 UPDATE
+      CSeq: 2 PRACK
       Contact: sip:sipp@[local_ip]:[local_port]
       Max-Forwards: 70
-      Subject: SBC Test
-      Content-Type: application/sdp
-      Content-Length: [len]
-
-      v=0
-      o=user1 53655765 2353687638 IN IP[local_ip_type] [local_ip]
-      s=-
-      c=IN IP[media_ip_type] [media_ip]
-      t=0 0
-      m=audio [media_port] RTP/AVP 0
-      a=rtpmap:0 PCMU/8000
+      RAck: [$rseq] 1 INVITE
+      Content-Length: 0
     ]]>
   </send>
 
-  <recv response="500"></recv>
+  <recv response="200"></recv>
 
+  <!-- The callee-facing leg (callee_delayed_200.xml.j2) pauses before its
+       200 OK so this always arrives after the PRACK exchange above, never
+       racing it -- the reliable 180 carries no SDP, so PJSIP does not defer
+       this response for us (see #123 plan). -->
   <recv response="200" rtd="true"></recv>
 
   <send>
