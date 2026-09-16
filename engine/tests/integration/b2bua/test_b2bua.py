@@ -130,6 +130,22 @@ def test_b2bua_callee_prack_183(sbc_engine, render_scenario, run_sipp_pair):
     _log.info("scenario '%s' passed", scenario_name)
 
 
+def test_b2bua_early_media(sbc_engine, render_scenario, run_sipp_pair):
+    """Issue #214: a callee answering with an unreliable 183 + SDP (no
+    Require: 100rel -- the production-common shape, see the captured Cisco
+    CUCM INVITE) gets that answer relayed to the caller as its own 183, with
+    real RTP flowing before the 200 OK. The following 200 OK on both legs
+    stays bodiless, and the call completes normally."""
+    scenario_name = "early_media"
+    caller_xml = render_scenario("caller_early_media.xml.j2", scenario_name=scenario_name)
+    callee_xml = render_scenario("callee_early_media.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
 def test_b2bua_update_new_codec(sbc_engine, render_scenario, run_sipp_pair):
     """Issue #116: a mid-call UPDATE that switches the caller's codec
     (PCMU -> G722) is answered locally on that leg with the new codec,

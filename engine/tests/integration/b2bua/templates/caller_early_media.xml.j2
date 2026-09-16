@@ -12,6 +12,8 @@
       Contact: sip:sipp@[local_ip]:[local_port]
       Max-Forwards: 70
       Subject: SBC Test
+      Allow: INVITE, ACK, BYE, CANCEL, PRACK, UPDATE
+      Supported: 100rel
       Content-Type: application/sdp
       Content-Length: [len]
 
@@ -26,12 +28,21 @@
   </send>
 
   <recv response="100" optional="true"></recv>
-  <recv response="180" optional="true"></recv>
-  <!-- A callee answering reliably (183 + SDP, e.g. callee_prack_183.xml.j2)
-       now gets relayed here as its own 183 (#214) instead of staying stuck
-       behind the 200 OK -- optional since most callees still just ring. -->
-  <recv response="183" optional="true"></recv>
 
+  <!-- Supported only, never Require -- the production-common shape captured
+       against a real Cisco CUCM caller (#214). The SBC must relay early
+       media without needing 100rel, and must not upgrade this leg to
+       reliable on its own: the 183 below arrives unreliably, no PRACK. -->
+  <recv response="183">
+    <action>
+      <ereg regexp="application/sdp" search_in="hdr" header="Content-Type:" check_it="true" assign_to="early_ct"/>
+      <ereg regexp="m=audio" search_in="msg" check_it="true" assign_to="early_sdp"/>
+      <log message="early media 183 carried an SDP answer (Content-Type=[$early_ct], body=[$early_sdp])"/>
+    </action>
+  </recv>
+
+  <!-- No SDP here -- PJSIP already completed this leg's own negotiation on
+       the 183 above and must not offer it twice (#214). -->
   <recv response="200" rtd="true"></recv>
 
   <send>
@@ -49,18 +60,13 @@
     ]]>
   </send>
 
-  <!-- Re-triggering the pcap once per hold (rather than one trigger plus a
-       long pause) is what lets a single template express both a short call
-       and a longer, sustained-relay one via holds_ms alone. -->
-{% for hold_ms in holds_ms %}
   <nop>
     <action>
       <exec play_pcap_audio="{{ pcap_path }}"/>
     </action>
   </nop>
 
-  <pause milliseconds="{{ hold_ms }}"/>
-{% endfor %}
+  <pause milliseconds="2000"/>
 
   <send retrans="500">
     <![CDATA[
