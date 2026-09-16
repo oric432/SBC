@@ -87,7 +87,7 @@
   <!-- check_it fails the call unless the SBC answered with G722. -->
   <recv response="200" rtd="true">
     <action>
-      <ereg regexp="m=audio [0-9]+ RTP/AVP 9" search_in="body" check_it="true" assign_to="answer_codec"/>
+      <ereg regexp="m=audio [1-9][0-9]* RTP/AVP 9" search_in="body" check_it="true" assign_to="answer_codec"/>
       <log message="UPDATE answered with [$answer_codec]"/>
     </action>
   </recv>

@@ -32,6 +32,12 @@ ExchangeOutcome ReinviteHandler::answer(const std::string& offer, Leg leg) {
         if (negotiated.error() == ExchangeOutcome::kRolledBack) {
             return respond(inv, PJSIP_SC_NOT_ACCEPTABLE_HERE) ? ExchangeOutcome::kRolledBack : ExchangeOutcome::kFailed;
         }
+        // Otherwise this leg's re-INVITE transaction (unlike UPDATE's, see
+        // UpdateHandler) is never auto-answered by pjsip -- send a final
+        // response ourselves so it doesn't hang until transaction timeout.
+        if (!respond(inv, PJSIP_SC_INTERNAL_SERVER_ERROR)) {
+            Log::call()->warn("[{}] failed to reject re-INVITE after negotiation failure", session_.call_id());
+        }
         return ExchangeOutcome::kFailed;
     }
 
