@@ -95,7 +95,9 @@ struct SetupSm {
              Sml::state<Setup::Routing> + Sml::event<Setup::LoopDetected> / loop = Sml::state<Setup::Failed>,
              Sml::state<Setup::Routing> + Sml::event<Setup::CodecMismatch> / codec_mismatch = Sml::state<Setup::Failed>,
              Sml::state<Setup::Negotiating> + Sml::event<Setup::ProgressReceived> / progress = Sml::state<Setup::Ringing>,
-             Sml::state<Setup::Ringing> + (Sml::event<Setup::ProgressReceived> / progress),
+             // Ringing already sent 180 once; repeating it would queue a second
+             // reliable provisional needing its own PRACK (see #123).
+             Sml::state<Setup::Ringing> + Sml::event<Setup::ProgressReceived> = Sml::state<Setup::Ringing>,
              Sml::state<Setup::Negotiating> + Sml::event<Setup::ExchangeFinished>[committed] / established = Sml::state<Setup::Established>,
              Sml::state<Setup::Ringing> + Sml::event<Setup::ExchangeFinished>[committed] / established = Sml::state<Setup::Established>,
              Sml::state<Setup::Negotiating> + Sml::event<Setup::ExchangeFinished>[rolled_back] / failed = Sml::state<Setup::Failed>,
