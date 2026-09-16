@@ -24,6 +24,7 @@ public:
 
     ExchangeOutcome exchange_result_ = ExchangeOutcome::kPending;
     bool cancellation_complete_ = false;
+    bool early_media_relayed_ = false;
 
     void begin_setup() override { calls_.emplace_back("begin_setup"); }
     RouteResolution resolve_route() override {
@@ -39,7 +40,14 @@ public:
         calls_.push_back("start_exchange:" + destination);
         return exchange_result_;
     }
-    void report_progress() override { calls_.emplace_back("report_progress"); }
+    void report_progress(int status_code, bool has_early_answer) override {
+        calls_.push_back(
+            "report_progress:" + std::to_string(status_code) + ":" + (has_early_answer ? "early" : "none"));
+        if (has_early_answer) {
+            early_media_relayed_ = true;
+        }
+    }
+    [[nodiscard]] bool exchange_has_relayed_early_media() const override { return early_media_relayed_; }
     bool cancel_call() override {
         calls_.emplace_back("cancel_call");
         return cancellation_complete_;

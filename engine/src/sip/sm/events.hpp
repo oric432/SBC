@@ -21,7 +21,10 @@ struct RouteFound {
 struct RouteFailed {};
 struct LoopDetected {};
 struct CodecMismatch {};
-struct ProgressReceived {};
+struct ProgressReceived {
+    int status_code_ = 0;
+    bool has_early_answer_ = false;
+};
 struct ExchangeFinished {
     ExchangeOutcome outcome_;
 };

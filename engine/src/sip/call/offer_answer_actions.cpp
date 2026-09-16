@@ -217,10 +217,15 @@ pjmedia_sdp_session* OfferAnswerActions::prepare_answer(const std::string& sdp) 
 }
 
 void OfferAnswerActions::send_answer(pjmedia_sdp_session* caller_answer) {
-    if (caller_answer == nullptr) {
+    if (caller_answer == nullptr && !early_media_relayed_) {
         return;
     }
-    answer_sent_ = Inv::answer(session_.inv_caller(), PJSIP_SC_OK, caller_answer);
+    // Once the answer already went out on an early provisional, PJSIP's
+    // negotiator for the caller leg is already done -- offering SDP again
+    // here hits pj_assert(0)/EINSTATE. Send the 200 OK bodiless; PJSIP clones
+    // the provisional's body onto it for us (see #214).
+    const pjmedia_sdp_session* body = early_media_relayed_ ? nullptr : caller_answer;
+    answer_sent_ = Inv::answer(session_.inv_caller(), PJSIP_SC_OK, body);
     if (!answer_sent_) {
         return;
     }

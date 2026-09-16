@@ -40,7 +40,14 @@ public:
     virtual ExchangeOutcome start_exchange(
         const std::string& destination,
         std::optional<Protocols::SupportedCodec> required_codec) = 0;
-    virtual void report_progress() = 0;
+    // status_code_ is the callee's own provisional code (180/183/...);
+    // has_early_answer_ says whether an early SDP answer is staged and ready
+    // to relay (see OfferAnswerExchange::held_answer()).
+    virtual void report_progress(int status_code, bool has_early_answer) = 0;
+    // Whether the current exchange already relayed an early answer on a
+    // provisional -- guards SetupSm's Ringing self-loop against re-sending
+    // one for a retransmitted provisional (see #214).
+    [[nodiscard]] virtual bool exchange_has_relayed_early_media() const = 0;
     // Returns true if cancellation has already completed.
     virtual bool cancel_call() = 0;
     virtual void establish_call() = 0;

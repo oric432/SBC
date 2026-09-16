@@ -64,7 +64,17 @@ struct SetupSm {
                 result(Setup::ExchangeFinished{outcome});
             }
         };
-        const auto progress = [](Context& actions) { actions.report_progress(); };
+        const auto progress = [](const Setup::ProgressReceived& event, Context& actions) {
+            actions.report_progress(event.status_code_, event.has_early_answer_);
+        };
+        // An early answer newly staged since the last relayed progress --
+        // guards the Ringing self-loop so a 183+SDP arriving after an
+        // earlier bodiless 180 still gets relayed (issue #214), while a
+        // retransmitted provisional (PJSIP_INV_STATE_EARLY refires on those
+        // too) doesn't queue a duplicate one.
+        const auto has_new_early_media = [](const Setup::ProgressReceived& event, const Context& actions) {
+            return event.has_early_answer_ && !actions.exchange_has_relayed_early_media();
+        };
         const auto established = [](Context& actions) { actions.establish_call(); };
         const auto cancel = [](Context& actions, SetupSelfFireQueue result) {
             if (actions.cancel_call()) {
@@ -87,6 +97,8 @@ struct SetupSm {
         const auto cancelled = [](SetupSelfFireQueue result) { result(Setup::Cleanup{}); };
         const auto cleanup = [](Context& actions) { actions.cleanup(); };
 
+        using Sml::operator!;
+
         // clang-format off
         return Sml::make_transition_table(
              // Idle state
@@ -106,9 +118,12 @@ struct SetupSm {
              Sml::state<Setup::Negotiating> + (Sml::event<Setup::CancelRequested>               / cancel)      = Sml::state<Setup::Cancelling>,
 
              // Ringing state
-             // Ringing already sent 180 once; repeating it would queue a second
-             // reliable provisional needing its own PRACK (see #123).
-             Sml::state<Setup::Ringing>     + Sml::event<Setup::ProgressReceived> = Sml::state<Setup::Ringing>,
+             // Already sent one progress response. A later provisional only
+             // gets a second one out if it newly carries an early answer that
+             // hasn't been relayed yet (see #214); otherwise it's either a
+             // retransmission or a bare ringing indication we already sent.
+             Sml::state<Setup::Ringing>     + (Sml::event<Setup::ProgressReceived>[has_new_early_media]  / progress) = Sml::state<Setup::Ringing>,
+             Sml::state<Setup::Ringing>     + Sml::event<Setup::ProgressReceived>[!has_new_early_media]                = Sml::state<Setup::Ringing>,
              Sml::state<Setup::Ringing>     + (Sml::event<Setup::ExchangeFinished>[committed]   / established) = Sml::state<Setup::Established>,
              Sml::state<Setup::Ringing>     + (Sml::event<Setup::ExchangeFinished>[rolled_back] / failed)      = Sml::state<Setup::Failed>,
              Sml::state<Setup::Ringing>     + (Sml::event<Setup::ExchangeFinished>[fatal]       / failed)      = Sml::state<Setup::Failed>,

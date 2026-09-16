@@ -28,7 +28,8 @@ public:
     ExchangeOutcome start_exchange(
         const std::string& destination,
         std::optional<Protocols::SupportedCodec> required_codec) override;
-    void report_progress() override;
+    void report_progress(int status_code, bool has_early_answer) override;
+    [[nodiscard]] bool exchange_has_relayed_early_media() const override;
     bool cancel_call() override;
     void establish_call() override;
     void terminate_call() override;
