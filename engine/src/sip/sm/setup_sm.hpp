@@ -89,29 +89,40 @@ struct SetupSm {
 
         // clang-format off
         return Sml::make_transition_table(
-            *Sml::state<Setup::Idle> + Sml::event<Setup::Requested> / begin = Sml::state<Setup::Routing>,
-             Sml::state<Setup::Routing> + Sml::event<Setup::RouteFound> / start = Sml::state<Setup::Negotiating>,
-             Sml::state<Setup::Routing> + Sml::event<Setup::RouteFailed> / route_failed = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Routing> + Sml::event<Setup::LoopDetected> / loop = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Routing> + Sml::event<Setup::CodecMismatch> / codec_mismatch = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Negotiating> + Sml::event<Setup::ProgressReceived> / progress = Sml::state<Setup::Ringing>,
+             // Idle state
+            *Sml::state<Setup::Idle>        + (Sml::event<Setup::Requested> / begin) = Sml::state<Setup::Routing>,
+
+             // Routing state
+             Sml::state<Setup::Routing>     + (Sml::event<Setup::RouteFound>    / start)          = Sml::state<Setup::Negotiating>,
+             Sml::state<Setup::Routing>     + (Sml::event<Setup::RouteFailed>   / route_failed)   = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Routing>     + (Sml::event<Setup::LoopDetected>  / loop)           = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Routing>     + (Sml::event<Setup::CodecMismatch> / codec_mismatch) = Sml::state<Setup::Failed>,
+
+             // Negotiating state
+             Sml::state<Setup::Negotiating> + (Sml::event<Setup::ProgressReceived>              / progress)    = Sml::state<Setup::Ringing>,
+             Sml::state<Setup::Negotiating> + (Sml::event<Setup::ExchangeFinished>[committed]   / established) = Sml::state<Setup::Established>,
+             Sml::state<Setup::Negotiating> + (Sml::event<Setup::ExchangeFinished>[rolled_back] / failed)      = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Negotiating> + (Sml::event<Setup::ExchangeFinished>[fatal]       / failed)      = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Negotiating> + (Sml::event<Setup::CancelRequested>               / cancel)      = Sml::state<Setup::Cancelling>,
+
+             // Ringing state
              // Ringing already sent 180 once; repeating it would queue a second
              // reliable provisional needing its own PRACK (see #123).
-             Sml::state<Setup::Ringing> + Sml::event<Setup::ProgressReceived> = Sml::state<Setup::Ringing>,
-             Sml::state<Setup::Negotiating> + Sml::event<Setup::ExchangeFinished>[committed] / established = Sml::state<Setup::Established>,
-             Sml::state<Setup::Ringing> + Sml::event<Setup::ExchangeFinished>[committed] / established = Sml::state<Setup::Established>,
-             Sml::state<Setup::Negotiating> + Sml::event<Setup::ExchangeFinished>[rolled_back] / failed = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Ringing> + Sml::event<Setup::ExchangeFinished>[rolled_back] / failed = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Negotiating> + Sml::event<Setup::ExchangeFinished>[fatal] / failed = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Ringing> + Sml::event<Setup::ExchangeFinished>[fatal] / failed = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Negotiating> + Sml::event<Setup::CancelRequested> / cancel = Sml::state<Setup::Cancelling>,
-             Sml::state<Setup::Ringing> + Sml::event<Setup::CancelRequested> / cancel = Sml::state<Setup::Cancelling>,
-             Sml::state<Setup::Cancelling> + (Sml::event<Setup::CancelRequested> / cancel),
-             Sml::state<Setup::Cancelling> + Sml::event<Setup::ExchangeFinished>[rolled_back] = Sml::state<Setup::Cancelling>,
-             Sml::state<Setup::Cancelling> + Sml::event<Setup::ExchangeFinished>[committed] / failed = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Cancelling> + Sml::event<Setup::ExchangeFinished>[fatal] / failed = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Cancelling> + Sml::event<Setup::CancellationCompleted> / cancelled = Sml::state<Setup::Failed>,
-             Sml::state<Setup::Failed> + Sml::event<Setup::Cleanup> / cleanup = Sml::state<Setup::Done>
+             Sml::state<Setup::Ringing>     + Sml::event<Setup::ProgressReceived> = Sml::state<Setup::Ringing>,
+             Sml::state<Setup::Ringing>     + (Sml::event<Setup::ExchangeFinished>[committed]   / established) = Sml::state<Setup::Established>,
+             Sml::state<Setup::Ringing>     + (Sml::event<Setup::ExchangeFinished>[rolled_back] / failed)      = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Ringing>     + (Sml::event<Setup::ExchangeFinished>[fatal]       / failed)      = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Ringing>     + (Sml::event<Setup::CancelRequested>               / cancel)      = Sml::state<Setup::Cancelling>,
+
+             // Cancelling state
+             Sml::state<Setup::Cancelling>  + (Sml::event<Setup::CancelRequested>             / cancel),
+             Sml::state<Setup::Cancelling>  + Sml::event<Setup::ExchangeFinished>[rolled_back] = Sml::state<Setup::Cancelling>,
+             Sml::state<Setup::Cancelling>  + (Sml::event<Setup::ExchangeFinished>[committed] / failed)    = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Cancelling>  + (Sml::event<Setup::ExchangeFinished>[fatal]     / failed)    = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Cancelling>  + (Sml::event<Setup::CancellationCompleted>       / cancelled) = Sml::state<Setup::Failed>,
+
+             // Failed state
+             Sml::state<Setup::Failed>      + (Sml::event<Setup::Cleanup> / cleanup) = Sml::state<Setup::Done>
         );
         // clang-format on
     }

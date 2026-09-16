@@ -31,8 +31,11 @@ struct OptionsSm {
 
         // clang-format off
         return Sml::make_transition_table(
-            *Sml::state<OptionsIdle>      + (Sml::event<MessageReceived> / handle_message_received) = Sml::state<OptionsResponding>,
-             Sml::state<OptionsResponding> + (Sml::event<ResponseSent>   / handle_response_sent)     = Sml::state<OptionsDone>
+             // OptionsIdle state
+            *Sml::state<OptionsIdle>       + (Sml::event<MessageReceived> / handle_message_received) = Sml::state<OptionsResponding>,
+
+             // OptionsResponding state
+             Sml::state<OptionsResponding> + (Sml::event<ResponseSent> / handle_response_sent) = Sml::state<OptionsDone>
         );
         // clang-format on
     }
