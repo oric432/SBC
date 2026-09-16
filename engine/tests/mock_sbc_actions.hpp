@@ -82,8 +82,7 @@ public:
 
     ExchangeOutcome answer_reinvite(const std::string& sdp, Leg leg) override {
         calls_.push_back(
-            "answer_reinvite:" + std::to_string(sdp.length()) + "B:" +
-            (leg == Leg::kCaller ? "caller" : "callee"));
+            "answer_reinvite:" + std::to_string(sdp.length()) + "B:" + (leg == Leg::kCaller ? "caller" : "callee"));
         return start_result_;
     }
     void reject_reinvite_491_request_pending(Leg leg) override {
@@ -98,6 +97,16 @@ public:
     }
     void reject_update_collision(Leg leg) override {
         calls_.push_back(std::string("reject_update_collision:") + (leg == Leg::kCaller ? "caller" : "callee"));
+    }
+
+    void refer_started(Leg leg) override {
+        calls_.push_back(std::string("refer_started:") + (leg == Leg::kCaller ? "caller" : "callee"));
+    }
+    void refer_completed(bool succeeded) override {
+        calls_.push_back(std::string("refer_completed:") + (succeeded ? "success" : "failure"));
+    }
+    void refer_busy(Leg leg) override {
+        calls_.push_back(std::string("refer_busy:") + (leg == Leg::kCaller ? "caller" : "callee"));
     }
 
     void terminate_call() override { calls_.emplace_back("terminate_call"); }

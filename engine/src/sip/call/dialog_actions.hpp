@@ -34,6 +34,9 @@ public:
     void reject_reinvite_491_request_pending(Leg leg) override { reinvite_.reject_491(leg); }
     ExchangeOutcome answer_update(const std::string& offer, Leg leg) override { return update_.answer(offer, leg); }
     void reject_update_collision(Leg leg) override;
+    void refer_started(Leg leg) override;
+    void refer_completed(bool succeeded) override;
+    void refer_busy(Leg leg) override;
 
     void terminate_call() override;
     void cleanup() override;

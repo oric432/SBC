@@ -253,14 +253,28 @@ TEST_CASE("DialogSm refer tracks the pending transfer and its result", "[dialog_
 
     REQUIRE(machine.process_event(ReferReceived{Leg::kCallee}));
     REQUIRE(machine.is(Sml::state<Referring>));
-    REQUIRE_FALSE(machine.process_event(ReferReceived{Leg::kCaller}));
+    REQUIRE(actions.was_called("refer_started:callee"));
+    REQUIRE(machine.process_event(ReferReceived{Leg::kCaller}));
     REQUIRE(machine.is(Sml::state<Referring>));
+    REQUIRE(actions.was_called("refer_busy:caller"));
 
     REQUIRE(machine.process_event(ReferFailed{}));
     REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("refer_completed:failure"));
     REQUIRE(machine.process_event(ReferReceived{Leg::kCaller}));
     REQUIRE(machine.process_event(ReferSucceeded{}));
     REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("refer_completed:success"));
+}
+
+TEST_CASE("DialogSm reports refer received during media renegotiation", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(ReinviteReceived{kValidSdp});
+    REQUIRE(machine.process_event(ReferReceived{Leg::kCallee}));
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+    REQUIRE(actions.was_called("refer_busy:callee"));
 }
 
 TEST_CASE("DialogSm retains a pending refer after the original call ends", "[dialog_sm]") {
@@ -279,6 +293,7 @@ TEST_CASE("DialogSm retains a pending refer after the original call ends", "[dia
 
     REQUIRE(machine.process_event(ReferSucceeded{}));
     REQUIRE(machine.is(Sml::state<DialogDone>));
+    REQUIRE(actions.was_called("refer_completed:success"));
     REQUIRE(actions.was_called("cleanup"));
 }
 
@@ -290,6 +305,7 @@ TEST_CASE("DialogSm waits for the original call after an early refer result", "[
     machine.process_event(ByeReceived{Leg::kCaller});
     REQUIRE(machine.process_event(ReferFailed{}));
     REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("refer_completed:failure"));
     REQUIRE_FALSE(actions.was_called("cleanup"));
 
     REQUIRE(machine.process_event(CallEnded{}));

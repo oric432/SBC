@@ -26,6 +26,21 @@ void DialogActions::reject_update_collision(Leg leg) {
         to_string(leg));
 }
 
+void DialogActions::refer_started(Leg leg) {
+    Log::call()->info("[{}] REFER started on {} leg", session_.call_id(), leg == Leg::kCaller ? "caller" : "callee");
+}
+
+void DialogActions::refer_completed(bool succeeded) {
+    Log::call()->info("[{}] REFER {}", session_.call_id(), succeeded ? "succeeded" : "failed");
+}
+
+void DialogActions::refer_busy(Leg leg) {
+    Log::call()->info(
+        "[{}] REFER received while dialog is busy on {} leg",
+        session_.call_id(),
+        leg == Leg::kCaller ? "caller" : "callee");
+}
+
 void DialogActions::terminate_call() {
     // Reported here, not just in cleanup(): at shutdown the SIP loop is
     // already stopped, so the BYE responses that would drive cleanup() never
