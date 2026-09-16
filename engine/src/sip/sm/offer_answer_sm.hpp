@@ -70,32 +70,47 @@ struct OfferAnswerSm {
 
         // clang-format off
         return Sml::make_transition_table(
-            *Sml::state<Idle> + Sml::event<OfferReceived>[offer_usable] / offer = Sml::state<AwaitingAnswer>,
-             Sml::state<Idle> + Sml::event<OfferReceived>[!offer_usable] / invalid_offer = Sml::state<RolledBack>,
-             Sml::state<AwaitingAnswer> + Sml::event<OfferRelayFailed> / offer_failed = Sml::state<RolledBack>,
-             Sml::state<AwaitingAnswer> + Sml::event<AnswerReceived>[answer_usable] / answer = Sml::state<RelayingAnswer>,
-             Sml::state<AwaitingAnswer> + Sml::event<AnswerReceived>[!answer_usable] / invalid_answer = Sml::state<Failed>,
-             Sml::state<AwaitingAnswer> + Sml::event<EarlyAnswerReceived>[early_answer_usable] / hold_answer = Sml::state<AnswerHeld>,
-             Sml::state<AwaitingAnswer> + Sml::event<EarlyAnswerReceived>[!early_answer_usable] / invalid_answer = Sml::state<Failed>,
-             Sml::state<AnswerHeld> + Sml::event<AnswerReceived> / release_answer = Sml::state<RelayingAnswer>,
-             Sml::state<AnswerHeld> + Sml::event<AnswerRejected> / rejected = Sml::state<RolledBack>,
-             Sml::state<AnswerHeld> + Sml::event<AnswerTimeout> / answer_timeout = Sml::state<RolledBack>,
-             Sml::state<AwaitingAnswer> + Sml::event<AnswerRejected> / rejected = Sml::state<RolledBack>,
-             Sml::state<AwaitingAnswer> + Sml::event<AnswerTimeout> / answer_timeout = Sml::state<RolledBack>,
+             // Idle state
+            *Sml::state<Idle>           + (Sml::event<OfferReceived>[offer_usable]  / offer)         = Sml::state<AwaitingAnswer>,
+             Sml::state<Idle>           + (Sml::event<OfferReceived>[!offer_usable] / invalid_offer) = Sml::state<RolledBack>,
+             Sml::state<Idle>           + (Sml::event<StopExchange>                 / stop)          = Sml::state<RolledBack>,
+
+             // AwaitingAnswer state
+             Sml::state<AwaitingAnswer> + (Sml::event<OfferRelayFailed>                          / offer_failed)   = Sml::state<RolledBack>,
+             Sml::state<AwaitingAnswer> + (Sml::event<AnswerReceived>[answer_usable]             / answer)         = Sml::state<RelayingAnswer>,
+             Sml::state<AwaitingAnswer> + (Sml::event<AnswerReceived>[!answer_usable]            / invalid_answer) = Sml::state<Failed>,
+             Sml::state<AwaitingAnswer> + (Sml::event<EarlyAnswerReceived>[early_answer_usable]  / hold_answer)    = Sml::state<AnswerHeld>,
+             Sml::state<AwaitingAnswer> + (Sml::event<EarlyAnswerReceived>[!early_answer_usable] / invalid_answer) = Sml::state<Failed>,
+             Sml::state<AwaitingAnswer> + (Sml::event<AnswerRejected>                            / rejected)       = Sml::state<RolledBack>,
+             Sml::state<AwaitingAnswer> + (Sml::event<AnswerTimeout>                             / answer_timeout) = Sml::state<RolledBack>,
+             Sml::state<AwaitingAnswer> + (Sml::event<StopExchange>                              / stop)           = Sml::state<RolledBack>,
+
+             // AnswerHeld state
+             Sml::state<AnswerHeld>     + (Sml::event<AnswerReceived> / release_answer) = Sml::state<RelayingAnswer>,
+             Sml::state<AnswerHeld>     + (Sml::event<AnswerRejected> / rejected)       = Sml::state<RolledBack>,
+             Sml::state<AnswerHeld>     + (Sml::event<AnswerTimeout>  / answer_timeout) = Sml::state<RolledBack>,
+             Sml::state<AnswerHeld>     + (Sml::event<StopExchange>   / stop)           = Sml::state<RolledBack>,
+
+             // RelayingAnswer state
              Sml::state<RelayingAnswer> + Sml::event<AnswerRelaySucceeded>[needs_ack] = Sml::state<AwaitingAck>,
-             Sml::state<RelayingAnswer> + Sml::event<AnswerRelaySucceeded>[!needs_ack] / commit = Sml::state<Committed>,
-             Sml::state<RelayingAnswer> + Sml::event<AnswerRelayFailed> / answer_failed = Sml::state<Failed>,
-             Sml::state<AwaitingAck> + Sml::event<AckReceived> / commit = Sml::state<Committed>,
-             Sml::state<AwaitingAck> + Sml::event<AckTimeout> / ack_timeout = Sml::state<Failed>,
-             Sml::state<AwaitingAck> + Sml::event<AnswerRelayFailed> / answer_failed = Sml::state<Failed>,
-             Sml::state<Idle> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
-             Sml::state<AwaitingAnswer> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
-             Sml::state<AnswerHeld> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
-             Sml::state<RelayingAnswer> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
-             Sml::state<AwaitingAck> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
-             Sml::state<Committed> + Sml::event<Cleanup> / cleanup = Sml::state<Done>,
-             Sml::state<RolledBack> + Sml::event<Cleanup> / cleanup = Sml::state<Done>,
-             Sml::state<Failed> + Sml::event<Cleanup> / cleanup = Sml::state<Done>
+             Sml::state<RelayingAnswer> + (Sml::event<AnswerRelaySucceeded>[!needs_ack] / commit)        = Sml::state<Committed>,
+             Sml::state<RelayingAnswer> + (Sml::event<AnswerRelayFailed>                / answer_failed) = Sml::state<Failed>,
+             Sml::state<RelayingAnswer> + (Sml::event<StopExchange>                     / stop)          = Sml::state<RolledBack>,
+
+             // AwaitingAck state
+             Sml::state<AwaitingAck>    + (Sml::event<AckReceived>       / commit)        = Sml::state<Committed>,
+             Sml::state<AwaitingAck>    + (Sml::event<AckTimeout>        / ack_timeout)   = Sml::state<Failed>,
+             Sml::state<AwaitingAck>    + (Sml::event<AnswerRelayFailed> / answer_failed) = Sml::state<Failed>,
+             Sml::state<AwaitingAck>    + (Sml::event<StopExchange>      / stop)          = Sml::state<RolledBack>,
+
+             // Committed state
+             Sml::state<Committed>      + (Sml::event<Cleanup> / cleanup) = Sml::state<Done>,
+
+             // RolledBack state
+             Sml::state<RolledBack>     + (Sml::event<Cleanup> / cleanup) = Sml::state<Done>,
+
+             // Failed state
+             Sml::state<Failed>         + (Sml::event<Cleanup> / cleanup) = Sml::state<Done>
         );
         // clang-format on
     }
