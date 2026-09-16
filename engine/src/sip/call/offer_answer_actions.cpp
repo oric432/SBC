@@ -198,9 +198,13 @@ pjmedia_sdp_session* OfferAnswerActions::prepare_answer(const std::string& sdp) 
 
     // Configured before the 200 OK goes out: a CodecSession/resampler
     // allocation failure here can still be answered with a SIP error rather
-    // than one that's already committed (see issue #177).
+    // than one that's already committed (see issue #177). Send nothing here
+    // directly, though: hold_answer() can reach this from a mere provisional
+    // (183), before the final response even exists -- send_answer(nullptr)
+    // is a no-op, so relay_answer()/release_answer()'s caller already routes
+    // this into the ordinary AnswerRelayFailed -> fail() path, which sends
+    // exactly one error response once the exchange actually has an outcome.
     if (!configure_media_bridge()) {
-        Inv::answer(session_.inv_caller(), PJSIP_SC_INTERNAL_SERVER_ERROR);
         return nullptr;
     }
 
