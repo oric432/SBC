@@ -118,8 +118,13 @@ def test_b2bua_update_before_answer(sbc_engine, render_scenario, run_sipp_pair):
 def test_b2bua_callee_prack_183(sbc_engine, render_scenario, run_sipp_pair):
     """Issue #123: the callee-facing leg now advertises 100rel, so a callee
     that answers reliably (183 + SDP) gets PRACKed and its early answer is
-    staged rather than lost -- the SBC's 200 OK to the caller still carries
-    the (only) negotiated answer, and the call completes normally."""
+    staged rather than lost. Issue #214: that answer is relayed to the
+    caller as its own 183. The two legs' 100rel negotiations are
+    independent, though: caller.xml.j2 never requires 100rel on this leg,
+    so PJSIP cannot mark it reliably confirmed and the 200 OK must still
+    repeat the answer (RFC 6337) -- see test_b2bua_caller_and_callee_prack
+    for the case where the caller leg is reliable too, which is the one
+    where the 200 OK must NOT repeat it (RFC 3262 S5)."""
     scenario_name = "callee_prack_183"
     caller_xml = render_scenario("caller.xml.j2", scenario_name=scenario_name)
     callee_xml = render_scenario("callee_prack_183.xml.j2", scenario_name=scenario_name)
@@ -139,6 +144,26 @@ def test_b2bua_early_media(sbc_engine, render_scenario, run_sipp_pair):
     scenario_name = "early_media"
     caller_xml = render_scenario("caller_early_media.xml.j2", scenario_name=scenario_name)
     callee_xml = render_scenario("callee_early_media.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
+def test_b2bua_caller_and_callee_prack(sbc_engine, render_scenario, run_sipp_pair):
+    """Issue #214: when BOTH legs' 100rel negotiations are reliable -- the
+    callee answers reliably (183 + SDP, callee_prack_183.xml.j2) and the
+    caller itself requires 100rel too -- the callee's early answer is
+    relayed to the caller as its own reliable 183, and because this leg's
+    own negotiation is thereby confirmed, the 200 OK must NOT repeat the
+    SDP (RFC 3262 S5). This is the one case where a duplicated SDP body
+    would actually violate the protocol, unlike test_b2bua_callee_prack_183
+    and test_b2bua_early_media, where the caller leg isn't reliable and
+    RFC 6337 requires the answer to be repeated."""
+    scenario_name = "caller_and_callee_prack"
+    caller_xml = render_scenario("caller_prack_early_media.xml.j2", scenario_name=scenario_name)
+    callee_xml = render_scenario("callee_prack_183.xml.j2", scenario_name=scenario_name)
 
     run_sipp_pair(caller_xml, callee_xml)
 
