@@ -20,6 +20,10 @@ public:
         std::optional<Protocols::SupportedCodec> required_codec);
     ExchangeOutcome start(const std::string& offer);
     ExchangeOutcome receive_answer(const std::string& answer);
+    // An answer carried in a reliable provisional response, ahead of the
+    // final response. Always kPending -- the exchange only advances to
+    // RelayingAnswer once the final response's own AnswerReceived arrives.
+    ExchangeOutcome receive_early_answer(const std::string& answer);
     ExchangeOutcome reject(int status_code);
     ExchangeOutcome answer_timeout();
     ExchangeOutcome confirm();

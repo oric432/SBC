@@ -30,6 +30,8 @@ public:
     [[nodiscard]] bool needs_ack() const override { return true; }
     void relay_offer(const std::string& sdp) override;
     void relay_answer(const std::string& sdp) override;
+    void hold_answer(const std::string& sdp) override;
+    void release_answer() override;
     void reject_offer(OfferAnswer::Reason reason) override;
     void relay_rejection(int status_code) override;
     void commit() override;
@@ -60,6 +62,14 @@ private:
     // sent — so a pjmedia codec/resampler allocation failure can still be
     // answered with a SIP error instead of one that's already committed.
     bool configure_media_bridge();
+    // Shared by relay_answer() and hold_answer(): parse the callee's answer,
+    // capture its media, build and configure the caller-facing answer.
+    // nullptr on failure (an error response has already been sent where one
+    // is warranted); sends nothing itself either way.
+    pjmedia_sdp_session* prepare_answer(const std::string& sdp);
+    // Shared by relay_answer() and release_answer(): send the prepared
+    // caller-facing answer and arm the relay. No-op if caller_answer is null.
+    void send_answer(pjmedia_sdp_session* caller_answer);
 
     CallSession& session_;
     std::string destination_;
@@ -67,6 +77,11 @@ private:
     std::string offer_;
     std::string answer_;
     std::array<LegNegotiation, 2> legs_;
+    // Set by hold_answer(), consumed and cleared by release_answer(); an
+    // early answer (RFC 3262 S5) prepared ahead of the final response that
+    // will actually trigger it. Allocated from session_.pool(), which
+    // outlives this exchange.
+    pjmedia_sdp_session* held_caller_answer_ = nullptr;
     bool offer_sent_ = false;
     bool answer_sent_ = false;
 };

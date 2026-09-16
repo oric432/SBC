@@ -21,6 +21,12 @@ ExchangeOutcome OfferAnswerExchange::start(const std::string& offer) {
 
 ExchangeOutcome OfferAnswerExchange::receive_answer(const std::string& answer) {
     processing_ = true;
+    // Whether this arrived directly (AwaitingAnswer -> RelayingAnswer via
+    // relay_answer()) or was already staged by an earlier reliable
+    // provisional (AnswerHeld -> RelayingAnswer via release_answer(), which
+    // does the actual send now), the outcome is read the same way below: by
+    // the state this event landed in and whether the send it triggered
+    // succeeded.
     runner_.process_event(OfferAnswer::AnswerReceived{answer});
     if (runner_.is_relaying_answer()) {
         if (actions_.answer_sent()) {
@@ -30,6 +36,16 @@ ExchangeOutcome OfferAnswerExchange::receive_answer(const std::string& answer) {
             runner_.process_event(OfferAnswer::AnswerRelayFailed{});
         }
     }
+    return finish_operation();
+}
+
+ExchangeOutcome OfferAnswerExchange::receive_early_answer(const std::string& answer) {
+    processing_ = true;
+    // hold_answer() only stages the answer; nothing is sent, so unlike
+    // receive_answer() there's no send outcome to convert into a follow-up
+    // event here -- that happens later, when the final response's own
+    // receive_answer() call drives AnswerHeld -> RelayingAnswer.
+    runner_.process_event(OfferAnswer::EarlyAnswerReceived{answer});
     return finish_operation();
 }
 
