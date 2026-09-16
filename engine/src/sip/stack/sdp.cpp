@@ -277,6 +277,24 @@ bool is_dtmf_fmtp(const pjmedia_sdp_attr* attr, const pj_str_t& dtmf_pt) {
 
 } // namespace
 
+bool has_inactive_direction(const pjmedia_sdp_session* sdp) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    const pjmedia_sdp_media* media = find_active_audio_media(const_cast<pjmedia_sdp_session*>(sdp));
+    if (media == nullptr) {
+        return false;
+    }
+    if (pjmedia_sdp_media_find_attr2(media, "inactive", nullptr) != nullptr ||
+        pjmedia_sdp_media_find_attr2(media, "sendonly", nullptr) != nullptr) {
+        return true;
+    }
+    // Media line declares no direction attribute of its own — RFC 3264 S5.1
+    // has it inherit the session-level one, if any.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
+    return pjmedia_sdp_attr_find2(sdp->attr_count, sdp->attr, "inactive", nullptr) != nullptr ||
+           // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
+           pjmedia_sdp_attr_find2(sdp->attr_count, sdp->attr, "sendonly", nullptr) != nullptr;
+}
+
 std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp) {
     // find_active_audio_media() only reads through the returned pointer here
     // (restrict_audio_codecs() below is the only mutator) — const_cast is

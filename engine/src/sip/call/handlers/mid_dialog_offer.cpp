@@ -59,10 +59,8 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
 
     pjmedia_sdp_session* offer_sdp = Sdp::parse(session.pool(), offer);
     const auto offer_endpoint = Sdp::extract_rtp_endpoint(offer_sdp);
-    if (offer_endpoint.ip_.empty()) {
-        Log::call()->debug(
-            "[{}] mid-dialog offer without an active audio line (hold) is not implemented",
-            session.call_id());
+    if (offer_endpoint.ip_.empty() || offer_endpoint.ip_ == "0.0.0.0" || Sdp::has_inactive_direction(offer_sdp)) {
+        Log::call()->debug("[{}] mid-dialog offer signaling hold is not implemented", session.call_id());
         return std::unexpected(ExchangeOutcome::kRolledBack);
     }
 
