@@ -25,6 +25,7 @@ public:
     ExchangeOutcome exchange_result_ = ExchangeOutcome::kPending;
     bool cancellation_complete_ = false;
     bool early_media_relayed_ = false;
+    int last_relayed_status_code_ = 0;
 
     void begin_setup() override { calls_.emplace_back("begin_setup"); }
     RouteResolution resolve_route() override {
@@ -40,14 +41,23 @@ public:
         calls_.push_back("start_exchange:" + destination);
         return exchange_result_;
     }
+    static constexpr int kSessionProgress = 183;
+    static constexpr int kRinging = 180;
+    static int mirrored_progress_code(int status_code) {
+        return status_code == kSessionProgress ? kSessionProgress : kRinging;
+    }
     void report_progress(int status_code, bool has_early_answer) override {
         calls_.push_back(
             "report_progress:" + std::to_string(status_code) + ":" + (has_early_answer ? "early" : "none"));
         if (has_early_answer) {
             early_media_relayed_ = true;
         }
+        last_relayed_status_code_ = mirrored_progress_code(status_code);
     }
-    [[nodiscard]] bool exchange_has_relayed_early_media() const override { return early_media_relayed_; }
+    [[nodiscard]] bool is_new_progress(int status_code, bool has_early_answer) const override {
+        const bool has_unrelayed_early_answer = has_early_answer && !early_media_relayed_;
+        return has_unrelayed_early_answer || mirrored_progress_code(status_code) != last_relayed_status_code_;
+    }
     bool cancel_call() override {
         calls_.emplace_back("cancel_call");
         return cancellation_complete_;

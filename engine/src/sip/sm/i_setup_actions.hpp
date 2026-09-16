@@ -44,10 +44,12 @@ public:
     // has_early_answer_ says whether an early SDP answer is staged and ready
     // to relay (see OfferAnswerExchange::held_answer()).
     virtual void report_progress(int status_code, bool has_early_answer) = 0;
-    // Whether the current exchange already relayed an early answer on a
-    // provisional -- guards SetupSm's Ringing self-loop against re-sending
-    // one for a retransmitted provisional (see #214).
-    [[nodiscard]] virtual bool exchange_has_relayed_early_media() const = 0;
+    // Whether report_progress(status_code, has_early_answer) would actually
+    // change what the caller has already been sent -- guards SetupSm's
+    // Ringing self-loop against relaying a retransmitted provisional again,
+    // while still relaying a genuine status change (e.g. bodiless 180 then
+    // bodiless 183) or a newly-staged early answer (see #214).
+    [[nodiscard]] virtual bool is_new_progress(int status_code, bool has_early_answer) const = 0;
     // Returns true if cancellation has already completed.
     virtual bool cancel_call() = 0;
     virtual void establish_call() = 0;

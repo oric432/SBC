@@ -37,6 +37,24 @@ TEST_CASE("Setup starts an exchange and establishes only on commit", "[setup_sm]
         REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 183, .has_early_answer_ = true}));
         REQUIRE(std::ranges::count(actions.calls_, "report_progress:183:early") == 1);
     }
+    SECTION("With a bodiless status change after a bodiless progress") {
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 180, .has_early_answer_ = false}));
+        // No SDP either time, but the callee's own code changed -- a genuine
+        // status change, not a retransmission, so it must still be relayed
+        // (see #214: this must not be conflated with the retransmission
+        // suppression above).
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 183, .has_early_answer_ = false}));
+        REQUIRE(
+            actions.calls_ == std::vector<std::string>{
+                                  "begin_setup",
+                                  "resolve_route",
+                                  "start_exchange:callee",
+                                  "report_progress:180:none",
+                                  "report_progress:183:none"});
+        // A retransmission of that same bodiless 183 must not relay again.
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 183, .has_early_answer_ = false}));
+        REQUIRE(std::ranges::count(actions.calls_, "report_progress:183:none") == 1);
+    }
     SECTION("Without progress") {}
     REQUIRE_FALSE(runner.is_established());
     REQUIRE(runner.process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));

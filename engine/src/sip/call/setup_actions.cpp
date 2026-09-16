@@ -116,26 +116,37 @@ ExchangeOutcome SetupActions::start_exchange(
     }
     return outcome;
 }
+namespace {
+// Mirror the callee's own bodiless provisional. PJSIP cannot carry SDP on a
+// 180/181 (process_answer() excludes them from completing negotiation), so
+// any other code the callee used still collapses to plain Ringing.
+int mirrored_progress_code(int status_code) {
+    return status_code == PJSIP_SC_PROGRESS ? PJSIP_SC_PROGRESS : PJSIP_SC_RINGING;
+}
+} // namespace
+
 void SetupActions::report_progress(int status_code, bool has_early_answer) {
     const pjmedia_sdp_session* early_sdp =
         has_early_answer && session_.exchange() != nullptr ? session_.exchange()->held_answer() : nullptr;
     if (early_sdp != nullptr) {
         if (Inv::answer(session_.inv_caller(), PJSIP_SC_PROGRESS, early_sdp)) {
             session_.exchange()->mark_early_media_relayed();
+            last_relayed_status_code_ = PJSIP_SC_PROGRESS;
         }
         else {
             Log::sip()->warn("[{}] failed to relay early media SDP to caller", session_.call_id());
         }
         return;
     }
-    // Mirror the callee's own bodiless provisional. PJSIP cannot carry SDP on
-    // a 180/181 (process_answer() excludes them from completing negotiation),
-    // so any other code the callee used still collapses to plain Ringing.
-    Inv::answer(session_.inv_caller(), status_code == PJSIP_SC_PROGRESS ? status_code : PJSIP_SC_RINGING);
+    const int code = mirrored_progress_code(status_code);
+    Inv::answer(session_.inv_caller(), code);
+    last_relayed_status_code_ = code;
 }
 
-bool SetupActions::exchange_has_relayed_early_media() const {
-    return session_.exchange() != nullptr && session_.exchange()->early_media_relayed();
+bool SetupActions::is_new_progress(int status_code, bool has_early_answer) const {
+    const bool has_unrelayed_early_answer =
+        has_early_answer && (session_.exchange() == nullptr || !session_.exchange()->early_media_relayed());
+    return has_unrelayed_early_answer || mirrored_progress_code(status_code) != last_relayed_status_code_;
 }
 
 bool SetupActions::cancel_call() {
