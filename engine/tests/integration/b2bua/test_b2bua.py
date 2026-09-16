@@ -100,6 +100,21 @@ def test_b2bua_update_before_answer(sbc_engine, render_scenario, run_sipp_pair):
     _log.info("scenario '%s' passed", scenario_name)
 
 
+def test_b2bua_callee_prack_183(sbc_engine, render_scenario, run_sipp_pair):
+    """Issue #123: the callee-facing leg now advertises 100rel, so a callee
+    that answers reliably (183 + SDP) gets PRACKed and its early answer is
+    staged rather than lost -- the SBC's 200 OK to the caller still carries
+    the (only) negotiated answer, and the call completes normally."""
+    scenario_name = "callee_prack_183"
+    caller_xml = render_scenario("caller.xml.j2", scenario_name=scenario_name)
+    callee_xml = render_scenario("callee_prack_183.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
 def test_b2bua_update_new_codec(sbc_engine, render_scenario, run_sipp_pair):
     """Issue #116: a mid-call UPDATE that switches the caller's codec
     (PCMU -> G722) is answered locally on that leg with the new codec,
