@@ -16,6 +16,16 @@ bool is_session_timer_expiry(const pjsip_inv_session* inv) {
 }
 } // namespace
 
+void DialogActions::reject_update_collision(Leg leg) {
+    // No rdata-based custom response is available for UPDATE via on_rx_offer2
+    // (#116): pjsip auto-rejects with 488 once we return without setting an
+    // answer, so there's nothing to send here beyond this log line.
+    Log::call()->info(
+        "[{}] rejecting colliding UPDATE from {} (pjsip will send 488)",
+        session_.call_id(),
+        leg == Leg::kCaller ? "caller" : "callee");
+}
+
 void DialogActions::terminate_call() {
     reinvite_.reset();
     Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
@@ -56,9 +66,9 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
                 leg == Leg::kCaller ? "caller" : "callee");
         }
 
-        // A leg dropping mid-re-INVITE can't be answered anymore; tear the call down.
+        // A leg dropping mid-exchange (re-INVITE or UPDATE) can't be answered anymore; tear the call down.
         if (dialog.is_reinviting()) {
-            dialog.process_event(Dialog::ReinviteFinished{ExchangeOutcome::kFailed});
+            dialog.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kFailed});
         }
         else if (dialog.is_active()) {
             dialog.process_event(ByeReceived{leg});

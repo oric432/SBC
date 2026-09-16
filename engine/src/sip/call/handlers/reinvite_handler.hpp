@@ -1,16 +1,12 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
-#include <optional>
 #include <string>
-#include <string_view>
 #include <pjsip_ua.h>
 
-#include "protocols/supported_codecs.hpp"
+#include "sip/call/handlers/mid_dialog_offer.hpp"
 #include "sip/sm/events.hpp"
 #include "sip/sm/leg.hpp"
-#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
@@ -18,7 +14,8 @@ class CallSession;
 
 // In-dialog re-INVITE handling for one call: answered locally on the offering
 // leg (never forwarded, MediaBridge transcodes the difference), with offerless
-// re-INVITEs tracked until their answer arrives in the ACK.
+// re-INVITEs tracked until their answer arrives in the ACK. Offer negotiation
+// itself is shared with UPDATE (#116) via negotiate_mid_dialog_offer().
 class ReinviteHandler {
 public:
     explicit ReinviteHandler(CallSession& session)
@@ -34,18 +31,8 @@ public:
     void on_media_update(pjsip_inv_session* inv, pj_status_t status);
     void reset();
 
-    // Whether answering `chosen`/`dtmf_pt` on a leg currently negotiated as
-    // `current`/`current_dtmf_pt` requires MediaBridge to be reconfigured.
-    [[nodiscard]] static bool media_changed(
-        const std::optional<Sdp::AudioCodecInfo>& current,
-        std::optional<std::uint8_t> current_dtmf_pt,
-        std::string_view chosen,
-        std::optional<std::uint8_t> dtmf_pt);
-
 private:
     [[nodiscard]] bool respond(pjsip_inv_session* inv, int code, const pjmedia_sdp_session* answer = nullptr);
-    [[nodiscard]] bool
-    reconfigure_media_bridge(Leg leg, const Protocols::SupportedCodec& codec, std::optional<std::uint8_t> dtmf_pt);
 
     CallSession& session_;
     pjsip_rx_data* pending_rdata_ = nullptr;
