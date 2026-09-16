@@ -25,7 +25,10 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
     // Session-Expires/Min-SE and owns timer-only UPDATE/re-INVITE refreshes;
     // the verified options must also be passed to pjsip_inv_create_uas() so
     // peer requirements discovered here remain attached to this leg.
-    unsigned options = PJSIP_INV_SUPPORT_TIMER;
+    // SUPPORT_100REL opens pjsip_inv_verify_request()'s gate for the caller's
+    // own Require: 100rel to be recognized (see #123) -- without it the tag
+    // is silently dropped rather than rejected or honored.
+    unsigned options = PJSIP_INV_SUPPORT_TIMER | PJSIP_INV_SUPPORT_100REL;
     pj_status_t status = pjsip_inv_verify_request(rx_data, &options, nullptr, nullptr, ctx_->endpt_, nullptr);
     if (status != PJ_SUCCESS) {
         respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);

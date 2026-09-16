@@ -1,4 +1,5 @@
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace)
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 
 #include "sip/sm/setup_sm_runner.hpp"
@@ -15,7 +16,10 @@ TEST_CASE("Setup starts an exchange and establishes only on commit", "[setup_sm]
     SECTION("With progress") {
         REQUIRE(runner.process_event(Setup::ProgressReceived{}));
         REQUIRE(runner.process_event(Setup::ProgressReceived{}));
-        REQUIRE(actions.was_called("report_progress"));
+        // A repeated ProgressReceived while already Ringing must not re-send
+        // 180 -- with 100rel active that would queue a second reliable
+        // provisional needing its own PRACK (see #123).
+        REQUIRE(std::ranges::count(actions.calls_, "report_progress") == 1);
     }
     SECTION("Without progress") {}
     REQUIRE_FALSE(runner.is_established());
