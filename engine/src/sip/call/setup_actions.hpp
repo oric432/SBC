@@ -35,6 +35,7 @@ public:
     void cleanup() override;
 
 private:
+    void handle_early(pjsip_rx_data* rdata);
     void handle_disconnect(pjsip_inv_session* inv);
     CallSession& session_;
     RoutesStore* routes_store_;

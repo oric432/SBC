@@ -7,6 +7,7 @@ namespace SbcEngine::OfferAnswer {
 
 struct Idle {};
 struct AwaitingAnswer {};
+struct AnswerHeld {};
 struct RelayingAnswer {};
 struct AwaitingAck {};
 struct Committed {};
@@ -14,9 +15,13 @@ struct RolledBack {};
 struct Failed {};
 struct Done {};
 
-// Supports offers carried in requests and answers carried in final responses.
-// Delayed offers and provisional answers require additional signaling policy.
-// Commit here means exchange confirmation; media preparation is an actions concern.
+// Supports offers carried in requests and answers carried in final responses,
+// plus one early answer carried in a reliable provisional (RFC 3262 S5) ahead
+// of it -- AnswerHeld stages that answer and waits for the final response to
+// arrive before relaying anything, so the SIP adapter still sees exactly one
+// relay_answer() per exchange. Delayed offers still require additional
+// signaling policy. Commit here means exchange confirmation; media
+// preparation is an actions concern.
 template <typename Actions>
 struct OfferAnswerSm {
     auto operator()() const {
@@ -26,9 +31,18 @@ struct OfferAnswerSm {
         const auto answer_usable = [](const AnswerReceived& event, const Actions& actions) {
             return actions.answer_usable(event.sdp_);
         };
+        const auto early_answer_usable = [](const EarlyAnswerReceived& event, const Actions& actions) {
+            return actions.answer_usable(event.sdp_);
+        };
         const auto needs_ack = [](const Actions& actions) { return actions.needs_ack(); };
         const auto offer = [](const OfferReceived& event, Actions& actions) { actions.relay_offer(event.sdp_); };
         const auto answer = [](const AnswerReceived& event, Actions& actions) { actions.relay_answer(event.sdp_); };
+        const auto hold_answer = [](const EarlyAnswerReceived& event, Actions& actions) {
+            actions.hold_answer(event.sdp_);
+        };
+        // The final response's own SDP is ignored here: a 100rel-compliant
+        // peer omits it once its answer went out on the reliable provisional.
+        const auto release_answer = [](Actions& actions) { actions.release_answer(); };
         const auto invalid_offer = [](Actions& actions) {
             actions.reject_offer(Reason::kUnusableOffer);
             actions.rollback(Reason::kUnusableOffer);
@@ -61,6 +75,11 @@ struct OfferAnswerSm {
              Sml::state<AwaitingAnswer> + Sml::event<OfferRelayFailed> / offer_failed = Sml::state<RolledBack>,
              Sml::state<AwaitingAnswer> + Sml::event<AnswerReceived>[answer_usable] / answer = Sml::state<RelayingAnswer>,
              Sml::state<AwaitingAnswer> + Sml::event<AnswerReceived>[!answer_usable] / invalid_answer = Sml::state<Failed>,
+             Sml::state<AwaitingAnswer> + Sml::event<EarlyAnswerReceived>[early_answer_usable] / hold_answer = Sml::state<AnswerHeld>,
+             Sml::state<AwaitingAnswer> + Sml::event<EarlyAnswerReceived>[!early_answer_usable] / invalid_answer = Sml::state<Failed>,
+             Sml::state<AnswerHeld> + Sml::event<AnswerReceived> / release_answer = Sml::state<RelayingAnswer>,
+             Sml::state<AnswerHeld> + Sml::event<AnswerRejected> / rejected = Sml::state<RolledBack>,
+             Sml::state<AnswerHeld> + Sml::event<AnswerTimeout> / answer_timeout = Sml::state<RolledBack>,
              Sml::state<AwaitingAnswer> + Sml::event<AnswerRejected> / rejected = Sml::state<RolledBack>,
              Sml::state<AwaitingAnswer> + Sml::event<AnswerTimeout> / answer_timeout = Sml::state<RolledBack>,
              Sml::state<RelayingAnswer> + Sml::event<AnswerRelaySucceeded>[needs_ack] = Sml::state<AwaitingAck>,
@@ -71,6 +90,7 @@ struct OfferAnswerSm {
              Sml::state<AwaitingAck> + Sml::event<AnswerRelayFailed> / answer_failed = Sml::state<Failed>,
              Sml::state<Idle> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
              Sml::state<AwaitingAnswer> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
+             Sml::state<AnswerHeld> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
              Sml::state<RelayingAnswer> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
              Sml::state<AwaitingAck> + Sml::event<StopExchange> / stop = Sml::state<RolledBack>,
              Sml::state<Committed> + Sml::event<Cleanup> / cleanup = Sml::state<Done>,

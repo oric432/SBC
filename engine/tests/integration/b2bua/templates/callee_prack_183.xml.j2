@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="{{ scenario_name }}">
+  <recv request="INVITE" crlf="true">
+    <action>
+      <!-- The PRACK exchange below overwrites SIPp's [last_*] macros, so the
+           200 OK to this INVITE (sent after the PRACK, once ACK's caller-
+           facing leg completes) needs its own Via/CSeq captured now instead
+           of read off [last_*] then. From/To/Call-ID stay stable across the
+           dialog either way, so [last_*] is still fine for those. -->
+      <ereg regexp="(.*)" search_in="hdr" header="Via:" check_it="true" assign_to="invite_via"/>
+      <ereg regexp="(.*)" search_in="hdr" header="CSeq:" check_it="true" assign_to="invite_cseq"/>
+    </action>
+  </recv>
+
+  <!-- Answer reliably: Require: 100rel + RSeq + the SDP answer, exercising
+       the callee-facing leg's early-answer handling (issue #123) -- a
+       compliant SBC PRACKs this and sends no SDP in its later 200 OK. -->
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 183 Session Progress
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Require: 100rel
+      RSeq: 1
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0
+      a=rtpmap:0 PCMU/8000
+    ]]>
+  </send>
+
+  <recv request="PRACK" crlf="true">
+    <action>
+      <!-- SBC's own outbound INVITE on this leg starts its CSeq wherever
+           PJSIP's dialog counter happens to be, not necessarily at 1 -- only
+           RSeq and the echoed method are pinned. -->
+      <ereg regexp="1 [0-9]+ INVITE" search_in="hdr" header="RAck:" check_it="true" assign_to="rack"/>
+      <log message="received PRACK with RAck=[$rack]"/>
+    </action>
+  </recv>
+
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <!-- 200 OK to the original INVITE, carrying no SDP -- RFC 3262 S5: once
+       the answer went out reliably, it must not be repeated here. -->
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      Via: [$invite_via]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      CSeq: [$invite_cseq]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <recv request="ACK" rtd="true" crlf="true"></recv>
+
+  <!-- No pause between this and the BYE recv below: an explicit pause would
+       block this call's scenario progression and risk the caller's BYE
+       arriving before a recv step is active to catch it. The pcap keeps
+       streaming in the background regardless of scenario position, so the
+       caller's own holds_ms loop is what actually controls call length. -->
+  <nop>
+    <action>
+      <exec play_pcap_audio="{{ pcap_path }}"/>
+    </action>
+  </nop>
+
+  <recv request="BYE" crlf="true"></recv>
+
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+    ]]>
+  </send>
+</scenario>

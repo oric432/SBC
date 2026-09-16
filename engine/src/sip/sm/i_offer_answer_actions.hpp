@@ -31,6 +31,12 @@ public:
     virtual void relay_answer(const std::string& sdp) = 0;
     virtual void reject_offer(OfferAnswer::Reason reason) = 0;
     virtual void relay_rejection(int status_code) = 0;
+    // An answer arrived early, on a reliable provisional response (RFC 3262
+    // S5) ahead of the final response. Stage it the same way relay_answer()
+    // would, but do not send anything yet -- release_answer() does that once
+    // the final response confirms the exchange really is completing.
+    virtual void hold_answer(const std::string& sdp) = 0;
+    virtual void release_answer() = 0;
 
     // Publish exactly one outcome. Commit applies staged session changes;
     // rollback preserves the prior session. Fail discards pending work and

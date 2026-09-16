@@ -109,10 +109,13 @@ bool OfferAnswerActions::create_outbound_leg(const std::string& destination) {
     }
 
     pjsip_inv_session* inv = nullptr;
-    // This is an independent RFC 4028 negotiation from the caller-facing
-    // leg. PJSIP refreshes with UPDATE when the callee advertises UPDATE in
-    // Allow, otherwise it uses re-INVITE.
-    status = pjsip_inv_create_uac(dlg, offer, PJSIP_INV_SUPPORT_TIMER, &inv);
+    // This is an independent RFC 4028 (and 100rel) negotiation from the
+    // caller-facing leg. PJSIP refreshes with UPDATE when the callee
+    // advertises UPDATE in Allow, otherwise it uses re-INVITE. SUPPORT_100REL
+    // only advertises the extension -- a callee that answers reliably (183 +
+    // SDP) is handled via OfferAnswerActions::hold_answer() (see #123); a
+    // callee that never uses it behaves exactly as before.
+    status = pjsip_inv_create_uac(dlg, offer, PJSIP_INV_SUPPORT_TIMER | PJSIP_INV_SUPPORT_100REL, &inv);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] pjsip_inv_create_uac failed ({})", session_.call_id(), status);
         pjsip_dlg_terminate(dlg);
@@ -166,24 +169,43 @@ bool OfferAnswerActions::send_outbound_invite() {
 
 
 void OfferAnswerActions::relay_answer(const std::string& sdp) {
+    send_answer(prepare_answer(sdp));
+}
+
+void OfferAnswerActions::hold_answer(const std::string& sdp) {
+    // The final response's own body is ignored (see OfferAnswerSm::release_answer),
+    // so this is the only SDP this exchange's answer_ will ever hold.
+    held_caller_answer_ = prepare_answer(sdp);
+}
+
+void OfferAnswerActions::release_answer() {
+    send_answer(held_caller_answer_);
+    held_caller_answer_ = nullptr;
+}
+
+pjmedia_sdp_session* OfferAnswerActions::prepare_answer(const std::string& sdp) {
     answer_ = sdp;
     auto* callee_answer = Sdp::parse(session_.pool(), answer_);
     if (callee_answer == nullptr) {
-        return;
+        return nullptr;
     }
     capture_callee_media(callee_answer);
 
     pjmedia_sdp_session* caller_answer = build_caller_answer();
     if (caller_answer == nullptr) {
-        return;
+        return nullptr;
     }
 
     // Configured before the 200 OK goes out: a CodecSession/resampler
     // allocation failure here can still be answered with a SIP error rather
-    // than one that's already committed (see issue #177).
+    // than one that's already committed (see issue #177). Send nothing here
+    // directly, though: hold_answer() can reach this from a mere provisional
+    // (183), before the final response even exists -- send_answer(nullptr)
+    // is a no-op, so relay_answer()/release_answer()'s caller already routes
+    // this into the ordinary AnswerRelayFailed -> fail() path, which sends
+    // exactly one error response once the exchange actually has an outcome.
     if (!configure_media_bridge()) {
-        Inv::answer(session_.inv_caller(), PJSIP_SC_INTERNAL_SERVER_ERROR);
-        return;
+        return nullptr;
     }
 
     Sdp::rewrite_connection_and_port(
@@ -191,6 +213,13 @@ void OfferAnswerActions::relay_answer(const std::string& sdp) {
         caller_answer,
         session_.ctx()->config_.local_ip_,
         session_.media_bridge()->leg_a_port().value());
+    return caller_answer;
+}
+
+void OfferAnswerActions::send_answer(pjmedia_sdp_session* caller_answer) {
+    if (caller_answer == nullptr) {
+        return;
+    }
     answer_sent_ = Inv::answer(session_.inv_caller(), PJSIP_SC_OK, caller_answer);
     if (!answer_sent_) {
         return;

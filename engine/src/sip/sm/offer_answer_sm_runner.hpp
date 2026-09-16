@@ -12,6 +12,7 @@ template <typename Actions>
 struct OfferAnswerSm;
 struct Idle;
 struct AwaitingAnswer;
+struct AnswerHeld;
 struct RelayingAnswer;
 struct AwaitingAck;
 struct Committed;
@@ -30,6 +31,7 @@ public:
 
     [[nodiscard]] bool is_idle() const { return is<OfferAnswer::Idle>(); }
     [[nodiscard]] bool is_awaiting_answer() const { return is<OfferAnswer::AwaitingAnswer>(); }
+    [[nodiscard]] bool is_answer_held() const { return is<OfferAnswer::AnswerHeld>(); }
     [[nodiscard]] bool is_relaying_answer() const { return is<OfferAnswer::RelayingAnswer>(); }
     [[nodiscard]] bool is_awaiting_ack() const { return is<OfferAnswer::AwaitingAck>(); }
     [[nodiscard]] bool is_committed() const { return is<OfferAnswer::Committed>(); }

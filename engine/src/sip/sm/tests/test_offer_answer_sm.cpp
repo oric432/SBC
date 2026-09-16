@@ -35,6 +35,11 @@ struct OfferAnswerTestActions final : IOfferAnswerActions {
         answer_ = sdp;
         calls_.emplace_back("answer");
     }
+    void hold_answer(const std::string& sdp) override {
+        answer_ = sdp;
+        calls_.emplace_back("hold");
+    }
+    void release_answer() override { calls_.emplace_back("release_answer"); }
     void reject_offer(OfferAnswer::Reason reason) override {
         reason_ = reason;
         calls_.emplace_back("reject");
@@ -94,6 +99,61 @@ TEST_CASE("Offer-answer commits only after relay and required confirmation", "[o
     REQUIRE_FALSE(runner.process_event(OfferAnswer::Cleanup{}));
     REQUIRE_FALSE(runner.process_event(OfferAnswer::OfferReceived{"new offer"}));
     REQUIRE(actions.calls_ == std::vector<std::string>{"offer", "answer", "commit", "release"});
+}
+
+TEST_CASE("Offer-answer stages an early answer and releases it on the final response", "[offer_answer_sm]") {
+    OfferAnswerTestActions actions;
+    OfferAnswerSmRunner runner(actions, "exchange-early");
+    runner.process_event(OfferAnswer::OfferReceived{"offer"});
+    REQUIRE(runner.process_event(OfferAnswer::EarlyAnswerReceived{"early answer"}));
+    REQUIRE(runner.is_answer_held());
+    REQUIRE(actions.answer_ == "early answer");
+    REQUIRE(actions.calls_ == std::vector<std::string>{"offer", "hold"});
+    // A second EarlyAnswerReceived while already held is simply unhandled.
+    REQUIRE_FALSE(runner.process_event(OfferAnswer::EarlyAnswerReceived{"another"}));
+
+    REQUIRE(runner.process_event(OfferAnswer::AnswerReceived{"final response body, if any"}));
+    REQUIRE(runner.is_relaying_answer());
+    // release_answer() ignores the final response's own body -- the answer
+    // relayed is still the one staged by hold_answer().
+    REQUIRE(actions.answer_ == "early answer");
+    REQUIRE(actions.calls_ == std::vector<std::string>{"offer", "hold", "release_answer"});
+    REQUIRE(runner.process_event(OfferAnswer::AnswerRelaySucceeded{}));
+    REQUIRE(runner.is_awaiting_ack());
+    REQUIRE(runner.process_event(OfferAnswer::AckReceived{}));
+    REQUIRE(runner.is_committed());
+}
+
+TEST_CASE("Offer-answer rejects an unusable early answer", "[offer_answer_sm]") {
+    OfferAnswerTestActions actions;
+    OfferAnswerSmRunner runner(actions, "exchange-early-bad");
+    runner.process_event(OfferAnswer::OfferReceived{"offer"});
+    actions.valid_answer_ = false;
+    REQUIRE(runner.process_event(OfferAnswer::EarlyAnswerReceived{"bad early answer"}));
+    REQUIRE(runner.is_failed());
+    REQUIRE(actions.reason_ == OfferAnswer::Reason::kUnusableAnswer);
+    REQUIRE(actions.calls_ == std::vector<std::string>{"offer", "fail"});
+}
+
+TEST_CASE("Offer-answer can stop, be rejected, or time out while an early answer is held", "[offer_answer_sm]") {
+    OfferAnswerTestActions actions;
+    OfferAnswerSmRunner runner(actions, "exchange-early-abort");
+    runner.process_event(OfferAnswer::OfferReceived{"offer"});
+    runner.process_event(OfferAnswer::EarlyAnswerReceived{"early answer"});
+    REQUIRE(runner.is_answer_held());
+    SECTION("Stopped") {
+        REQUIRE(runner.process_event(OfferAnswer::StopExchange{}));
+        REQUIRE(actions.reason_ == OfferAnswer::Reason::kStopped);
+    }
+    SECTION("Rejected") {
+        REQUIRE(runner.process_event(OfferAnswer::AnswerRejected{488}));
+        REQUIRE(actions.reason_ == OfferAnswer::Reason::kRejected);
+    }
+    SECTION("Timeout") {
+        REQUIRE(runner.process_event(OfferAnswer::AnswerTimeout{}));
+        REQUIRE(actions.reason_ == OfferAnswer::Reason::kAnswerTimeout);
+    }
+    REQUIRE(runner.is_rolled_back());
 }
 
 TEST_CASE("Offer-answer rollback preserves committed session", "[offer_answer_sm]") {
@@ -209,6 +269,8 @@ struct SetupExchangeActions final : IOfferAnswerActions {
     [[nodiscard]] bool needs_ack() const override { return ack_required_; }
     void relay_offer([[maybe_unused]] const std::string& sdp) override {}
     void relay_answer([[maybe_unused]] const std::string& sdp) override {}
+    void hold_answer([[maybe_unused]] const std::string& sdp) override {}
+    void release_answer() override {}
     void reject_offer([[maybe_unused]] OfferAnswer::Reason reason) override {}
     void relay_rejection([[maybe_unused]] int code) override {}
     void commit() override {

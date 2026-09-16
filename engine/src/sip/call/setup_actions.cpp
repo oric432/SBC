@@ -175,10 +175,9 @@ void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* r
 
     switch (inv->state) {
     case PJSIP_INV_STATE_EARLY:
-        // 180 from the callee → forward ringing to the caller.
         Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_EARLY", session_.call_id());
         if (leg == Leg::kCallee) {
-            setup.process_event(Setup::ProgressReceived{});
+            handle_early(rdata);
         }
         break;
 
@@ -218,6 +217,21 @@ void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* r
 
     default: break;
     }
+}
+
+void SetupActions::handle_early(pjsip_rx_data* rdata) {
+    // 180/183 from the callee → forward ringing to the caller (always a
+    // bodiless 180 of our own -- see report_progress()). A reliable 183 may
+    // also carry the callee's answer (RFC 3262 S5); stage it now via the
+    // exchange so it's ready to send once the final response confirms the
+    // exchange is actually completing (issue #123).
+    if (session_.exchange() != nullptr) {
+        const std::string early_sdp = extract_sdp(rdata);
+        if (!early_sdp.empty()) {
+            finish_exchange(session_, session_.exchange()->receive_early_answer(early_sdp));
+        }
+    }
+    session_.setup_sm().process_event(Setup::ProgressReceived{});
 }
 
 void SetupActions::handle_disconnect(pjsip_inv_session* inv) {

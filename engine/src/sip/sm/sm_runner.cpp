@@ -98,6 +98,7 @@ using OfferAnswerRunner = SmRunner<OfferAnswer::OfferAnswerSm<IOfferAnswerAction
 template class SmRunner<OfferAnswer::OfferAnswerSm<IOfferAnswerActions>, IOfferAnswerActions>;
 template bool OfferAnswerRunner::process_event(const OfferAnswer::OfferReceived&);
 template bool OfferAnswerRunner::process_event(const OfferAnswer::AnswerReceived&);
+template bool OfferAnswerRunner::process_event(const OfferAnswer::EarlyAnswerReceived&);
 template bool OfferAnswerRunner::process_event(const OfferAnswer::OfferRelayFailed&);
 template bool OfferAnswerRunner::process_event(const OfferAnswer::AnswerRelaySucceeded&);
 template bool OfferAnswerRunner::process_event(const OfferAnswer::AnswerRelayFailed&);
@@ -109,6 +110,7 @@ template bool OfferAnswerRunner::process_event(const OfferAnswer::StopExchange&)
 template bool OfferAnswerRunner::process_event(const OfferAnswer::Cleanup&);
 template bool OfferAnswerRunner::is<OfferAnswer::Idle>() const;
 template bool OfferAnswerRunner::is<OfferAnswer::AwaitingAnswer>() const;
+template bool OfferAnswerRunner::is<OfferAnswer::AnswerHeld>() const;
 template bool OfferAnswerRunner::is<OfferAnswer::RelayingAnswer>() const;
 template bool OfferAnswerRunner::is<OfferAnswer::AwaitingAck>() const;
 template bool OfferAnswerRunner::is<OfferAnswer::Committed>() const;

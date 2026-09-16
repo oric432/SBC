@@ -13,6 +13,11 @@ struct OfferReceived {
 struct AnswerReceived {
     std::string sdp_;
 };
+// An answer carried in a reliable provisional response (RFC 3262 S5), ahead
+// of the final response AnswerReceived normally carries.
+struct EarlyAnswerReceived {
+    std::string sdp_;
+};
 struct OfferRelayFailed {};
 struct AnswerRelaySucceeded {};
 struct AnswerRelayFailed {};
