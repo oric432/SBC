@@ -90,6 +90,10 @@ public:
     // the bridge's executor — safe on a running relay loop. `endpoint` isn't retained.
     VoidResult configure_legs(PjmediaEndpoint& endpoint, LegCodec leg_a, LegCodec leg_b);
 
+    // Arms the relay loop for each leg whose remote endpoint is already set.
+    // Idempotent: a second call (e.g. the 200 OK following an early-media
+    // 183 that already armed it) is a no-op rather than double-listening on
+    // either socket, which would corrupt in-flight payloads (see #214).
     void start_bridge_loop();
 
     // Marks the bridge as closing and closes both legs' sockets. Posted onto

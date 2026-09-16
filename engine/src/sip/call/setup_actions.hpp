@@ -28,7 +28,8 @@ public:
     ExchangeOutcome start_exchange(
         const std::string& destination,
         std::optional<Protocols::SupportedCodec> required_codec) override;
-    void report_progress() override;
+    void report_progress(int status_code, bool has_early_answer) override;
+    [[nodiscard]] bool is_new_progress(int status_code, bool has_early_answer) const override;
     bool cancel_call() override;
     void establish_call() override;
     void terminate_call() override;
@@ -39,5 +40,9 @@ private:
     void handle_disconnect(pjsip_inv_session* inv);
     CallSession& session_;
     RoutesStore* routes_store_;
+    // The status code report_progress() last actually sent the caller (post
+    // callee-code mirroring), 0 before the first one -- lets is_new_progress()
+    // tell a genuine status change from a retransmission (see #214).
+    int last_relayed_status_code_ = 0;
 };
 } // namespace SbcEngine

@@ -40,6 +40,17 @@ public:
     void cleanup() override;
     [[nodiscard]] bool offer_sent() const { return offer_sent_; }
     [[nodiscard]] bool answer_sent() const { return answer_sent_; }
+    // The caller-facing answer staged by hold_answer(), ready to relay on an
+    // early (18x) provisional; nullptr before an early answer is held, or if
+    // preparing it failed. Not consumed here -- release_answer() clears it.
+    [[nodiscard]] const pjmedia_sdp_session* held_answer() const { return held_caller_answer_; }
+    [[nodiscard]] bool early_media_relayed() const { return early_media_relayed_; }
+    // Records that held_answer() already went out on an early provisional
+    // and arms the relay on it, so the caller hears the callee's early media
+    // as soon as it was sent rather than waiting for the 200 OK. The eventual
+    // 200 OK must then omit the body -- PJSIP's negotiator already completed
+    // on that provisional and asserts if offered SDP again (see #214).
+    void mark_early_media_relayed();
 
 private:
     // Negotiated codec/DTMF-PT for one leg, staged during this exchange and
@@ -68,7 +79,9 @@ private:
     // is warranted); sends nothing itself either way.
     pjmedia_sdp_session* prepare_answer(const std::string& sdp);
     // Shared by relay_answer() and release_answer(): send the prepared
-    // caller-facing answer and arm the relay. No-op if caller_answer is null.
+    // caller-facing answer and arm the relay. No-op if caller_answer is null,
+    // unless an early answer already went out on a provisional -- then sends
+    // a bodiless 200 OK regardless (see #214).
     void send_answer(pjmedia_sdp_session* caller_answer);
 
     CallSession& session_;
@@ -84,5 +97,6 @@ private:
     pjmedia_sdp_session* held_caller_answer_ = nullptr;
     bool offer_sent_ = false;
     bool answer_sent_ = false;
+    bool early_media_relayed_ = false;
 };
 } // namespace SbcEngine

@@ -116,8 +116,37 @@ ExchangeOutcome SetupActions::start_exchange(
     }
     return outcome;
 }
-void SetupActions::report_progress() {
-    Inv::answer(session_.inv_caller(), PJSIP_SC_RINGING);
+namespace {
+// Mirror the callee's own bodiless provisional. PJSIP cannot carry SDP on a
+// 180/181 (process_answer() excludes them from completing negotiation), so
+// any other code the callee used still collapses to plain Ringing.
+int mirrored_progress_code(int status_code) {
+    return status_code == PJSIP_SC_PROGRESS ? PJSIP_SC_PROGRESS : PJSIP_SC_RINGING;
+}
+} // namespace
+
+void SetupActions::report_progress(int status_code, bool has_early_answer) {
+    const pjmedia_sdp_session* early_sdp =
+        has_early_answer && session_.exchange() != nullptr ? session_.exchange()->held_answer() : nullptr;
+    if (early_sdp != nullptr) {
+        if (Inv::answer(session_.inv_caller(), PJSIP_SC_PROGRESS, early_sdp)) {
+            session_.exchange()->mark_early_media_relayed();
+            last_relayed_status_code_ = PJSIP_SC_PROGRESS;
+        }
+        else {
+            Log::sip()->warn("[{}] failed to relay early media SDP to caller", session_.call_id());
+        }
+        return;
+    }
+    const int code = mirrored_progress_code(status_code);
+    Inv::answer(session_.inv_caller(), code);
+    last_relayed_status_code_ = code;
+}
+
+bool SetupActions::is_new_progress(int status_code, bool has_early_answer) const {
+    const bool has_unrelayed_early_answer =
+        has_early_answer && (session_.exchange() == nullptr || !session_.exchange()->early_media_relayed());
+    return has_unrelayed_early_answer || mirrored_progress_code(status_code) != last_relayed_status_code_;
 }
 
 bool SetupActions::cancel_call() {
@@ -220,18 +249,21 @@ void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* r
 }
 
 void SetupActions::handle_early(pjsip_rx_data* rdata) {
-    // 180/183 from the callee → forward ringing to the caller (always a
-    // bodiless 180 of our own -- see report_progress()). A reliable 183 may
-    // also carry the callee's answer (RFC 3262 S5); stage it now via the
-    // exchange so it's ready to send once the final response confirms the
-    // exchange is actually completing (issue #123).
+    // 180/183 from the callee → forward progress to the caller (see
+    // report_progress()). Any SDP carried on it is the callee's early answer
+    // (RFC 3262 S5); stage it now via the exchange so it's ready to relay --
+    // both on this same provisional (issue #214) and, as a fallback, on the
+    // final response once the exchange actually completes (issue #123).
+    bool has_early_answer = false;
     if (session_.exchange() != nullptr) {
         const std::string early_sdp = extract_sdp(rdata);
         if (!early_sdp.empty()) {
             finish_exchange(session_, session_.exchange()->receive_early_answer(early_sdp));
+            has_early_answer = session_.exchange() != nullptr && session_.exchange()->held_answer() != nullptr;
         }
     }
-    session_.setup_sm().process_event(Setup::ProgressReceived{});
+    session_.setup_sm().process_event(
+        Setup::ProgressReceived{.status_code_ = extract_status_code(rdata), .has_early_answer_ = has_early_answer});
 }
 
 void SetupActions::handle_disconnect(pjsip_inv_session* inv) {

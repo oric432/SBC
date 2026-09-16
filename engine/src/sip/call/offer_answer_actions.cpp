@@ -178,6 +178,11 @@ void OfferAnswerActions::hold_answer(const std::string& sdp) {
     held_caller_answer_ = prepare_answer(sdp);
 }
 
+void OfferAnswerActions::mark_early_media_relayed() {
+    early_media_relayed_ = true;
+    session_.media_bridge()->start_bridge_loop();
+}
+
 void OfferAnswerActions::release_answer() {
     send_answer(held_caller_answer_);
     held_caller_answer_ = nullptr;
@@ -217,10 +222,15 @@ pjmedia_sdp_session* OfferAnswerActions::prepare_answer(const std::string& sdp) 
 }
 
 void OfferAnswerActions::send_answer(pjmedia_sdp_session* caller_answer) {
-    if (caller_answer == nullptr) {
+    if (caller_answer == nullptr && !early_media_relayed_) {
         return;
     }
-    answer_sent_ = Inv::answer(session_.inv_caller(), PJSIP_SC_OK, caller_answer);
+    // Once the answer already went out on an early provisional, PJSIP's
+    // negotiator for the caller leg is already done -- offering SDP again
+    // here hits pj_assert(0)/EINSTATE. Send the 200 OK bodiless; PJSIP clones
+    // the provisional's body onto it for us (see #214).
+    const pjmedia_sdp_session* body = early_media_relayed_ ? nullptr : caller_answer;
+    answer_sent_ = Inv::answer(session_.inv_caller(), PJSIP_SC_OK, body);
     if (!answer_sent_) {
         return;
     }

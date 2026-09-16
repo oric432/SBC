@@ -206,6 +206,61 @@ TEST_CASE("MediaBridge retarget_remote_leg_a/b update the live relay target", "[
     REQUIRE(bridge->remote_leg_b()->port() == callee_ep.port());
 }
 
+// Regression test for issue #214: early media arms the bridge on the
+// callee's 183, and the following 200 OK arms it again through the same
+// call site -- start_bridge_loop() must treat the repeat as a no-op rather
+// than a second outstanding receive on either socket.
+TEST_CASE("MediaBridge start_bridge_loop is idempotent", "[MediaBridge]") {
+    io_context ioc;
+
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+
+    auto leg_a_port = bridge->bind_leg_a();
+    REQUIRE(leg_a_port.has_value());
+    auto leg_b_port = bridge->bind_leg_b();
+    REQUIRE(leg_b_port.has_value());
+
+    udp::socket caller_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    udp::socket callee_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    auto caller_ep = caller_sock.local_endpoint();
+    auto callee_ep = callee_sock.local_endpoint();
+
+    bridge->set_remote_leg_a("127.0.0.1", caller_ep.port());
+    bridge->set_remote_leg_b("127.0.0.1", callee_ep.port());
+
+    bridge->start_bridge_loop();
+    bridge->start_bridge_loop();
+    bridge->start_bridge_loop();
+
+    const std::vector<uint8_t> dummy_packet =
+        {kRtpVersion2FirstByte, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 'H', 'i'};
+    const udp::endpoint bridge_leg_a_ep(make_address("127.0.0.1"), leg_a_port.value());
+    caller_sock.send_to(buffer(dummy_packet), bridge_leg_a_ep);
+
+    int receive_count = 0;
+    boost::system::error_code recv_errc;
+    std::size_t recv_bytes = 0;
+    std::vector<uint8_t> recv_buf(kReceiveBufferSize);
+    udp::endpoint recv_ep;
+    callee_sock.async_receive_from(
+        buffer(recv_buf),
+        recv_ep,
+        [&](const boost::system::error_code& errc, std::size_t bytes_recvd) {
+            recv_errc = errc;
+            recv_bytes = bytes_recvd;
+            ++receive_count;
+        });
+
+    ioc.run_for(kRelayRunWindow);
+
+    // Exactly one relayed copy with the payload intact -- a double-armed
+    // loop risks corrupting it via two reads sharing one receive buffer.
+    REQUIRE(receive_count == 1);
+    REQUIRE(!recv_errc);
+    REQUIRE(recv_bytes == dummy_packet.size());
+    REQUIRE(std::equal(dummy_packet.begin(), dummy_packet.end(), recv_buf.begin()));
+}
+
 TEST_CASE("MediaBridge close() is safe when neither leg was ever bound", "[MediaBridge]") {
     // A call rejected before ever dialing out (no route, routing loop, codec
     // mismatch) tears down its MediaBridge without either bind_leg_* ever

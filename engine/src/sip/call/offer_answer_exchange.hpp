@@ -31,6 +31,10 @@ public:
     ExchangeOutcome stop();
     [[nodiscard]] bool awaiting_confirmation() const { return runner_.is_awaiting_ack(); }
     [[nodiscard]] bool is_processing() const { return processing_; }
+    // Forwarded straight to OfferAnswerActions -- see its own doc comments.
+    [[nodiscard]] const pjmedia_sdp_session* held_answer() const { return actions_.held_answer(); }
+    [[nodiscard]] bool early_media_relayed() const { return actions_.early_media_relayed(); }
+    void mark_early_media_relayed() { actions_.mark_early_media_relayed(); }
 
 private:
     ExchangeOutcome finish_operation();

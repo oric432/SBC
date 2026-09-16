@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="{{ scenario_name }}">
+  <recv request="INVITE" crlf="true"></recv>
+
+  <!-- Unreliable early answer -- no Require/RSeq/retrans, unlike
+       callee_prack_183.xml.j2's reliable one: nothing ever acks a
+       provisional, so retrans here would just retransmit forever and starve
+       this scenario of ever reaching its own 200 OK send. This is the
+       production-common shape (#214's captured Cisco CUCM INVITE offers
+       Supported: 100rel with no Require): PJSIP still completes the caller
+       leg's own negotiation on any 18x carrying SDP regardless of
+       reliability, so the SBC's later 200 OK to the caller must stay
+       bodiless either way. -->
+  <send>
+    <![CDATA[
+      SIP/2.0 183 Session Progress
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0
+      a=rtpmap:0 PCMU/8000
+    ]]>
+  </send>
+
+  <!-- Real early media: the pcap starts as soon as the answer is out, well
+       before the 200 OK, so the caller-side recv/pause window below actually
+       overlaps it. -->
+  <nop>
+    <action>
+      <exec play_pcap_audio="{{ pcap_path }}"/>
+    </action>
+  </nop>
+
+  <pause milliseconds="500"/>
+
+  <!-- Repeats a compatible SDP, as a real UA commonly does (RFC 6337) --
+       the SBC ignores this body either way (see offer_answer_sm.hpp). -->
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0
+      a=rtpmap:0 PCMU/8000
+    ]]>
+  </send>
+
+  <recv request="ACK" rtd="true" crlf="true"></recv>
+
+  <recv request="BYE" crlf="true"></recv>
+
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+    ]]>
+  </send>
+</scenario>

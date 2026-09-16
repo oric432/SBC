@@ -14,12 +14,46 @@ TEST_CASE("Setup starts an exchange and establishes only on commit", "[setup_sm]
     REQUIRE(runner.process_event(Setup::Requested{}));
     REQUIRE(actions.calls_ == std::vector<std::string>{"begin_setup", "resolve_route", "start_exchange:callee"});
     SECTION("With progress") {
-        REQUIRE(runner.process_event(Setup::ProgressReceived{}));
-        REQUIRE(runner.process_event(Setup::ProgressReceived{}));
-        // A repeated ProgressReceived while already Ringing must not re-send
-        // 180 -- with 100rel active that would queue a second reliable
-        // provisional needing its own PRACK (see #123).
-        REQUIRE(std::ranges::count(actions.calls_, "report_progress") == 1);
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 180, .has_early_answer_ = false}));
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 180, .has_early_answer_ = false}));
+        // A repeated bodiless ProgressReceived while already Ringing must not
+        // re-send 180 -- with 100rel active that would queue a second
+        // reliable provisional needing its own PRACK (see #123).
+        REQUIRE(std::ranges::count(actions.calls_, "report_progress:180:none") == 1);
+    }
+    SECTION("With early media arriving after a bodiless progress") {
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 180, .has_early_answer_ = false}));
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 183, .has_early_answer_ = true}));
+        // A late-arriving early answer still gets relayed once, even though
+        // Ringing already sent a bodiless 180 (see #214).
+        REQUIRE(
+            actions.calls_ == std::vector<std::string>{
+                                  "begin_setup",
+                                  "resolve_route",
+                                  "start_exchange:callee",
+                                  "report_progress:180:none",
+                                  "report_progress:183:early"});
+        // A retransmission of that same 183 must not relay again.
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 183, .has_early_answer_ = true}));
+        REQUIRE(std::ranges::count(actions.calls_, "report_progress:183:early") == 1);
+    }
+    SECTION("With a bodiless status change after a bodiless progress") {
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 180, .has_early_answer_ = false}));
+        // No SDP either time, but the callee's own code changed -- a genuine
+        // status change, not a retransmission, so it must still be relayed
+        // (see #214: this must not be conflated with the retransmission
+        // suppression above).
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 183, .has_early_answer_ = false}));
+        REQUIRE(
+            actions.calls_ == std::vector<std::string>{
+                                  "begin_setup",
+                                  "resolve_route",
+                                  "start_exchange:callee",
+                                  "report_progress:180:none",
+                                  "report_progress:183:none"});
+        // A retransmission of that same bodiless 183 must not relay again.
+        REQUIRE(runner.process_event(Setup::ProgressReceived{.status_code_ = 183, .has_early_answer_ = false}));
+        REQUIRE(std::ranges::count(actions.calls_, "report_progress:183:none") == 1);
     }
     SECTION("Without progress") {}
     REQUIRE_FALSE(runner.is_established());

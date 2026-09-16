@@ -24,6 +24,14 @@ std::string extract_sdp(pjsip_rx_data* rx_data) {
     return {static_cast<const char*>(body->data), static_cast<std::size_t>(body->len)};
 }
 
+int extract_status_code(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr || rx_data->msg_info.msg->type != PJSIP_RESPONSE_MSG) {
+        return 0;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C API
+    return rx_data->msg_info.msg->line.status.code;
+}
+
 std::string extract_call_id(pjsip_rx_data* rx_data) {
     if (rx_data == nullptr || rx_data->msg_info.cid == nullptr) {
         return {};
