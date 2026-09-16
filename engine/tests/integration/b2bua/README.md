@@ -85,3 +85,35 @@ packets, three redundant end-marked packets at the final duration — all
 sharing the event's start timestamp, per RFC 4733 §3.6 — then PCMU resumes),
 built with `scapy` in a throwaway venv rather than a tool checked into the
 suite's own dependencies (see `../../pyproject.toml`).
+
+`early_media` (issue #214) exercises the SBC relaying the callee's early SDP
+answer to the caller as a 183, with real RTP flowing before the 200 OK. As
+with the transcode and DTMF scenarios, `has_error_logs()` only confirms the
+protocol exchange completed cleanly, not that the relayed audio itself is
+correct — verify that with a capture:
+
+```bash
+sudo setcap cap_net_raw+ep "$(readlink -f "$(command -v tcpdump)")"  # once
+tcpdump -i lo -n udp -w capture.pcap &
+just test-b2bua -k test_b2bua_early_media
+kill %1  # stop tcpdump once the run above finishes
+
+# RTP relayed to the caller (port 6002), in sequence order:
+tshark -r capture.pcap -d udp.port==6002,rtp -d udp.port==6006,rtp \
+  -Y "rtp && udp.dstport==6002" -T fields -e rtp.seq -e rtp.payload \
+  | sort -n | cut -f2 | tr -d '\n' | xxd -r -p > relayed.alaw
+ffmpeg -f alaw -ar 8000 -ac 1 -i relayed.alaw relayed.wav
+```
+
+`relayed.wav` should be byte-identical, per packet, to `g711a.pcap`'s own
+RTP payloads at the matching sequence numbers — this is a plain passthrough
+(same codec on both legs, no transcode session), so nothing should differ.
+`callee_early_media.xml.j2`'s pre-200-OK pause is only 500ms, which lands
+entirely in `g711a.pcap`'s silent lead-in (`0xD5`, A-law's digital-silence
+byte) — lengthen it locally (e.g. to 3000ms) to capture the fixture's
+actual varying content instead.
+
+`early_media_demo.wav` in this directory is exactly that: the pre-answer
+segment relayed to the caller with the pause temporarily stretched to 3s,
+confirmed byte-exact against `g711a.pcap` for all 168 packets relayed
+during that run, including every packet sent before the 200 OK.
