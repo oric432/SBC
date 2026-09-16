@@ -45,10 +45,12 @@ public:
     // preparing it failed. Not consumed here -- release_answer() clears it.
     [[nodiscard]] const pjmedia_sdp_session* held_answer() const { return held_caller_answer_; }
     [[nodiscard]] bool early_media_relayed() const { return early_media_relayed_; }
-    // Records that held_answer() already went out on an early provisional, so
-    // the eventual 200 OK must omit the body (see #214 -- PJSIP's negotiator
-    // already completed on that provisional and asserts if offered SDP again).
-    void mark_early_media_relayed() { early_media_relayed_ = true; }
+    // Records that held_answer() already went out on an early provisional
+    // and arms the relay on it, so the caller hears the callee's early media
+    // as soon as it was sent rather than waiting for the 200 OK. The eventual
+    // 200 OK must then omit the body -- PJSIP's negotiator already completed
+    // on that provisional and asserts if offered SDP again (see #214).
+    void mark_early_media_relayed();
 
 private:
     // Negotiated codec/DTMF-PT for one leg, staged during this exchange and

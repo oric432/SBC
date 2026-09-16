@@ -87,6 +87,13 @@ struct MediaBridge::Impl {
     // matters (issue #208).
     bool closing_ = false;
 
+    // Set by start_bridge_loop()'s posted task the first time it actually
+    // arms the loop. Confined to this executor like closing_, so a second
+    // start_bridge_loop() call (issue #214: arming early on a provisional,
+    // then again on the following 200 OK) is a safe no-op instead of a
+    // second outstanding async_receive_pkt() tearing the shared rx buffer.
+    bool started_ = false;
+
     // Receive/error-handling/re-arm loop; `process` is a function pointer
     // (never a closure) so re-arming just means calling listen() again.
     template <typename ProcessPacket>
@@ -331,26 +338,37 @@ VoidResult MediaBridge::configure_legs(PjmediaEndpoint& endpoint, LegCodec leg_a
 }
 
 void MediaBridge::start_bridge_loop() {
+    // Written unconditionally and directly (not posted): matches the
+    // existing contract that the SIP thread may write this before the loop
+    // is even armed (see last_packet_time()'s doc comment), and a repeat
+    // call re-marking "just armed" on an already-running relay is harmless.
     impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
 
-    if (impl_->dest_b_) {
-        Impl::listen(
-            shared_from_this(),
-            RelayLeg::kLegA,
-            impl_->session_a_,
-            impl_->session_b_,
-            *impl_->dest_b_,
-            &Impl::process_packet);
-    }
-    if (impl_->dest_a_) {
-        Impl::listen(
-            shared_from_this(),
-            RelayLeg::kLegB,
-            impl_->session_b_,
-            impl_->session_a_,
-            *impl_->dest_a_,
-            &Impl::process_packet);
-    }
+    boost::asio::post(impl_->executor_, [self = shared_from_this()] {
+        if (self->impl_->started_ || self->impl_->closing_) {
+            return;
+        }
+        self->impl_->started_ = true;
+
+        if (self->impl_->dest_b_) {
+            Impl::listen(
+                self,
+                RelayLeg::kLegA,
+                self->impl_->session_a_,
+                self->impl_->session_b_,
+                *self->impl_->dest_b_,
+                &Impl::process_packet);
+        }
+        if (self->impl_->dest_a_) {
+            Impl::listen(
+                self,
+                RelayLeg::kLegB,
+                self->impl_->session_b_,
+                self->impl_->session_a_,
+                *self->impl_->dest_a_,
+                &Impl::process_packet);
+        }
+    });
 }
 
 void MediaBridge::close() {

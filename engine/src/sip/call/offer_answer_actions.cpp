@@ -178,6 +178,11 @@ void OfferAnswerActions::hold_answer(const std::string& sdp) {
     held_caller_answer_ = prepare_answer(sdp);
 }
 
+void OfferAnswerActions::mark_early_media_relayed() {
+    early_media_relayed_ = true;
+    session_.media_bridge()->start_bridge_loop();
+}
+
 void OfferAnswerActions::release_answer() {
     send_answer(held_caller_answer_);
     held_caller_answer_ = nullptr;
