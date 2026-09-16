@@ -11,6 +11,8 @@ template <typename Actions>
 struct DialogSm;
 struct Active;
 struct Reinviting;
+struct Referring;
+struct ReferringEndingCall;
 struct Terminating;
 
 // Dialog machine runner; actions must outlive it.
@@ -21,6 +23,8 @@ public:
 
     [[nodiscard]] bool is_active() const { return is<Active>(); }
     [[nodiscard]] bool is_reinviting() const { return is<Reinviting>(); }
+    [[nodiscard]] bool is_referring() const { return is<Referring>(); }
+    [[nodiscard]] bool is_referring_ending_call() const { return is<ReferringEndingCall>(); }
     [[nodiscard]] bool is_terminating() const { return is<Terminating>(); }
 };
 

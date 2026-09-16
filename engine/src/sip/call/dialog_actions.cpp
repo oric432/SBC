@@ -79,10 +79,10 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
         if (dialog.is_reinviting()) {
             dialog.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kFailed});
         }
-        else if (dialog.is_active()) {
+        else if (dialog.is_active() || dialog.is_referring()) {
             dialog.process_event(ByeReceived{leg});
         }
-        else if (dialog.is_terminating()) {
+        else if (dialog.is_terminating() || dialog.is_referring_ending_call()) {
             dialog.process_event(CallEnded{});
         }
         break;
