@@ -60,6 +60,15 @@ void rewrite_connection_and_port(
 // structurally validated/rewritten but never bridged.
 RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 
+// Whether the first non-declined audio media line signals hold via a
+// direction attribute (RFC 3264 S5.1's "a=inactive"/"a=sendonly"), checked at
+// the media level, falling back to the session level if the media line
+// declares no direction attribute of its own. False if there is no active
+// audio line at all. A "0.0.0.0" connection address is the other historical
+// hold signal, but that's already visible on extract_rtp_endpoint()'s ip_ —
+// no separate helper needed for it.
+bool has_inactive_direction(const pjmedia_sdp_session* sdp);
+
 // The audio codec carried on an SDP: the first payload type of its first
 // non-declined audio media line. Returns nullopt if there is no active audio
 // stream. Groundwork for future codec-aware work (e.g. a transcoder) — pass

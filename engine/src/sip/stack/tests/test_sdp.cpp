@@ -127,6 +127,40 @@ TEST_CASE("extract_telephone_event_pt reads the DTMF payload type, if any", "[sd
     CHECK(Sdp::extract_telephone_event_pt(Sdp::parse(pj_scope.pool(), mixed_case_dtmf)) == std::optional<uint8_t>{101});
 }
 
+TEST_CASE("has_inactive_direction detects a=inactive/a=sendonly at media or session level", "[sdp]") {
+    const ScopedPjPool pj_scope;
+
+    const std::string media_level_inactive = "v=0\r\n"
+                                             "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                             "s=-\r\n"
+                                             "c=IN IP4 127.0.0.1\r\n"
+                                             "t=0 0\r\n"
+                                             "m=audio 10000 RTP/AVP 0\r\n"
+                                             "a=inactive\r\n";
+    CHECK(Sdp::has_inactive_direction(Sdp::parse(pj_scope.pool(), media_level_inactive)));
+
+    const std::string media_level_sendonly = "v=0\r\n"
+                                             "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                             "s=-\r\n"
+                                             "c=IN IP4 127.0.0.1\r\n"
+                                             "t=0 0\r\n"
+                                             "m=audio 10000 RTP/AVP 0\r\n"
+                                             "a=sendonly\r\n";
+    CHECK(Sdp::has_inactive_direction(Sdp::parse(pj_scope.pool(), media_level_sendonly)));
+
+    // No media-level direction attribute — falls back to the session-level one.
+    const std::string session_level_inactive = "v=0\r\n"
+                                               "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                               "s=-\r\n"
+                                               "c=IN IP4 127.0.0.1\r\n"
+                                               "t=0 0\r\n"
+                                               "a=inactive\r\n"
+                                               "m=audio 10000 RTP/AVP 0\r\n";
+    CHECK(Sdp::has_inactive_direction(Sdp::parse(pj_scope.pool(), session_level_inactive)));
+
+    CHECK_FALSE(Sdp::has_inactive_direction(Sdp::parse(pj_scope.pool(), kMultiCodecOffer)));
+}
+
 TEST_CASE("pick_answer_codec prefers the other leg's codec, then SBC priority, else nothing", "[sdp]") {
     const ScopedPjPool pj_scope;
     const auto offered = Sdp::extract_all_audio_codecs(Sdp::parse(pj_scope.pool(), kMultiCodecOffer));
