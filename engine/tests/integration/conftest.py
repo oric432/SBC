@@ -46,6 +46,23 @@ class RouteRule:
     codec: str | None = None
 
 
+@dataclass(frozen=True)
+class SipUserFixture:
+    """A REGISTER test credential. ha1 is computed the same way the real
+    control plane does (sipUsersController.computeHa1) so the stub is a
+    faithful stand-in, not a shortcut around the engine's actual digest path.
+    """
+
+    username: str
+    realm: str
+    password: str
+    enabled: bool = True
+
+    @property
+    def ha1(self) -> str:
+        return hashlib.md5(f"{self.username}:{self.realm}:{self.password}".encode()).hexdigest()
+
+
 def _ws_accept_key(client_key: str) -> str:
     digest = hashlib.sha1((client_key + _WS_HANDSHAKE_GUID).encode()).digest()
     return base64.b64encode(digest).decode()
@@ -83,6 +100,7 @@ class RoutesStubServer:
 
     def __init__(self) -> None:
         self._routes: dict[int, RouteRule] = {}
+        self._users: list[SipUserFixture] = []
         self._lock = threading.Lock()
         stub = self
 
@@ -108,6 +126,7 @@ class RoutesStubServer:
 
                 with stub._lock:
                     routes = stub._routes
+                    users = stub._users
                 envelope = {
                     "type": "snapshot",
                     "routes_snapshot": {
@@ -122,6 +141,17 @@ class RoutesStubServer:
                             }
                             for priority, rule in routes.items()
                         },
+                    },
+                    "users_snapshot": {
+                        "users": [
+                            {
+                                "username": user.username,
+                                "realm": user.realm,
+                                "ha1": user.ha1,
+                                "enabled": user.enabled,
+                            }
+                            for user in users
+                        ],
                     },
                 }
                 self.request.sendall(_ws_text_frame(json.dumps(envelope).encode()))
@@ -169,6 +199,10 @@ class RoutesStubServer:
     def set_routes(self, routes: dict[int, RouteRule]) -> None:
         with self._lock:
             self._routes = dict(routes)
+
+    def set_users(self, users: list[SipUserFixture]) -> None:
+        with self._lock:
+            self._users = list(users)
 
     def stop(self) -> None:
         self._server.shutdown()
@@ -225,13 +259,20 @@ def initial_routes() -> dict[int, RouteRule]:
 
 
 @pytest.fixture(scope="session")
-def sbc_engine(tmp_path_factory, engine_binary, routes_stub_server, sip_port, initial_routes):
+def sip_users() -> list[SipUserFixture]:
+    return []
+
+
+@pytest.fixture(scope="session")
+def sbc_engine(tmp_path_factory, engine_binary, routes_stub_server, sip_port, initial_routes, sip_users):
     routes_stub_server.set_routes(initial_routes)
+    routes_stub_server.set_users(sip_users)
 
     work_dir = tmp_path_factory.mktemp("sbc_engine")
     (work_dir / "settings.toml").write_text(
         f'[sip]\naddress = "127.0.0.1"\nport = {sip_port}\n\n'
-        f'[control_plane]\nws_url = "{routes_stub_server.url}"\n'
+        f'[control_plane]\nws_url = "{routes_stub_server.url}"\n\n'
+        f'[registrar]\nmin_expires_s = 60\nmax_expires_s = 120\n'
     )
 
     _log.info("starting SbcEngine...")

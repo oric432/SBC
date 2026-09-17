@@ -247,3 +247,82 @@ def test_b2bua_update_new_codec(sbc_engine, render_scenario, run_sipp_pair):
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
     _log.info("scenario '%s' passed", scenario_name)
+
+
+# Issue #104: SIP REGISTER (RFC 3261). registered_user comes from
+# conftest.py's session-scoped sip_users fixture, seeded into the engine's
+# UsersStore before it starts -- these tests exercise the full digest
+# challenge/verify path against that real credential, not a mock.
+
+
+def test_b2bua_register_correct_credentials(sbc_engine, render_scenario, run_sipp_register, registered_user):
+    scenario_xml = render_scenario(
+        "register.xml.j2",
+        scenario_name="register_correct_credentials",
+        username=registered_user.username,
+        realm=registered_user.realm,
+        password=registered_user.password,
+        expires=90,
+        expected_status=200,
+    )
+
+    run_sipp_register(scenario_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during REGISTER:\n{sbc_engine.log_tail()}"
+    _log.info("scenario 'register_correct_credentials' passed")
+
+
+def test_b2bua_register_wrong_password(sbc_engine, render_scenario, run_sipp_register, registered_user):
+    scenario_xml = render_scenario(
+        "register.xml.j2",
+        scenario_name="register_wrong_password",
+        username=registered_user.username,
+        realm=registered_user.realm,
+        password="not-the-real-password",
+        expires=90,
+        expected_status=403,
+    )
+
+    run_sipp_register(scenario_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during REGISTER:\n{sbc_engine.log_tail()}"
+    _log.info("scenario 'register_wrong_password' passed")
+
+
+def test_b2bua_register_expires_too_short(sbc_engine, render_scenario, run_sipp_register, registered_user):
+    """Below settings.toml's [registrar] min_expires_s (60 in this suite's
+    generated settings, see conftest.py's sbc_engine fixture) -> 423
+    Interval Too Brief rather than a shortened grant."""
+    scenario_xml = render_scenario(
+        "register.xml.j2",
+        scenario_name="register_expires_too_short",
+        username=registered_user.username,
+        realm=registered_user.realm,
+        password=registered_user.password,
+        expires=10,
+        expected_status=423,
+    )
+
+    run_sipp_register(scenario_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during REGISTER:\n{sbc_engine.log_tail()}"
+    _log.info("scenario 'register_expires_too_short' passed")
+
+
+def test_b2bua_register_deregister(sbc_engine, render_scenario, run_sipp_register, registered_user):
+    """Expires: 0 removes the binding and still gets a 200 OK (RFC 3261
+    10.3) -- not a rejection, and not subject to min_expires_s."""
+    scenario_xml = render_scenario(
+        "register.xml.j2",
+        scenario_name="register_deregister",
+        username=registered_user.username,
+        realm=registered_user.realm,
+        password=registered_user.password,
+        expires=0,
+        expected_status=200,
+    )
+
+    run_sipp_register(scenario_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during REGISTER:\n{sbc_engine.log_tail()}"
+    _log.info("scenario 'register_deregister' passed")
