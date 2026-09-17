@@ -126,8 +126,18 @@ export function SipUserFormDialog({
         }
     };
 
+    const handleOpenChange = (next: boolean) => {
+        // A stale mutation's onSubmit still calls onOpenChange(false) on
+        // success even if this dialog was closed and reopened for a
+        // different user in the meantime -- block every other dismissal
+        // path (outside click, Escape) while a submission is in flight so
+        // that can't happen.
+        if (isSubmitting) return;
+        onOpenChange(next);
+    };
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent
                 onOpenAutoFocus={(event) => {
                     event.preventDefault();
@@ -250,6 +260,7 @@ export function SipUserFormDialog({
                             <Button
                                 type="button"
                                 variant="outline"
+                                disabled={isSubmitting}
                                 onClick={() => onOpenChange(false)}
                             >
                                 Cancel

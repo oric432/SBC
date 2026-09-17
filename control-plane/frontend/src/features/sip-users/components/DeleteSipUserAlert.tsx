@@ -63,7 +63,14 @@ export function DeleteSipUserAlert({
                 <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                        onClick={handleDelete}
+                        onClick={(event) => {
+                            // AlertDialogAction closes the dialog on click by
+                            // default; without preventDefault() a failed
+                            // delete would still close it, hiding the error
+                            // toast's context and losing the retry.
+                            event.preventDefault();
+                            void handleDelete();
+                        }}
                         disabled={isLoading}
                     >
                         Delete
