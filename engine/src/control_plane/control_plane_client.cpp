@@ -22,6 +22,12 @@ namespace Beast = boost::beast;
 namespace Websocket = Beast::websocket;
 namespace Asio = boost::asio;
 using Tcp = Asio::ip::tcp;
+
+// The mirror is already best-effort (see send_registration()); this just
+// bounds how much memory a control plane that's connected but slow (or
+// stalled) can make outbound_queue_ consume under sustained REGISTER
+// refreshes.
+constexpr std::size_t kMaxOutboundQueueSize = 64;
 } // namespace
 
 Result<WsUrlParts> parse_ws_url(std::string_view url) {
@@ -79,6 +85,10 @@ struct ControlPlaneClient::Impl {
     bool first_snapshot_resolved_{false};
     std::promise<VoidResult> first_snapshot_promise_;
     std::future<VoidResult> first_snapshot_future_;
+    // True only once on_handshake() has actually succeeded -- ws_ itself is
+    // non-null for the whole resolve/connect/handshake sequence, so it can't
+    // stand in for "the handshake finished and it's safe to write."
+    bool connected_{false};
     // Beast allows one outstanding read and one outstanding write
     // concurrently, but not two writes -- outgoing registration events queue
     // up behind whichever write is already in flight.
@@ -110,6 +120,7 @@ void ControlPlaneClient::do_connect() {
     // rather than replay it into a fresh connection.
     impl_->outbound_queue_.clear();
     impl_->writing_ = false;
+    impl_->connected_ = false;
     impl_->ws_ = std::make_unique<Websocket::stream<Beast::tcp_stream>>(impl_->executor_);
     impl_->resolver_.async_resolve(
         impl_->config_.endpoint_.host_,
@@ -155,6 +166,7 @@ void ControlPlaneClient::on_handshake(boost::system::error_code err) {
         handle_pre_read_failure(err, "handshake");
         return;
     }
+    impl_->connected_ = true;
     Log::app()->info(
         "connected to control plane at ws://{}:{}",
         impl_->config_.endpoint_.host_,
@@ -175,6 +187,7 @@ void ControlPlaneClient::do_read() {
 
 void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*bytes*/) {
     if (err) {
+        impl_->connected_ = false;
         if (impl_->stopped_) {
             return;
         }
@@ -226,7 +239,7 @@ void ControlPlaneClient::send_registration(Protocols::RegistrationEvent event) {
 }
 
 void ControlPlaneClient::do_send_registration(Protocols::RegistrationEvent event) {
-    if (!impl_->ws_ || impl_->stopped_) {
+    if (!impl_->connected_ || impl_->stopped_) {
         return; // best-effort: dropped rather than queued for a future connection
     }
 
@@ -240,12 +253,26 @@ void ControlPlaneClient::do_send_registration(Protocols::RegistrationEvent event
         return;
     }
 
+    // Drop the incoming event rather than an already-queued one: the front
+    // of outbound_queue_ may be in flight under async_write() right now, and
+    // popping it out from under that write would leave the operation's
+    // buffer dangling.
+    if (impl_->outbound_queue_.size() >= kMaxOutboundQueueSize) {
+        Log::app()->warn(
+            "control-plane outbound queue full ({} events); dropping this registration event",
+            kMaxOutboundQueueSize);
+        return;
+    }
+
     impl_->outbound_queue_.push_back(payload.value());
     if (!impl_->writing_) {
         do_write();
     }
 }
 
+// on_write() calls back into do_write() to drain the rest of the queue, for
+// the same not-actually-recursive reason as do_read()/on_read() above.
+// NOLINTBEGIN(misc-no-recursion)
 void ControlPlaneClient::do_write() {
     if (impl_->outbound_queue_.empty()) {
         return;
@@ -272,6 +299,7 @@ void ControlPlaneClient::on_write(boost::system::error_code err) {
     }
     do_write();
 }
+// NOLINTEND(misc-no-recursion)
 
 void ControlPlaneClient::handle_pre_read_failure(boost::system::error_code err, std::string_view stage) {
     // Once the engine has applied a snapshot at least once, it keeps routing
@@ -324,6 +352,7 @@ void ControlPlaneClient::stop() {
         return;
     }
     Asio::post(impl_->executor_, [self = shared_from_this()] {
+        self->impl_->connected_ = false;
         self->impl_->retry_timer_.cancel();
         if (self->impl_->ws_) {
             boost::system::error_code err;
