@@ -58,8 +58,16 @@ def registered_user() -> SipUserFixture:
 
 
 @pytest.fixture(scope="session")
-def sip_users(registered_user: SipUserFixture) -> list[SipUserFixture]:
-    return [registered_user]
+def other_registered_user(registered_user: SipUserFixture) -> SipUserFixture:
+    # A second, unrelated account in the same realm as registered_user --
+    # only exists so a test can authenticate as one user and try to bind
+    # this one's AOR instead (see test_b2bua_register_wrong_aor_rejected).
+    return SipUserFixture(username="bob", realm=registered_user.realm, password="hunter2")
+
+
+@pytest.fixture(scope="session")
+def sip_users(registered_user: SipUserFixture, other_registered_user: SipUserFixture) -> list[SipUserFixture]:
+    return [registered_user, other_registered_user]
 
 
 @pytest.fixture(scope="session")

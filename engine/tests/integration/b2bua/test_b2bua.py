@@ -326,3 +326,27 @@ def test_b2bua_register_deregister(sbc_engine, render_scenario, run_sipp_registe
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during REGISTER:\n{sbc_engine.log_tail()}"
     _log.info("scenario 'register_deregister' passed")
+
+
+def test_b2bua_register_wrong_aor_rejected(
+    sbc_engine, render_scenario, run_sipp_register, registered_user, other_registered_user
+):
+    """Authenticating with one user's real credentials must not be able to
+    bind a different user's AOR: the digest response only proves the
+    requester knows *some* account's password in this realm, not that
+    they're entitled to register the AOR named in the To header."""
+    scenario_xml = render_scenario(
+        "register.xml.j2",
+        scenario_name="register_wrong_aor_rejected",
+        username=registered_user.username,
+        password=registered_user.password,
+        to_username=other_registered_user.username,
+        realm=registered_user.realm,
+        expires=90,
+        expected_status=403,
+    )
+
+    run_sipp_register(scenario_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during REGISTER:\n{sbc_engine.log_tail()}"
+    _log.info("scenario 'register_wrong_aor_rejected' passed")
