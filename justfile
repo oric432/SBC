@@ -11,6 +11,7 @@ default:
 
 # Setup and install dependencies for all components
 setup-all:
+    git config core.hooksPath .githooks
     just engine setup
     just backend setup
     just frontend setup

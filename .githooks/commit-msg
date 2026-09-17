@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Blocks commits that don't follow Conventional Commits. Installed via
+# `just setup-all` (git config core.hooksPath .githooks). See scripts/check-commit-message.sh.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+exec "$repo_root/scripts/check-commit-message.sh" < "$1"

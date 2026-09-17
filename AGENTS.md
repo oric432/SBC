@@ -19,6 +19,18 @@ SIP features not currently supported by the engine: PRACK (100rel) orchestration
 UPDATE, REFER, hold (a re-INVITE without an active audio line is rejected with 488), SIP forking,
 ICE, SRTP, WebRTC.
 
+## Commit conventions
+
+Commit subject lines follow [Conventional Commits](https://www.conventionalcommits.org/):
+`<type>[(scope)]: <subject>`, where `<type>` is one of `feat fix chore docs style refactor test
+build ci perf`. Scope is freeform and optional (e.g. `feat(engine): ...`) — this is a monorepo
+where a single PR can span components, so scope isn't validated against a fixed enum.
+
+`just setup-all` configures `core.hooksPath` to `.githooks`, which blocks non-conforming commits
+locally via `.githooks/commit-msg`. CI also checks every commit in a PR
+(`scripts/check-commit-message.sh`) but only warns (a `::warning::` annotation) — the convention is
+new, so it never blocks a PR, and pre-existing history isn't and won't be rewritten to conform.
+
 ## Engine architecture
 
 This section covers the parts of the engine's design that aren't obvious from file names alone —
