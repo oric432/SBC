@@ -14,6 +14,6 @@ invite_timeout_ms = 32000
 rtp_inactivity_timeout_s = 60
 
 [control_plane]
-http_url = "http://127.0.0.1:3001"
-http_timeout_s = 5
-http_retry_interval_s = 5
+ws_url = "ws://127.0.0.1:3001/ws/engine"
+connect_timeout_s = 5
+retry_interval_s = 5

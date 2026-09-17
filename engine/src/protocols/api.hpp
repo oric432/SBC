@@ -10,7 +10,11 @@
 namespace SbcEngine::Protocols {
 // API routes client endpoints.
 namespace ClientApiEndpoints {
-constexpr std::string_view kRoutes = "/api/b2bua/routes";
+// Websocket channel the engine connects to for its route/user snapshot and
+// live updates (see ControlPlaneClient). /api/b2bua/routes still exists on
+// the control plane as a curl-able debug read, but the engine no longer
+// calls it -- everything it needs arrives over this connection instead.
+constexpr std::string_view kEngineWs = "/ws/engine";
 }
 
 struct ApiError {

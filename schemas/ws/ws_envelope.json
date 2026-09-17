@@ -1,0 +1,87 @@
+{
+   "type": "object",
+   "properties": {
+      "routes_snapshot": {
+         "anyOf": [
+            {
+               "type": "object",
+               "properties": {
+                  "routes": {
+                     "type": "object",
+                     "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                           "codec": {
+                              "type": [
+                                 "string",
+                                 "null"
+                              ],
+                              "description": "Optional strict media codec requirement",
+                              "enum": [
+                                 "G722",
+                                 "PCMU",
+                                 "PCMA"
+                              ]
+                           },
+                           "port": {
+                              "$ref": "#/$defs/int32_t",
+                              "description": "Destination SIP signaling port"
+                           },
+                           "sip_address": {
+                              "type": "string",
+                              "description": "Destination SIP proxy or next-hop IP"
+                           },
+                           "uri": {
+                              "type": "string",
+                              "description": "The matching SIP URI"
+                           }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                           "uri",
+                           "sip_address",
+                           "port"
+                        ]
+                     },
+                     "description": "Map of SIP routes keyed by evaluation priority number"
+                  },
+                  "table_id": {
+                     "type": "string",
+                     "description": "Unique identifier of the B2BUA routing table"
+                  },
+                  "version": {
+                     "$ref": "#/$defs/int32_t",
+                     "description": "Sequence ID to prevent concurrent overwrite collisions"
+                  }
+               },
+               "additionalProperties": false,
+               "required": [
+                  "table_id",
+                  "version",
+                  "routes"
+               ]
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "Full route table. Sent as the first message on every connect or reconnect, and again whenever the table changes."
+      },
+      "type": {
+         "type": "string",
+         "description": "Message discriminator, currently only \"snapshot\""
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "int32_t": {
+         "type": "integer",
+         "minimum": -2147483648,
+         "maximum": 2147483647
+      }
+   },
+   "required": [
+      "type"
+   ],
+   "title": "SbcEngine::Protocols::WsEnvelope"
+}

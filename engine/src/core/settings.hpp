@@ -39,9 +39,10 @@ struct SipSettings {
 };
 
 struct ControlPlaneSettings {
-    std::string http_url = "http://127.0.0.1:3001";
-    std::chrono::seconds http_timeout_s{SettingsDefaults::kConnectionTimeoutSeconds};
-    std::chrono::seconds http_retry_interval_s{SettingsDefaults::kRetryIntervalSeconds};
+    // No wss:// support -- TLS is out of scope for the whole engine today.
+    std::string ws_url = "ws://127.0.0.1:3001/ws/engine";
+    std::chrono::seconds connect_timeout_s{SettingsDefaults::kConnectionTimeoutSeconds};
+    std::chrono::seconds retry_interval_s{SettingsDefaults::kRetryIntervalSeconds};
 };
 
 // Runtime configuration loaded from settings.toml at startup.
