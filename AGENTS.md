@@ -9,15 +9,28 @@ routing table. Three components:
 
 | Component | Path | What it does |
 | --- | --- | --- |
-| Engine | `engine/` | C++26 B2BUA core (PJSIP + Boost.SML). Owns both SIP legs of every call, rewrites SDP, anchors RTP. See `engine/README.md` and `engine/AGENTS.md`. |
-| Control-plane backend | `control-plane/backend/` | Express/TypeScript API, owns the SIP route table in Postgres. See its own `AGENTS.md`. |
-| Control-plane frontend | `control-plane/frontend/` | React/Vite SPA for managing routes through the backend. See its own `AGENTS.md`. |
+| Engine | `engine/` | C++26 B2BUA core (PJSIP + Boost.SML). Owns both SIP legs of every call, rewrites SDP, anchors RTP, and acts as a SIP registrar (RFC 3261) for phones on domains the control plane provisions. See `engine/README.md` and `engine/AGENTS.md`. |
+| Control-plane backend | `control-plane/backend/` | Express/TypeScript API, owns the SIP route table, SIP user credentials and the registrations mirror in Postgres. Pushes all three to the engine over a websocket channel (`ws/engineChannel.ts`); the engine pushes registration events back the other way. See its own `AGENTS.md`. |
+| Control-plane frontend | `control-plane/frontend/` | React/Vite SPA for managing routes, SIP users and viewing live registrations through the backend. See its own `AGENTS.md`. |
 
 ## Known Limitations
 
 SIP features not currently supported by the engine: PRACK (100rel) orchestration, app-level
 UPDATE, REFER, hold (a re-INVITE without an active audio line is rejected with 488), SIP forking,
 ICE, SRTP, WebRTC.
+
+REGISTER (#104) has its own caveats, since it's the first thing in this project that authenticates
+anything:
+- INVITE is still unauthenticated -- anything that can reach port 5060 gets routed. Admission
+  control (trust = live bindings + the static route table's own destinations) is a deliberate
+  follow-up, not bundled with REGISTER since it can change what inbound trunk calls are accepted.
+- The control-plane websocket channel itself has no auth, yet carries HA1 hashes (password-
+  equivalent material) and registration events. The control plane must not be reachable from an
+  untrusted network.
+- Digest only, no qop, and UDP only -- matches every target client today (Cisco desk phones, SIPp)
+  but is worth revisiting before assuming any client works.
+- Bindings live only in the engine's memory, not persisted: an engine restart means inbound calls
+  to phones fail until each one's next REGISTER refresh (bounded by `[registrar] max_expires_s`).
 
 ## Commit conventions
 
