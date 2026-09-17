@@ -16,3 +16,4 @@ ruvector.db
 CLAUDE.md
 build-cross
 build-cross-musl
+graphify-out/
