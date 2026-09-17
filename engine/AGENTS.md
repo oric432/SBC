@@ -8,6 +8,7 @@ Guidance for coding agents (any LLM tool) working in the `engine` component of t
 ## Workflow Tips
 
 ### General Workflow
+- **Graphify for Architecture**: For architectural questions, cross-component changes, unfamiliar code paths, or complex feature implementations, start with Graphify — `graphify query "<question>"` or `graphify explain "<path>::<symbol>"` against the graph at `../graphify-out/graph.json` (one level above `engine/`, at the workspace root) — to locate symbol relationships and dependencies before searching manually. Graphify narrows down what to inspect; always verify its edges by reading the actual source files it names before acting on them.
 - **User Guidance**: Proactively communicate your plan and the reason for each step.
 - **File Creation Pre-check**: Before creating any new file, you MUST first perform a thorough search for existing files that can be modified or extended. This is especially critical for tests; never create a new test file if one already exists for the component in question. Always add new tests to the existing test file.
 - **Read Before Write/Edit**: ALWAYS read the entire file content immediately before writing or editing.
@@ -18,7 +19,7 @@ Guidance for coding agents (any LLM tool) working in the `engine` component of t
 **IMPORTANT**: This workflow takes precedence over all other coding instructions. Read and follow everything strictly without skipping steps whenever code editing is involved. Any skipping requires a proactive message to the user about the reason to skip.
 
 1. **Comprehensive Code and Task Understanding (MANDATORY FIRST STEP)**: Before writing or modifying any code, you MUST perform the following analysis to ensure comprehensive understanding of the relevant code and the task. This is a non-negotiable prerequisite for all coding tasks.
-    a. **Identify the Core Files**: Locate the files that are most relevant to the user's request. All analysis starts from these files.
+    a. **Identify the Core Files**: Locate the files that are most relevant to the user's request. For architectural or cross-component work, use Graphify first (see General Workflow above) to find candidates. All analysis starts from these files.
     b. **Conduct a Full Audit**: 
         i. Read the full source of EVERY core file. 
         ii. For each core file, summarize the control flow and ownership semantics. State the intended purpose of the core file.
