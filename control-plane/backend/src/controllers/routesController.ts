@@ -8,6 +8,7 @@ import { ConflictError, NotFoundError } from '../errors';
 import { SipRouteRule, SipRouteSnapshot, SupportedCodec } from '../types/sipRoutes';
 import { sendSuccess } from '../utils/apiResponse';
 import { logger } from '../utils/logger';
+import { broadcastSnapshot } from '../ws/engineChannel';
 
 const DEFAULT_TABLE_ID = 'default';
 
@@ -40,7 +41,9 @@ const getDefaultTable = async () => {
   return table;
 };
 
-export const getRoutes = async (_req: Request, res: Response) => {
+// Shared by the GET /api/b2bua/routes debug read and the engine websocket
+// channel (ws/engineChannel.ts), which is what the engine itself uses now.
+export const getRouteSnapshot = async (): Promise<SipRouteSnapshot> => {
   const table = await getDefaultTable();
 
   const rules = await db
@@ -49,13 +52,15 @@ export const getRoutes = async (_req: Request, res: Response) => {
     .where(eq(routeRules.tableId, table.tableId))
     .orderBy(routeRules.priority);
 
-  const snapshot: SipRouteSnapshot = {
+  return {
     table_id: table.tableId,
     version: table.version,
     routes: Object.fromEntries(rules.map((rule) => [rule.priority, toRouteRule(rule)])),
   };
+};
 
-  sendSuccess(res, snapshot);
+export const getRoutes = async (_req: Request, res: Response) => {
+  sendSuccess(res, await getRouteSnapshot());
 };
 
 export const createRoute = async (req: Request, res: Response) => {
@@ -75,6 +80,7 @@ export const createRoute = async (req: Request, res: Response) => {
     .returning();
 
   logger.info(`Route created: priority=${created.priority} uri=${created.uri}`);
+  void broadcastSnapshot();
 
   sendSuccess(res, toRouteRule(created), StatusCodes.CREATED);
 };
@@ -103,6 +109,7 @@ export const updateRoute = async (req: Request, res: Response) => {
   const priorityLabel =
     updated.priority !== currentPriority ? `${currentPriority}->${updated.priority}` : `${updated.priority}`;
   logger.info(`Route updated: priority=${priorityLabel} uri=${updated.uri}`);
+  void broadcastSnapshot();
 
   sendSuccess(res, toRouteRule(updated));
 };
@@ -163,6 +170,7 @@ export const swapRoute = async (req: Request, res: Response) => {
   });
 
   logger.info(`Route priorities swapped: ${currentPriority}<->${targetPriority}`);
+  void broadcastSnapshot();
 
   sendSuccess(res, toRouteRule(updated));
 };
@@ -181,6 +189,7 @@ export const deleteRoute = async (req: Request, res: Response) => {
   }
 
   logger.info(`Route deleted: priority=${deleted.priority} uri=${deleted.uri}`);
+  void broadcastSnapshot();
 
   sendSuccess(res, undefined);
 };
