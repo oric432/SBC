@@ -36,6 +36,7 @@ target_precompile_headers(sip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
 if(BUILD_TESTS)
     add_executable(sip_tests
         call/handlers/tests/test_mid_dialog_offer.cpp
+        route_table/tests/test_routes_store.cpp
         router/tests/test_extract_utils.cpp
         sm/tests/test_setup_sm.cpp
         sm/tests/test_dialog_sm.cpp
