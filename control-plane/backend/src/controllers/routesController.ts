@@ -43,8 +43,8 @@ const bumpTableVersion = async (tx: Tx, tableId: string): Promise<number> => {
   return row.version;
 };
 
-const getDefaultTable = async () => {
-  const [table] = await db
+const getDefaultTable = async (executor: typeof db | Tx = db) => {
+  const [table] = await executor
     .select()
     .from(routeTables)
     .where(eq(routeTables.tableId, DEFAULT_TABLE_ID));
@@ -58,21 +58,29 @@ const getDefaultTable = async () => {
 
 // Shared by the GET /api/b2bua/routes debug read and the engine websocket
 // channel (ws/engineChannel.ts), which is what the engine itself uses now.
-export const getRouteSnapshot = async (): Promise<SipRouteSnapshot> => {
-  const table = await getDefaultTable();
+// Postgres's default READ COMMITTED gives each *statement* its own
+// snapshot, not the transaction as a whole -- a plain db.transaction here
+// wouldn't stop a mutation's commit from landing between the table read and
+// the rules read below. REPEATABLE READ takes one snapshot for both.
+export const getRouteSnapshot = async (): Promise<SipRouteSnapshot> =>
+  db.transaction(
+    async (tx) => {
+      const table = await getDefaultTable(tx);
 
-  const rules = await db
-    .select()
-    .from(routeRules)
-    .where(eq(routeRules.tableId, table.tableId))
-    .orderBy(routeRules.priority);
+      const rules = await tx
+        .select()
+        .from(routeRules)
+        .where(eq(routeRules.tableId, table.tableId))
+        .orderBy(routeRules.priority);
 
-  return {
-    table_id: table.tableId,
-    version: table.version,
-    routes: Object.fromEntries(rules.map((rule) => [rule.priority, toRouteRule(rule)])),
-  };
-};
+      return {
+        table_id: table.tableId,
+        version: table.version,
+        routes: Object.fromEntries(rules.map((rule) => [rule.priority, toRouteRule(rule)])),
+      };
+    },
+    { isolationLevel: 'repeatable read' },
+  );
 
 export const getRoutes = async (_req: Request, res: Response) => {
   sendSuccess(res, await getRouteSnapshot());
