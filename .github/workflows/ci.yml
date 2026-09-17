@@ -40,6 +40,29 @@ jobs:
               - 'engine/**'
               - '.github/workflows/ci.yml'
 
+  # Warn-only: the convention is new, so history predating it isn't enforced
+  # and PRs are never blocked on this -- see scripts/check-commit-message.sh.
+  commit-lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages (warn-only)
+        run: |
+          for sha in $(git rev-list --no-merges "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"); do
+            subject="$(git log -1 --format=%s "$sha")"
+            if ! echo "$subject" | scripts/check-commit-message.sh >/dev/null 2>&1; then
+              echo "::warning::Commit ${sha:0:7} doesn't follow Conventional Commits: $subject"
+            fi
+          done
+
   build-lint-test:
     needs: changes
     if: needs.changes.outputs.engine == 'true'
