@@ -43,7 +43,6 @@ jobs:
   # Warn-only: the convention is new, so history predating it isn't enforced
   # and PRs are never blocked on this -- see scripts/check-commit-message.sh.
   commit-lint:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
     defaults:
       run:
@@ -54,9 +53,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      # PRs diff against the PR's base/head; a direct push to main (branch
+      # protection here allows admins to bypass PRs entirely) diffs against
+      # the commit before the push, or that path never gets checked at all.
+      - name: Determine commit range
+        id: range
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.after }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check commit messages (warn-only)
         run: |
-          for sha in $(git rev-list --no-merges "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"); do
+          for sha in $(git rev-list --no-merges "${{ steps.range.outputs.base }}..${{ steps.range.outputs.head }}"); do
             subject="$(git log -1 --format=%s "$sha")"
             if ! echo "$subject" | scripts/check-commit-message.sh >/dev/null 2>&1; then
               echo "::warning::Commit ${sha:0:7} doesn't follow Conventional Commits: $subject"
