@@ -7,27 +7,35 @@ suite's own conftest.py.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import re
+import socket
+import socketserver
+import struct
 import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
 
 _log = logging.getLogger("integration")
 
-# The engine retries its route fetch forever on connection failure rather than
-# crashing (see RoutesManager::fetch_routes_snapshot), so a missing/late stub
+# The engine retries its websocket connection forever on connection failure
+# rather than crashing (see ControlPlaneClient), so a missing/late stub
 # route hangs the fixture instead of failing fast - this log line only
-# appears once the fetch actually succeeds, right before the SIP transport
-# binds, so it is the one reliable "engine is ready" signal available.
-_ROUTES_LOADED_MARKER = "loaded routing table"
+# appears once the connection actually succeeds, right before the SIP
+# transport binds, so it is the one reliable "engine is ready" signal
+# available.
+_ROUTES_LOADED_MARKER = "applied routing table"
 _ERROR_LOG_PATTERN = re.compile(r"\]\s*\[(error|critical)\]\s*\[")
+
+# RFC 6455 5.2.2: the fixed GUID XORed into the handshake's accept key.
+_WS_HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 @dataclass(frozen=True)
@@ -38,12 +46,39 @@ class RouteRule:
     codec: str | None = None
 
 
-class RoutesStubServer:
-    """Stands in for the control-plane's `GET /api/b2bua/routes` endpoint.
+def _ws_accept_key(client_key: str) -> str:
+    digest = hashlib.sha1((client_key + _WS_HANDSHAKE_GUID).encode()).digest()
+    return base64.b64encode(digest).decode()
 
-    Serves whatever snapshot was last set via `set_routes`, matching the
-    `ApiResponse<SipRouteSnapshot>` JSON contract the engine's
-    RoutesManager parses (see src/protocols/{Api,SipRoutes}.hpp).
+
+def _ws_text_frame(payload: bytes) -> bytes:
+    """A minimal, unmasked RFC 6455 text frame (server->client frames are
+    never masked). No fragmentation: every message here is small enough to
+    fit in one frame."""
+    header = bytearray([0x81])  # FIN=1, opcode=1 (text)
+    length = len(payload)
+    if length < 126:
+        header.append(length)
+    elif length < 65536:
+        header.append(126)
+        header += struct.pack(">H", length)
+    else:
+        header.append(127)
+        header += struct.pack(">Q", length)
+    return bytes(header) + payload
+
+
+class RoutesStubServer:
+    """Stands in for the control plane's engine-facing websocket channel
+    (`/ws/engine`, see control-plane/backend/src/ws/engineChannel.ts).
+
+    Performs the RFC 6455 handshake by hand (no extra Python dependency for
+    what's otherwise a two-step protocol: accept, then send one frame) and
+    sends whatever snapshot was last set via `set_routes` as that connection's
+    first message, matching the `WsEnvelope{type: "snapshot", routes_snapshot}`
+    contract ControlPlaneClient parses (see src/protocols/ControlPlaneWs.hpp).
+    Nothing in this suite mutates routes after the engine connects, so unlike
+    the real control plane this stub never pushes a second message.
     """
 
     def __init__(self) -> None:
@@ -51,19 +86,31 @@ class RoutesStubServer:
         self._lock = threading.Lock()
         stub = self
 
-        class Handler(BaseHTTPRequestHandler):
-            def do_GET(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler API)
-                if self.path != "/api/b2bua/routes":
-                    self.send_response(404)
-                    self.end_headers()
+        class Handler(socketserver.BaseRequestHandler):
+            def handle(self) -> None:
+                request = self._read_http_request()
+                if request is None:
                     return
+
+                key_match = re.search(rb"Sec-WebSocket-Key:\s*(\S+)", request, re.IGNORECASE)
+                if key_match is None:
+                    return
+                accept = _ws_accept_key(key_match.group(1).decode())
+
+                response = (
+                    "HTTP/1.1 101 Switching Protocols\r\n"
+                    "Upgrade: websocket\r\n"
+                    "Connection: Upgrade\r\n"
+                    f"Sec-WebSocket-Accept: {accept}\r\n"
+                    "\r\n"
+                )
+                self.request.sendall(response.encode())
 
                 with stub._lock:
                     routes = stub._routes
-
-                payload = {
-                    "success": True,
-                    "data": {
+                envelope = {
+                    "type": "snapshot",
+                    "routes_snapshot": {
                         "table_id": "pytest-stub",
                         "version": 1,
                         "routes": {
@@ -77,32 +124,55 @@ class RoutesStubServer:
                         },
                     },
                 }
-                body = json.dumps(payload).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                self.request.sendall(_ws_text_frame(json.dumps(envelope).encode()))
 
-            def log_message(self, format: str, *args: object) -> None:  # noqa: A002
-                pass
+                # Nothing else is ever sent on this connection; just keep it
+                # open (the client's idle_timeout is disabled for
+                # role_type::client, see stream_base::timeout::suggested) so
+                # the read blocks here until the engine closes it at teardown.
+                # No timeout here (unlike the handshake read above) -- a
+                # timed-out recv() would otherwise look just like the engine
+                # closing the connection and tear this one down every 5s.
+                self.request.settimeout(None)
+                try:
+                    while self.request.recv(4096):
+                        pass
+                except OSError:
+                    pass
 
-        self._httpd = HTTPServer(("127.0.0.1", 0), Handler)
-        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+            def _read_http_request(self) -> bytes | None:
+                data = b""
+                self.request.settimeout(5)
+                try:
+                    while b"\r\n\r\n" not in data:
+                        chunk = self.request.recv(4096)
+                        if not chunk:
+                            return None
+                        data += chunk
+                except socket.timeout:
+                    return None
+                return data
+
+        class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+            daemon_threads = True
+            allow_reuse_address = True
+
+        self._server = Server(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
 
     @property
     def url(self) -> str:
-        host, port = self._httpd.server_address
-        return f"http://{host}:{port}"
+        host, port = self._server.server_address
+        return f"ws://{host}:{port}/ws/engine"
 
     def set_routes(self, routes: dict[int, RouteRule]) -> None:
         with self._lock:
             self._routes = dict(routes)
 
     def stop(self) -> None:
-        self._httpd.shutdown()
-        self._httpd.server_close()
+        self._server.shutdown()
+        self._server.server_close()
         self._thread.join(timeout=5)
 
 
@@ -161,7 +231,7 @@ def sbc_engine(tmp_path_factory, engine_binary, routes_stub_server, sip_port, in
     work_dir = tmp_path_factory.mktemp("sbc_engine")
     (work_dir / "settings.toml").write_text(
         f'[sip]\naddress = "127.0.0.1"\nport = {sip_port}\n\n'
-        f'[control_plane]\nhttp_url = "{routes_stub_server.url}"\n'
+        f'[control_plane]\nws_url = "{routes_stub_server.url}"\n'
     )
 
     _log.info("starting SbcEngine...")
