@@ -20,16 +20,18 @@ just run-dev
 Before running, copy `settings-example.toml` to `settings.toml` (repo root — the binary reads
 `settings.toml` from its working directory) and fill in the placeholder `[IP_ADDRESS]` values.
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `local_sip_address` | `"[IP_ADDRESS]"` | IP the SIP transport binds to. Must be a real interface address, not `0.0.0.0`, if you want SDP-anchored RTP to reach this box from other hosts. |
-| `local_sip_port` | `5060` | Local SIP listening port. |
-| `sip_identity_user` | `"sbc"` | User part of this SBC's own Contact/From URI. |
-| `log_level` | `"info"` | App log verbosity (spdlog levels). |
-| `pjsip_log_level` | `"disabled"` | PJSIP's own log verbosity. `"disabled"` (or anything unrecognized) maps to `0`; otherwise it's parsed as a native PJSIP level `0`-`6` (see `pj_log_set_level`). |
-| `control_plane_address` | `"[IP_ADDRESS]"` | Host of the control-plane backend the engine fetches the SIP route table from at startup. |
-| `control_plane_http_port` | `3001` | control-plane backend's HTTP port. |
-| `connection_timeout` | `5` | Seconds to wait when fetching the route snapshot from control-plane. |
+| Section | Key | Default | Meaning |
+| --- | --- | --- | --- |
+| `[logging]` | `level` | `"info"` | App log verbosity (spdlog levels). |
+| `[logging]` | `pjsip_level` | `"disabled"` | PJSIP's own log verbosity. `"disabled"` (or anything unrecognized) maps to `0`; otherwise it's parsed as a native PJSIP level `0`-`6` (see `pj_log_set_level`). |
+| `[sip]` | `address` | `"127.0.0.1"` | IP the SIP transport binds to. Must be a real interface address, not `0.0.0.0`, if you want SDP-anchored RTP to reach this box from other hosts. |
+| `[sip]` | `port` | `5060` | Local SIP listening port. |
+| `[sip]` | `identity_user` | `"sbc"` | User part of this SBC's own Contact/From URI. |
+| `[sip]` | `invite_timeout_ms` | `32000` | How long to wait for a final response to an outbound INVITE before timing it out. |
+| `[sip]` | `rtp_inactivity_timeout_s` | `60` | Ends an established call after this many seconds without RTP from either leg. `0` disables the check. |
+| `[control_plane]` | `ws_url` | `"ws://127.0.0.1:3001/ws/engine"` | Websocket URL the engine connects to for its route table and (once it lands) SIP user snapshots. Plaintext `ws://` only -- TLS is out of scope for the whole engine today. |
+| `[control_plane]` | `connect_timeout_s` | `5` | Seconds to wait for each connect/handshake attempt before treating it as failed. |
+| `[control_plane]` | `retry_interval_s` | `5` | Seconds to wait between reconnect attempts. |
 
 ## Build & test
 
