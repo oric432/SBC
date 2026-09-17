@@ -89,22 +89,30 @@ void MessageRouter::on_rx_offer(pjsip_inv_session* inv, const pjmedia_sdp_sessio
         return;
     }
     auto* session = call_manager_->find_by_inv(inv);
-    if (session == nullptr || !session->setup_sm().is_established()) {
-        // An offer-bearing UPDATE before the initial INVITE completes is only
-        // valid per RFC 3311 S5.1 once a reliable provisional response (100rel)
-        // + PRACK have already resolved that leg's own offer/answer -- our
-        // reliable provisionals never carry SDP (see #123), so that leg's own
-        // offer/answer is still outstanding and no compliant peer can satisfy
-        // this precondition here. Leave the negotiator unanswered; pjsip
-        // auto-rejects (typically 500, since this leg's own initial offer is
-        // itself still outstanding at this point -- see PJSIP's sip_inv.c
-        // inv_respond_incoming_update -- or 488 once it isn't).
+    if (session == nullptr) {
+        return;
+    }
+    // PJSIP already enforces RFC 3311 S5.1 per leg before on_rx_offer2 ever
+    // fires (sip_inv.c's inv_respond_incoming_update: 491/500 while that leg's
+    // own negotiator isn't DONE) -- this only gates our own media readiness.
+    // early_media_relayed() is true once the early answer went out *and* the
+    // bridge is armed (#219), which is exactly what negotiate_mid_dialog_offer()
+    // needs from the other leg (#211).
+    const bool early_media_active = session->exchange() != nullptr && session->exchange()->early_media_relayed();
+    if (!session->setup_sm().is_established() && !early_media_active) {
         return;
     }
 
     const Leg leg = session->leg_for(inv);
     const std::string sdp = offer != nullptr ? Sdp::serialize(offer) : std::string{};
     session->dialog_sm().process_event(UpdateReceived{.sdp_ = sdp, .leg_ = leg});
+    // An early-dialog UPDATE shares DialogSm with the confirmed phase (#116),
+    // but nothing else drives that machine until setup reaches Established --
+    // a kFailed here would otherwise leave it wedged in Terminating. Hand
+    // teardown back to the machine that's actually still running the call.
+    if (!session->setup_sm().is_established() && session->dialog_sm().is_terminating()) {
+        session->setup_sm().process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed});
+    }
 }
 
 void MessageRouter::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {

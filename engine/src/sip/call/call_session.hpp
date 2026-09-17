@@ -72,13 +72,10 @@ public:
     OfferAnswerExchange* exchange() { return exchange_.get(); }
     void release_exchange();
     [[nodiscard]] bool has_exchange() const { return exchange_ != nullptr; }
-    void commit_offer_answer(
-        std::string offer,
-        std::string answer,
-        std::optional<Sdp::AudioCodecInfo> caller_codec,
-        std::optional<Sdp::AudioCodecInfo> callee_codec,
-        std::optional<std::uint8_t> caller_dtmf_pt,
-        std::optional<std::uint8_t> callee_dtmf_pt);
+    // Codec/DTMF-PT are already live on CallLeg by the time either exchange
+    // commits (see OfferAnswerActions::prepare_answer(), #211) -- this only
+    // records the negotiated SDP text.
+    void commit_offer_answer(std::string offer, std::string answer);
     [[nodiscard]] const std::string& negotiated_offer() const { return negotiated_offer_; }
     [[nodiscard]] const std::string& negotiated_answer() const { return negotiated_answer_; }
 

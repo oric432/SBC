@@ -68,19 +68,9 @@ void CallSession::release_exchange() {
     exchange_.reset();
 }
 
-void CallSession::commit_offer_answer(
-    std::string offer,
-    std::string answer,
-    std::optional<Sdp::AudioCodecInfo> caller_codec,
-    std::optional<Sdp::AudioCodecInfo> callee_codec,
-    std::optional<std::uint8_t> caller_dtmf_pt,
-    std::optional<std::uint8_t> callee_dtmf_pt) {
+void CallSession::commit_offer_answer(std::string offer, std::string answer) {
     negotiated_offer_ = std::move(offer);
     negotiated_answer_ = std::move(answer);
-    leg(Leg::kCaller).codec_ = std::move(caller_codec);
-    leg(Leg::kCallee).codec_ = std::move(callee_codec);
-    leg(Leg::kCaller).dtmf_pt_ = caller_dtmf_pt;
-    leg(Leg::kCallee).dtmf_pt_ = callee_dtmf_pt;
 }
 
 Leg CallSession::leg_for(const pjsip_inv_session* inv) const {
