@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { and, asc, eq, or } from 'drizzle-orm';
+import { and, asc, eq, or, sql } from 'drizzle-orm';
 import { StatusCodes } from 'http-status-codes';
 
 import { db } from '../db/client';
@@ -27,6 +27,21 @@ const toRouteRule = (rule: {
   // widen SipRouteRule's own type.
   codec: rule.codec as SupportedCodec | null,
 });
+
+// route_tables.version exists so a reader (the engine, or anyone diffing two
+// snapshots) can tell two tables apart without comparing every row -- it has
+// to move on every write, atomically with that write, or it's just a
+// permanent "1" that says nothing. sql`... + 1` rather than read-then-write
+// avoids losing an increment to two concurrent mutations.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+const bumpTableVersion = async (tx: Tx, tableId: string): Promise<number> => {
+  const [row] = await tx
+    .update(routeTables)
+    .set({ version: sql`${routeTables.version} + 1` })
+    .where(eq(routeTables.tableId, tableId))
+    .returning();
+  return row.version;
+};
 
 const getDefaultTable = async () => {
   const [table] = await db
@@ -67,17 +82,21 @@ export const createRoute = async (req: Request, res: Response) => {
   const { priority, uri, sip_address, port, codec } = req.body;
   const table = await getDefaultTable();
 
-  const [created] = await db
-    .insert(routeRules)
-    .values({
-      tableId: table.tableId,
-      priority,
-      uri,
-      sipAddress: sip_address,
-      port,
-      codec: codec ?? null,
-    })
-    .returning();
+  const created = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(routeRules)
+      .values({
+        tableId: table.tableId,
+        priority,
+        uri,
+        sipAddress: sip_address,
+        port,
+        codec: codec ?? null,
+      })
+      .returning();
+    await bumpTableVersion(tx, table.tableId);
+    return row;
+  });
 
   logger.info(`Route created: priority=${created.priority} uri=${created.uri}`);
   void broadcastSnapshot();
@@ -90,21 +109,25 @@ export const updateRoute = async (req: Request, res: Response) => {
   const { priority, uri, sip_address, port, codec } = req.body;
   const table = await getDefaultTable();
 
-  const [updated] = await db
-    .update(routeRules)
-    .set({
-      priority,
-      uri,
-      sipAddress: sip_address,
-      port,
-      codec: codec ?? null,
-    })
-    .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, currentPriority)))
-    .returning();
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(routeRules)
+      .set({
+        priority,
+        uri,
+        sipAddress: sip_address,
+        port,
+        codec: codec ?? null,
+      })
+      .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, currentPriority)))
+      .returning();
 
-  if (!updated) {
-    throw new NotFoundError(`Route with priority ${currentPriority} not found`);
-  }
+    if (!row) {
+      throw new NotFoundError(`Route with priority ${currentPriority} not found`);
+    }
+    await bumpTableVersion(tx, table.tableId);
+    return row;
+  });
 
   const priorityLabel =
     updated.priority !== currentPriority ? `${currentPriority}->${updated.priority}` : `${updated.priority}`;
@@ -166,6 +189,7 @@ export const swapRoute = async (req: Request, res: Response) => {
 
     await tx.update(routeRules).set({ priority: currentPriority }).where(eq(routeRules.id, targetRow.id));
 
+    await bumpTableVersion(tx, table.tableId);
     return updatedSource;
   });
 
@@ -179,14 +203,18 @@ export const deleteRoute = async (req: Request, res: Response) => {
   const priority = Number(req.params.priority);
   const table = await getDefaultTable();
 
-  const [deleted] = await db
-    .delete(routeRules)
-    .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, priority)))
-    .returning();
+  const deleted = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(routeRules)
+      .where(and(eq(routeRules.tableId, table.tableId), eq(routeRules.priority, priority)))
+      .returning();
 
-  if (!deleted) {
-    throw new NotFoundError(`Route with priority ${priority} not found`);
-  }
+    if (!row) {
+      throw new NotFoundError(`Route with priority ${priority} not found`);
+    }
+    await bumpTableVersion(tx, table.tableId);
+    return row;
+  });
 
   logger.info(`Route deleted: priority=${deleted.priority} uri=${deleted.uri}`);
   void broadcastSnapshot();
