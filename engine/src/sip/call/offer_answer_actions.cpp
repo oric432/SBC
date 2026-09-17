@@ -246,8 +246,8 @@ void OfferAnswerActions::capture_callee_media(pjmedia_sdp_session* callee_answer
     }
     // Read the decided codec directly: PJSIP's active SDP may not yet be set
     // during its CONNECTING callback.
-    leg(Leg::kCallee).codec_ = Sdp::extract_active_audio_codec(callee_answer);
-    leg(Leg::kCallee).dtmf_pt_ = Sdp::extract_telephone_event_pt(callee_answer);
+    session_.leg(Leg::kCallee).codec_ = Sdp::extract_active_audio_codec(callee_answer);
+    session_.leg(Leg::kCallee).dtmf_pt_ = Sdp::extract_telephone_event_pt(callee_answer);
 }
 
 pjmedia_sdp_session* OfferAnswerActions::build_caller_answer() {
@@ -259,34 +259,35 @@ pjmedia_sdp_session* OfferAnswerActions::build_caller_answer() {
         Log::call()->error("[{}] cannot re-parse caller's original offer for answer", session_.call_id());
         return nullptr;
     }
-    const auto chosen = Sdp::pick_answer_codec(leg(Leg::kCallee).codec_, Sdp::extract_all_audio_codecs(caller_answer));
+    const auto chosen =
+        Sdp::pick_answer_codec(session_.leg(Leg::kCallee).codec_, Sdp::extract_all_audio_codecs(caller_answer));
     if (!chosen) {
         Log::call()->error(
             "[{}] no codec in common between caller's offer and callee's answer ({})",
             session_.call_id(),
-            leg(Leg::kCallee).codec_ ? leg(Leg::kCallee).codec_->name_ : "none");
+            session_.leg(Leg::kCallee).codec_ ? session_.leg(Leg::kCallee).codec_->name_ : "none");
         return nullptr;
     }
     const std::array<Protocols::SupportedCodec, 1> allowed{*chosen};
     Sdp::restrict_audio_codecs(session_.pool(), caller_answer, allowed);
-    leg(Leg::kCaller).codec_ = Sdp::extract_active_audio_codec(caller_answer);
-    leg(Leg::kCaller).dtmf_pt_ = Sdp::extract_telephone_event_pt(caller_answer);
+    session_.leg(Leg::kCaller).codec_ = Sdp::extract_active_audio_codec(caller_answer);
+    session_.leg(Leg::kCaller).dtmf_pt_ = Sdp::extract_telephone_event_pt(caller_answer);
     return caller_answer;
 }
 
 bool OfferAnswerActions::configure_media_bridge() {
-    if (!leg(Leg::kCaller).codec_ || !leg(Leg::kCallee).codec_) {
+    if (!session_.leg(Leg::kCaller).codec_ || !session_.leg(Leg::kCallee).codec_) {
         Log::call()->error("[{}] configure_media_bridge: missing negotiated codec info", session_.call_id());
         return false;
     }
-    const auto* caller_supported = Protocols::find_supported_codec_by_name(leg(Leg::kCaller).codec_->name_);
-    const auto* callee_supported = Protocols::find_supported_codec_by_name(leg(Leg::kCallee).codec_->name_);
+    const auto* caller_supported = Protocols::find_supported_codec_by_name(session_.leg(Leg::kCaller).codec_->name_);
+    const auto* callee_supported = Protocols::find_supported_codec_by_name(session_.leg(Leg::kCallee).codec_->name_);
     if (caller_supported == nullptr || callee_supported == nullptr) {
         Log::call()->error(
             "[{}] configure_media_bridge: negotiated codec not in kSupportedCodecs (caller={}, callee={})",
             session_.call_id(),
-            leg(Leg::kCaller).codec_->name_,
-            leg(Leg::kCallee).codec_->name_);
+            session_.leg(Leg::kCaller).codec_->name_,
+            session_.leg(Leg::kCallee).codec_->name_);
         return false;
     }
 
@@ -298,8 +299,8 @@ bool OfferAnswerActions::configure_media_bridge() {
 
     auto res = session_.media_bridge()->configure_legs(
         *pjmedia_endpoint,
-        LegCodec{.audio_ = *caller_supported, .dtmf_pt_ = leg(Leg::kCaller).dtmf_pt_},
-        LegCodec{.audio_ = *callee_supported, .dtmf_pt_ = leg(Leg::kCallee).dtmf_pt_});
+        LegCodec{.audio_ = *caller_supported, .dtmf_pt_ = session_.leg(Leg::kCaller).dtmf_pt_},
+        LegCodec{.audio_ = *callee_supported, .dtmf_pt_ = session_.leg(Leg::kCallee).dtmf_pt_});
     if (!res) {
         Log::call()->error("[{}] configure_media_bridge failed: {}", session_.call_id(), res.error().message());
         return false;
@@ -323,13 +324,10 @@ void OfferAnswerActions::relay_rejection(int status_code) {
 }
 
 void OfferAnswerActions::commit() {
-    session_.commit_offer_answer(
-        std::move(offer_),
-        std::move(answer_),
-        std::move(leg(Leg::kCaller).codec_),
-        std::move(leg(Leg::kCallee).codec_),
-        leg(Leg::kCaller).dtmf_pt_,
-        leg(Leg::kCallee).dtmf_pt_);
+    // Codecs/DTMF-PT are already live on CallSession::CallLeg -- prepare_answer()
+    // writes them as soon as the bridge is configured, not just once this exchange
+    // confirms (see #211: an early UPDATE can renegotiate before the ACK).
+    session_.commit_offer_answer(std::move(offer_), std::move(answer_));
 }
 
 void OfferAnswerActions::rollback([[maybe_unused]] OfferAnswer::Reason reason) {
@@ -349,7 +347,6 @@ void OfferAnswerActions::fail(OfferAnswer::Reason reason) {
 void OfferAnswerActions::cleanup() {
     offer_.clear();
     answer_.clear();
-    legs_ = {};
     // The session releases the slot after this runner's dispatch returns.
 }
 

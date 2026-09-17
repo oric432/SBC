@@ -1,14 +1,11 @@
 #pragma once
 
-#include <array>
-#include <cstdint>
 #include <optional>
 #include <string>
+#include <pjsip_ua.h>
 
 #include "protocols/supported_codecs.hpp"
 #include "sip/sm/i_offer_answer_actions.hpp"
-#include "sip/sm/leg.hpp"
-#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 class CallSession;
@@ -53,15 +50,6 @@ public:
     void mark_early_media_relayed();
 
 private:
-    // Negotiated codec/DTMF-PT for one leg, staged during this exchange and
-    // handed to CallSession::commit_offer_answer() once both are known.
-    struct LegNegotiation {
-        std::optional<Sdp::AudioCodecInfo> codec_;
-        std::optional<std::uint8_t> dtmf_pt_;
-    };
-
-    LegNegotiation& leg(Leg which) { return legs_[static_cast<std::size_t>(which)]; }
-
     bool create_outbound_leg(const std::string& destination);
     bool send_outbound_invite();
     void capture_callee_media(pjmedia_sdp_session* callee_answer);
@@ -89,7 +77,6 @@ private:
     std::optional<Protocols::SupportedCodec> required_codec_;
     std::string offer_;
     std::string answer_;
-    std::array<LegNegotiation, 2> legs_;
     // Set by hold_answer(), consumed and cleared by release_answer(); an
     // early answer (RFC 3262 S5) prepared ahead of the final response that
     // will actually trigger it. Allocated from session_.pool(), which
