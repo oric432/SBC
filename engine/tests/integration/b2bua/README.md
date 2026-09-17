@@ -117,3 +117,12 @@ actual varying content instead.
 segment relayed to the caller with the pause temporarily stretched to 3s,
 confirmed byte-exact against `g711a.pcap` for all 168 packets relayed
 during that run, including every packet sent before the 200 OK.
+
+`update_early_media`, `update_early_media_prack` and `update_early_media_callee`
+(issue #211) cover an offer-bearing UPDATE sent during early media, before the
+call is Established -- on an unreliable caller leg, a reliable one, and on the
+callee leg. Assertions are purely SDP-body `ereg`s (the new codec on the
+UPDATE's own 200 OK, and either the INVITE's final 200 OK carrying that same
+codec, or staying bodiless per RFC 3262 S5, depending on the leg); the
+underlying transcode path is the same `MediaBridge::configure_legs()` already
+covered above, so no separate audio capture is needed here.

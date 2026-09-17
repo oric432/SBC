@@ -171,6 +171,66 @@ def test_b2bua_caller_and_callee_prack(sbc_engine, render_scenario, run_sipp_pai
     _log.info("scenario '%s' passed", scenario_name)
 
 
+def test_b2bua_update_early_media(sbc_engine, render_scenario, run_sipp_pair):
+    """Issue #211: a caller that only advertised Supported: 100rel (never
+    Require) gets its early answer relayed unreliably on a 183 (#219). The
+    SBC's own gate for #211 opens as soon as that early answer went out --
+    long before the call is Established -- so an offer-bearing UPDATE right
+    after the 183 switches this leg's codec (PCMU -> G722) mid-ringback. The
+    INVITE's own final 200 OK must carry that new codec, not replay the 183's
+    now-stale answer (see Inv::answer_with_active_local())."""
+    scenario_name = "update_early_media"
+    caller_xml = render_scenario(
+        "update_early_media_caller.xml.j2", scenario_name=scenario_name, g722_pcap_path=_PCAP_PATHS["g722"]
+    )
+    callee_xml = render_scenario("callee_early_media.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
+def test_b2bua_update_early_media_prack(sbc_engine, render_scenario, run_sipp_pair):
+    """Issue #211: a caller that requires 100rel PRACKs the SBC's relayed
+    early answer (#123/#214), resolving this leg's own negotiator well before
+    the callee has sent a final response to the initial INVITE. An
+    offer-bearing UPDATE right after the PRACK switches this leg's codec
+    (PCMU -> G722) during that early dialog, and the INVITE's own final 200 OK
+    still must not repeat the SDP (RFC 3262 S5), unaffected by the codec
+    change in between."""
+    scenario_name = "update_early_media_prack"
+    caller_xml = render_scenario(
+        "update_early_media_prack_caller.xml.j2", scenario_name=scenario_name, g722_pcap_path=_PCAP_PATHS["g722"]
+    )
+    callee_xml = render_scenario("callee_prack_183.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
+def test_b2bua_update_early_media_callee(sbc_engine, render_scenario, run_sipp_pair):
+    """Issue #211: the callee leg accepts an early-dialog UPDATE too, not
+    just the caller leg -- the callee itself sends an offer-bearing UPDATE
+    (PCMU -> G722) right after PRACKing its own reliable early answer,
+    before it has even sent a final response to the initial INVITE. Answered
+    locally through the same negotiate_mid_dialog_offer() path, biased
+    toward the caller's already-relayed codec, and exercises the relay's
+    transcode path (caller stays PCMU, callee switches to G722)."""
+    scenario_name = "update_early_media_callee"
+    caller_xml = render_scenario("caller.xml.j2", scenario_name=scenario_name)
+    callee_xml = render_scenario(
+        "callee_update_early_media.xml.j2", scenario_name=scenario_name, g722_pcap_path=_PCAP_PATHS["g722"]
+    )
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
 def test_b2bua_update_new_codec(sbc_engine, render_scenario, run_sipp_pair):
     """Issue #116: a mid-call UPDATE that switches the caller's codec
     (PCMU -> G722) is answered locally on that leg with the new codec,

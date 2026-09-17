@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="{{ scenario_name }}">
+  <recv request="INVITE" crlf="true">
+    <action>
+      <!-- Captured now, before the PRACK/UPDATE exchange below overwrites
+           SIPp's [last_*] macros, same reasoning as callee_prack_183.xml.j2.
+           sbc_contact is this leg's target-refresh URI for the UPDATE this
+           scenario originates below -- the SBC's own dialog Contact, learned
+           from its INVITE. -->
+      <ereg regexp="(.*)" search_in="hdr" header="Via:" check_it="true" assign_to="invite_via"/>
+      <ereg regexp="(.*)" search_in="hdr" header="CSeq:" check_it="true" assign_to="invite_cseq"/>
+      <ereg regexp="sip:[^ ;>]+" search_in="hdr" header="Contact:" check_it="true" assign_to="sbc_contact"/>
+    </action>
+  </recv>
+
+  <!-- Answer reliably, same as callee_prack_183.xml.j2: opens issue #211's
+       gate (OfferAnswerExchange::early_media_relayed()) on the SBC side. -->
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 183 Session Progress
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Require: 100rel
+      RSeq: 1
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687637 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 0
+      a=rtpmap:0 PCMU/8000
+    ]]>
+  </send>
+
+  <recv request="PRACK" crlf="true">
+    <action>
+      <ereg regexp="1 [0-9]+ INVITE" search_in="hdr" header="RAck:" check_it="true" assign_to="rack"/>
+      <!-- This leg's target refresh for the UPDATE below: From/To swap
+           relative to the INVITE this scenario received, since this party
+           is now the one originating a request in the dialog. -->
+      <ereg regexp="(.*)" search_in="hdr" header="From:" check_it="true" assign_to="prack_from"/>
+      <ereg regexp="(.*)" search_in="hdr" header="To:" check_it="true" assign_to="prack_to"/>
+      <log message="received PRACK with RAck=[$rack]"/>
+    </action>
+  </recv>
+
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <!-- Issue #211: the callee leg's own negotiator is DONE once the PRACK
+       above completes, opening the SBC's gate on THIS leg well before this
+       party has even sent a final response to the initial INVITE. Answered
+       locally via the same negotiate_mid_dialog_offer() path (#116), biased
+       toward the caller's already-relayed early-media codec (PCMU) -- since
+       this offers G722 only, the relay ends up transcoding either way. -->
+  <send retrans="500">
+    <![CDATA[
+      UPDATE [$sbc_contact] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: [$prack_to]
+      To: [$prack_from]
+      Call-ID: [call_id]
+      CSeq: 1 UPDATE
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=user1 53655765 2353687638 IN IP[local_ip_type] [local_ip]
+      s=-
+      c=IN IP[media_ip_type] [media_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 9
+      a=rtpmap:9 G722/8000
+    ]]>
+  </send>
+
+  <recv response="200" rtd="true">
+    <action>
+      <ereg regexp="m=audio [1-9][0-9]* RTP/AVP 9" search_in="body" check_it="true" assign_to="update_answer_codec"/>
+      <log message="callee-initiated early UPDATE answered with [$update_answer_codec]"/>
+    </action>
+  </recv>
+
+  <!-- 200 OK to the original INVITE, carrying no SDP -- RFC 3262 S5, same as
+       callee_prack_183.xml.j2, unaffected by the UPDATE having since changed
+       this leg's negotiated codec to G722. From/To come from prack_from/
+       prack_to (captured before the UPDATE), not [last_From:]/[last_To:]:
+       those now reflect the UPDATE's own 200 OK, which this party originated
+       and so has From/To swapped relative to the original INVITE's dialog
+       orientation -- unlike Call-ID, which stays the same regardless. -->
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      Via: [$invite_via]
+      From: [$prack_from]
+      To: [$prack_to]
+      [last_Call-ID:]
+      CSeq: [$invite_cseq]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <recv request="ACK" rtd="true" crlf="true"></recv>
+
+  <!-- Now that this leg is on G722, send real G.722 so the relay's
+       transcode path (PCMU on the caller leg, G722 here) is exercised. -->
+  <nop>
+    <action>
+      <exec play_pcap_audio="{{ g722_pcap_path }}"/>
+    </action>
+  </nop>
+
+  <recv request="BYE" crlf="true"></recv>
+
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+    ]]>
+  </send>
+</scenario>
