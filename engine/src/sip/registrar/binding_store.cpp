@@ -64,8 +64,8 @@ std::vector<Binding> BindingStore::find_live(const std::string& aor, std::chrono
     return live;
 }
 
-std::optional<Binding>
-BindingStore::find_preferred(const std::string& aor, std::chrono::steady_clock::time_point now) const {
+std::optional<Binding> BindingStore::find_preferred(const std::string& aor, std::chrono::steady_clock::time_point now)
+    const {
     auto live = find_live(aor, now);
     if (live.empty()) {
         return std::nullopt;

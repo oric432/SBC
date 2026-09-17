@@ -33,8 +33,9 @@ TEST_CASE("BindingStore applies a fresh binding") {
     BindingStore store;
     const auto now = kEpoch + std::chrono::seconds(100);
 
-    const auto result =
-        store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 1, now, std::chrono::seconds(60))});
+    const auto result = store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 1, now, std::chrono::seconds(60))});
 
     REQUIRE(result == BindingStore::ApplyResult::kApplied);
     const auto preferred = store.find_preferred("alice@sbc.local", now);
@@ -45,11 +46,14 @@ TEST_CASE("BindingStore applies a fresh binding") {
 TEST_CASE("BindingStore refresh with a higher CSeq extends expiry") {
     BindingStore store;
     const auto t0 = kEpoch;
-    store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 1, t0, std::chrono::seconds(60))});
+    store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 1, t0, std::chrono::seconds(60))});
 
     const auto t1 = t0 + std::chrono::seconds(50);
-    const auto result =
-        store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 2, t1, std::chrono::seconds(60))});
+    const auto result = store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 2, t1, std::chrono::seconds(60))});
 
     REQUIRE(result == BindingStore::ApplyResult::kApplied);
     // Still live at t0 + 60 (the *original* expiry) because the refresh at
@@ -62,13 +66,16 @@ TEST_CASE("BindingStore refresh with a higher CSeq extends expiry") {
 TEST_CASE("BindingStore a differing Call-ID replaces the binding unconditionally") {
     BindingStore store;
     const auto t0 = kEpoch;
-    store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 5, t0, std::chrono::seconds(60))});
+    store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 5, t0, std::chrono::seconds(60))});
 
     // A lower CSeq would normally conflict, but a different Call-ID means a
     // different UA instance re-registering, so it's always allowed.
     const auto t1 = t0 + std::chrono::seconds(10);
-    const auto result =
-        store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-2", 1, t1, std::chrono::seconds(60))});
+    const auto result = store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-2", 1, t1, std::chrono::seconds(60))});
 
     REQUIRE(result == BindingStore::ApplyResult::kApplied);
     const auto preferred = store.find_preferred("alice@sbc.local", t1);
@@ -79,11 +86,14 @@ TEST_CASE("BindingStore a differing Call-ID replaces the binding unconditionally
 TEST_CASE("BindingStore rejects a non-increasing CSeq on the same Call-ID") {
     BindingStore store;
     const auto t0 = kEpoch;
-    store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 5, t0, std::chrono::seconds(60))});
+    store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 5, t0, std::chrono::seconds(60))});
 
     const auto t1 = t0 + std::chrono::seconds(10);
-    const auto result =
-        store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 5, t1, std::chrono::seconds(60))});
+    const auto result = store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 5, t1, std::chrono::seconds(60))});
 
     REQUIRE(result == BindingStore::ApplyResult::kCallIdCseqConflict);
     // Rejected atomically -- the original binding (cseq 5, t0+60 expiry) is untouched.
@@ -126,7 +136,8 @@ TEST_CASE("BindingStore Expires: 0 removes one contact") {
 
     const auto t1 = t0 + std::chrono::seconds(10);
     const auto result = store.apply_contacts(
-        "alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 2, t1, std::chrono::seconds(0))});
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 2, t1, std::chrono::seconds(0))});
 
     REQUIRE(result == BindingStore::ApplyResult::kApplied);
     const auto live = store.find_live("alice@sbc.local", t1);
@@ -151,7 +162,9 @@ TEST_CASE("BindingStore Contact: * removes every contact unconditionally") {
 TEST_CASE("BindingStore sweep drops expired contacts") {
     BindingStore store;
     const auto t0 = kEpoch;
-    store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 1, t0, std::chrono::seconds(60))});
+    store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 1, t0, std::chrono::seconds(60))});
 
     const auto after_expiry = t0 + std::chrono::seconds(120);
     store.sweep(after_expiry);
@@ -163,10 +176,14 @@ TEST_CASE("BindingStore sweep drops expired contacts") {
 TEST_CASE("BindingStore find_preferred returns the most recently refreshed contact") {
     BindingStore store;
     const auto t0 = kEpoch;
-    store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@1.1.1.1", "call-1", 1, t0, std::chrono::seconds(60))});
+    store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@1.1.1.1", "call-1", 1, t0, std::chrono::seconds(60))});
 
     const auto t1 = t0 + std::chrono::seconds(5);
-    store.apply_contacts("alice@sbc.local", {make_binding("sip:alice@2.2.2.2", "call-2", 1, t1, std::chrono::seconds(60))});
+    store.apply_contacts(
+        "alice@sbc.local",
+        {make_binding("sip:alice@2.2.2.2", "call-2", 1, t1, std::chrono::seconds(60))});
 
     const auto preferred = store.find_preferred("alice@sbc.local", t1);
     REQUIRE(preferred.has_value());

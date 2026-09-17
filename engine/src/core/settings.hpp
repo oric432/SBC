@@ -19,6 +19,8 @@ constexpr int kConnectionTimeoutSeconds = 5;
 constexpr int kInviteTimeoutMs = 32000;
 constexpr int kRtpInactivityTimeoutSeconds = 60;
 constexpr int kRetryIntervalSeconds = 5;
+constexpr int kMinExpiresSeconds = 60;
+constexpr int kMaxExpiresSeconds = 120;
 } // namespace SettingsDefaults
 
 struct LoggingSettings {
@@ -45,11 +47,21 @@ struct ControlPlaneSettings {
     std::chrono::seconds retry_interval_s{SettingsDefaults::kRetryIntervalSeconds};
 };
 
+struct RegistrarSettings {
+    // Below this, a REGISTER is rejected with 423 Interval Too Brief rather
+    // than granted a shorter expiry -- keeps a NAT pinhole's actual refresh
+    // interval from silently degrading to something that won't survive it.
+    int min_expires_s = SettingsDefaults::kMinExpiresSeconds;
+    // Also the expiry granted when a REGISTER specifies none at all.
+    int max_expires_s = SettingsDefaults::kMaxExpiresSeconds;
+};
+
 // Runtime configuration loaded from settings.toml at startup.
 struct Settings {
     LoggingSettings logging;
     SipSettings sip;
     ControlPlaneSettings control_plane;
+    RegistrarSettings registrar;
 };
 
 // Maps "disabled" (and anything unrecognized) to 0; otherwise parses a native

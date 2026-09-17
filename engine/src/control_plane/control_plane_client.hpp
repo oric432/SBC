@@ -11,6 +11,7 @@
 
 #include "core/utils/error.hpp"
 #include "protocols/control_plane_ws.hpp"
+#include "sip/registrar/users_store.hpp"
 #include "sip/route_table/routes_store.hpp"
 
 namespace SbcEngine {
@@ -34,8 +35,9 @@ struct ControlPlaneClientConfig {
 // Maintains the engine's one persistent connection to the control plane,
 // replacing the old one-shot HTTP route fetch (RoutesManager). On every
 // successful connect -- the first one and every reconnect -- the control
-// plane's first message is a full route snapshot, so the engine never has to
-// reconcile a delta against a version it might have missed.
+// plane's first message is a full snapshot (routes and SIP users), so the
+// engine never has to reconcile a delta against a version it might have
+// missed.
 //
 // start()/stop() may be called from any thread; every other operation runs
 // on the executor this object was constructed with (see the .cpp).
@@ -44,7 +46,8 @@ public:
     ControlPlaneClient(
         boost::asio::any_io_executor executor,
         ControlPlaneClientConfig config,
-        RoutesStore* routes_store);
+        RoutesStore* routes_store,
+        UsersStore* users_store);
     ~ControlPlaneClient();
 
     ControlPlaneClient(const ControlPlaneClient&) = delete;
@@ -67,6 +70,12 @@ public:
     // thread; safe to call more than once.
     void stop();
 
+    // Sends one registration mirror update. Best-effort and fire-and-forget:
+    // if the channel isn't currently connected, this is silently dropped
+    // rather than queued for a future reconnect (see RegistrationEvent).
+    // Safe to call from any thread.
+    void send_registration(Protocols::RegistrationEvent event);
+
     // A pure parsing step, exposed publicly (rather than as a private test
     // seam) because boost::asio::any_io_executor pulls in <any>, and the
     // "#define private public" trick this codebase otherwise uses for test
@@ -87,6 +96,9 @@ private:
     void handle_pre_read_failure(boost::system::error_code err, std::string_view stage);
     void schedule_reconnect();
     void resolve_first_snapshot(VoidResult result);
+    void do_send_registration(Protocols::RegistrationEvent event);
+    void do_write();
+    void on_write(boost::system::error_code err);
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

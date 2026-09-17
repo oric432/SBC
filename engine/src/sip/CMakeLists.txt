@@ -17,6 +17,8 @@ add_library(sip STATIC
     router/extract_utils.cpp
     route_table/routes_store.cpp
     registrar/binding_store.cpp
+    registrar/users_store.cpp
+    registrar/registrar_actions.cpp
     sm/sm_runner.cpp
     sm/options_actions.cpp
 )
@@ -62,6 +64,10 @@ if(BUILD_TESTS)
 
     target_link_libraries(sip_tests PRIVATE
         sip
+        # RegistrarActions calls ControlPlaneClient::send_registration();
+        # sip itself doesn't link control_plane (SbcApp does, alongside sip,
+        # in the top-level CMakeLists.txt) so this executable needs it too.
+        control_plane
         third_party::catch2
         third_party::spdlog
         third_party::boost_asio

@@ -5,6 +5,8 @@
 #include <pjsip_ua.h>
 
 #include "protocols/supported_codecs.hpp"
+#include "sip/registrar/binding_store.hpp"
+#include "sip/registrar/users_store.hpp"
 #include "sip/sm/i_setup_actions.hpp"
 
 namespace SbcEngine {
@@ -14,9 +16,11 @@ class RoutesStore;
 // Per-call protocol adapter for the generic setup lifecycle.
 class SetupActions : public ISetupActions {
 public:
-    SetupActions(CallSession& session, RoutesStore* routes_store)
+    SetupActions(CallSession& session, RoutesStore* routes_store, UsersStore* users_store, BindingStore* binding_store)
         : session_(session)
-        , routes_store_(routes_store) {}
+        , routes_store_(routes_store)
+        , users_store_(users_store)
+        , binding_store_(binding_store) {}
 
     // Translate stack callbacks into logical setup/exchange operations.
     void on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
@@ -40,6 +44,8 @@ private:
     void handle_disconnect(pjsip_inv_session* inv);
     CallSession& session_;
     RoutesStore* routes_store_;
+    UsersStore* users_store_;
+    BindingStore* binding_store_;
     // The status code report_progress() last actually sent the caller (post
     // callee-code mirroring), 0 before the first one -- lets is_new_progress()
     // tell a genuine status change from a retransmission (see #214).

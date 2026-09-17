@@ -49,14 +49,15 @@ public:
     void remove_all(const std::string& aor);
 
     // Every live contact for `aor`, most-recently-refreshed first.
-    [[nodiscard]] std::vector<Binding>
-    find_live(const std::string& aor, std::chrono::steady_clock::time_point now) const;
+    [[nodiscard]] std::vector<Binding> find_live(const std::string& aor, std::chrono::steady_clock::time_point now)
+        const;
 
     // The contact calls should route to: the most recently refreshed live
     // binding, or nullopt if the AOR has none. Never more than one -- the
     // engine doesn't fork (root AGENTS.md, known limitations).
-    [[nodiscard]] std::optional<Binding>
-    find_preferred(const std::string& aor, std::chrono::steady_clock::time_point now) const;
+    [[nodiscard]] std::optional<Binding> find_preferred(
+        const std::string& aor,
+        std::chrono::steady_clock::time_point now) const;
 
     // Drops every expired contact (and any AOR left with none). find_live()/
     // find_preferred() already filter expired contacts out on their own, so
