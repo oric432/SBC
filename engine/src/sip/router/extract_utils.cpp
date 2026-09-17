@@ -106,8 +106,14 @@ std::string extract_uri_host(const std::string& uri) {
     else {
         host_start = at_pos + 1;
     }
-    auto colon_pos = uri.find(':', host_start);
-    auto end = colon_pos == std::string::npos ? uri.size() : colon_pos;
+    // The host ends at the port colon, or -- for "sip:alice@sbc.local;transport=udp"
+    // style URIs -- at the first URI parameter (';') or header (`?`) instead;
+    // stopping at ':' alone left those trailing on the "host" and broke
+    // UsersStore::is_local_domain() lookups for exactly that URI shape.
+    auto end = uri.find_first_of(":;?", host_start);
+    if (end == std::string::npos) {
+        end = uri.size();
+    }
     return uri.substr(host_start, end - host_start);
 }
 

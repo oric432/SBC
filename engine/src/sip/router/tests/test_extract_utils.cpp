@@ -220,6 +220,39 @@ TEST_CASE("extract_uri_user returns empty for an empty string", "[extract_utils]
     CHECK(extract_uri_user("").empty());
 }
 
+TEST_CASE("extract_uri_host extracts the host after the user part", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@sbc.local") == "sbc.local");
+}
+
+TEST_CASE("extract_uri_host extracts the host from a bare host URI with no user part", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:10.0.0.1:5060") == "10.0.0.1");
+}
+
+TEST_CASE("extract_uri_host stops at the port colon", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@sbc.local:5060") == "sbc.local");
+}
+
+TEST_CASE("extract_uri_host stops at a URI parameter", "[extract_utils]") {
+    // A Cisco phone's outbound Request-URI commonly carries ";transport=udp" --
+    // without stopping here, UsersStore::is_local_domain() would miss this
+    // exact domain and fall through to the static route table.
+    CHECK(extract_uri_host("sip:alice@sbc.local;transport=udp") == "sbc.local");
+}
+
+TEST_CASE("extract_uri_host stops at a URI header", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@sbc.local?Subject=test") == "sbc.local");
+}
+
+TEST_CASE("extract_uri_host stops at the first of a port, a parameter, or a header", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@sbc.local:5060;transport=udp?Subject=test") == "sbc.local");
+}
+
+TEST_CASE(
+    "extract_uri_host returns empty for a bare host with no scheme separator and no user part",
+    "[extract_utils]") {
+    CHECK(extract_uri_host("sbc.local").empty());
+}
+
 TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][call_session]") {
     constexpr int kTestRoutePort = 5060;
     boost::asio::io_context ioc;
