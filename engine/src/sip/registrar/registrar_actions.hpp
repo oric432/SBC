@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <pjsip.h>
 
@@ -58,8 +59,20 @@ private:
     // (the caller does that); any other non-success is a rejection, with
     // *status_code already filled in by pjsip.
     static pj_status_t verify(pjsip_rx_data* rdata, const std::string& realm, int* status_code);
+    // The username the digest response actually authenticated, straight from
+    // the request's own Authorization header -- pjsip_auth_srv_verify() only
+    // proves the response matches some credential set named in that header,
+    // never that it matches the AOR the request is trying to register.
+    static std::optional<std::string> authenticated_username(pjsip_rx_data* rdata);
     void send_challenge(pjsip_rx_data* rdata, const std::string& realm);
     void process_registration(pjsip_rx_data* rdata, const std::string& realm, const std::string& to_user);
+    // True (having sent 423 + Min-Expires) if some contact's requested expiry
+    // is below config_->min_expires_s_. Expires: 0 (de-registration) is
+    // exempt -- the floor doesn't apply to it.
+    bool reject_if_too_brief(
+        pjsip_rx_data* rdata,
+        const std::vector<pjsip_contact_hdr*>& contacts,
+        std::optional<int> top_level_expires);
     void respond(pjsip_rx_data* rdata, int status_code);
     // 200 OK listing every live binding currently on file for `aor`.
     void send_ok(pjsip_rx_data* rdata, const std::string& aor);

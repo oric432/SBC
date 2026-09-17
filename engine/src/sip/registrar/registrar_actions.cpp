@@ -103,7 +103,17 @@ void RegistrarActions::handle(pjsip_rx_data* rdata) {
     const pj_status_t status = verify(rdata, *realm, &status_code);
     if (status == PJ_SUCCESS) {
         const auto* to_uri = static_cast<pjsip_sip_uri*>(pjsip_uri_get_uri(rdata->msg_info.to->uri));
-        process_registration(rdata, *realm, to_std_string(to_uri->user));
+        const std::string to_user = to_std_string(to_uri->user);
+        // A valid digest response only proves the requester knows some
+        // account's credentials in this realm -- without this check, that
+        // account could register any other local user's AOR to its own
+        // source address and hijack that user's inbound calls.
+        const auto authenticated_user = authenticated_username(rdata);
+        if (!authenticated_user || *authenticated_user != to_user) {
+            respond(rdata, PJSIP_SC_FORBIDDEN);
+            return;
+        }
+        process_registration(rdata, *realm, to_user);
         return;
     }
     if (status == PJSIP_EAUTHNOAUTH) {
@@ -128,6 +138,16 @@ std::optional<std::string> RegistrarActions::local_domain(pjsip_rx_data* rdata) 
         return std::nullopt;
     }
     return host;
+}
+
+std::optional<std::string> RegistrarActions::authenticated_username(pjsip_rx_data* rdata) {
+    const auto* auth_hdr =
+        static_cast<pjsip_authorization_hdr*>(pjsip_msg_find_hdr(rdata->msg_info.msg, PJSIP_H_AUTHORIZATION, nullptr));
+    if (auth_hdr == nullptr) {
+        return std::nullopt;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C API
+    return to_std_string(auth_hdr->credential.digest.username);
 }
 
 pj_status_t RegistrarActions::verify(pjsip_rx_data* rdata, const std::string& realm, int* status_code) {
@@ -225,28 +245,9 @@ void RegistrarActions::process_registration(
         return;
     }
 
-    // Reject a too-brief request before touching BindingStore at all --
-    // Expires: 0 (de-registration) is exempt, min_expires_s_ doesn't apply.
-    for (const auto* contact : contacts) {
-        const int raw = raw_expires_for_contact(contact, top_level_expires, config_->max_expires_s_);
-        if (raw != 0 && raw < config_->min_expires_s_) {
-            pjsip_tx_data* tdata = nullptr;
-            if (pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_INTERVAL_TOO_BRIEF, nullptr, &tdata) !=
-                PJ_SUCCESS) {
-                return;
-            }
-            auto* min_expires =
-                pjsip_min_expires_hdr_create(tdata->pool, static_cast<unsigned>(config_->min_expires_s_));
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
-            pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(min_expires));
-            pjsip_response_addr res_addr;
-            if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
-                pjsip_tx_data_dec_ref(tdata);
-                return;
-            }
-            pjsip_endpt_send_response(ctx_->endpt_, &res_addr, tdata, nullptr, nullptr);
-            return;
-        }
+    // Reject a too-brief request before touching BindingStore at all.
+    if (reject_if_too_brief(rdata, contacts, top_level_expires)) {
+        return;
     }
 
     const std::string call_id = to_std_string(rdata->msg_info.cid->id);
@@ -259,11 +260,19 @@ void RegistrarActions::process_registration(
     std::vector<Binding> new_bindings;
     new_bindings.reserve(contacts.size());
     for (const auto* contact : contacts) {
+        std::string contact_uri = print_contact_uri(rdata->tp_info.pool, contact->uri);
+        // print_contact_uri() returns "" on a pjsip_uri_print() failure --
+        // storing that would produce a Contact header with no URI in a later
+        // 200 OK (parse_uri() returns nullptr for an empty string).
+        if (contact_uri.empty()) {
+            respond(rdata, PJSIP_SC_BAD_REQUEST);
+            return;
+        }
         const int raw = raw_expires_for_contact(contact, top_level_expires, config_->max_expires_s_);
         const int granted = raw == 0 ? 0 : std::min(raw, config_->max_expires_s_);
         new_bindings.push_back(
             Binding{
-                .contact_uri_ = print_contact_uri(rdata->tp_info.pool, contact->uri),
+                .contact_uri_ = std::move(contact_uri),
                 .source_address_ = source_address,
                 .source_port_ = source_port,
                 .transport_ = "udp",
@@ -284,6 +293,34 @@ void RegistrarActions::process_registration(
     }
 
     send_ok(rdata, aor);
+}
+
+bool RegistrarActions::reject_if_too_brief(
+    pjsip_rx_data* rdata,
+    const std::vector<pjsip_contact_hdr*>& contacts,
+    std::optional<int> top_level_expires) {
+    for (const auto* contact : contacts) {
+        const int raw = raw_expires_for_contact(contact, top_level_expires, config_->max_expires_s_);
+        if (raw == 0 || raw >= config_->min_expires_s_) {
+            continue;
+        }
+        pjsip_tx_data* tdata = nullptr;
+        if (pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_INTERVAL_TOO_BRIEF, nullptr, &tdata) !=
+            PJ_SUCCESS) {
+            return true;
+        }
+        auto* min_expires = pjsip_min_expires_hdr_create(tdata->pool, static_cast<unsigned>(config_->min_expires_s_));
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
+        pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(min_expires));
+        pjsip_response_addr res_addr;
+        if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+            pjsip_tx_data_dec_ref(tdata);
+            return true;
+        }
+        pjsip_endpt_send_response(ctx_->endpt_, &res_addr, tdata, nullptr, nullptr);
+        return true;
+    }
+    return false;
 }
 
 void RegistrarActions::respond(pjsip_rx_data* rdata, int status_code) {
