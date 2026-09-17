@@ -227,10 +227,12 @@ void OfferAnswerActions::send_answer(pjmedia_sdp_session* caller_answer) {
     }
     // Once the answer already went out on an early provisional, PJSIP's
     // negotiator for the caller leg is already done -- offering SDP again
-    // here hits pj_assert(0)/EINSTATE. Send the 200 OK bodiless; PJSIP clones
-    // the provisional's body onto it for us (see #214).
-    const pjmedia_sdp_session* body = early_media_relayed_ ? nullptr : caller_answer;
-    answer_sent_ = Inv::answer(session_.inv_caller(), PJSIP_SC_OK, body);
+    // here hits pj_assert(0)/EINSTATE. Refresh the body from the negotiator's
+    // active local SDP instead of passing one: an early-dialog UPDATE (#211)
+    // may have renegotiated since that provisional, and PJSIP's own clone of
+    // it would otherwise go out stale on a non-100rel leg (see #214, #211).
+    answer_sent_ = early_media_relayed_ ? Inv::answer_with_active_local(session_.inv_caller(), PJSIP_SC_OK)
+                                        : Inv::answer(session_.inv_caller(), PJSIP_SC_OK, caller_answer);
     if (!answer_sent_) {
         return;
     }
