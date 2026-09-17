@@ -38,4 +38,9 @@ std::string extract_from_display_name(pjsip_rx_data* rx_data);
 // identity of their own).
 std::string extract_uri_user(const std::string& uri);
 
+// Pulls the "host" part out of a SIP URI like "sip:alice@sbc.local:5060",
+// e.g. "sbc.local" -- no port, so it can be compared directly against a SIP
+// user's realm (UsersStore::is_local_domain()).
+std::string extract_uri_host(const std::string& uri);
+
 } // namespace SbcEngine
