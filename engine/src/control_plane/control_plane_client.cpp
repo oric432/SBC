@@ -229,6 +229,12 @@ void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*by
         if (impl_->stopped_) {
             return;
         }
+        // A first_snapshot_timer_ armed by this connection's own on_handshake()
+        // must not be left running against the reconnect below -- if
+        // retry_interval_ is configured longer than the timer's remaining
+        // budget, it would fire and fail startup before do_connect() ever
+        // gets a chance to cancel it itself.
+        impl_->first_snapshot_timer_.cancel();
         Log::app()->warn(
             "control-plane websocket disconnected ({}); reconnecting in {}s",
             err.message(),
