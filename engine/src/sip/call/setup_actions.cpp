@@ -1,6 +1,7 @@
 #include "setup_actions.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <utility>
 #include <pjsip_ua.h>
@@ -34,6 +35,34 @@ void SetupActions::begin_setup() {
 RouteResolution SetupActions::resolve_route() {
     const PjContext* ctx = session_.ctx();
     const std::string& request_uri = session_.request_uri();
+
+    // Local domain (i.e. some enabled SIP user's realm) + a user we know:
+    // route to that user's current registration, or 480 if they're not
+    // bound right now. A local domain with an *unknown* user falls through
+    // to the static route table below -- e.g. a registered phone dialling
+    // the PSTN puts our own domain in its outbound Request-URI, since it
+    // sends everything to us. With no users provisioned there are no local
+    // domains at all, so this is inert and routing behaves exactly as it
+    // did before the registrar existed.
+    if (users_store_ != nullptr && binding_store_ != nullptr) {
+        const std::string host = extract_uri_host(request_uri);
+        if (users_store_->is_local_domain(host)) {
+            const std::string user = extract_uri_user(request_uri);
+            if (users_store_->find(user, host)) {
+                const std::string aor = std::format("{}@{}", user, host);
+                if (auto binding = binding_store_->find_preferred(aor, std::chrono::steady_clock::now())) {
+                    Log::sip()->info("[{}] routing {} to its current registration", session_.call_id(), aor);
+                    return {
+                        .kind_ = RouteResolution::Kind::kFound,
+                        .destination_ =
+                            std::format("sip:{}@{}:{}", user, binding->source_address_, binding->source_port_),
+                        .required_codec_ = std::nullopt};
+                }
+                Log::sip()->warn("[{}] {} is a known local user with no active registration", session_.call_id(), aor);
+                return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
+            }
+        }
+    }
 
     auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
     if (!route) {

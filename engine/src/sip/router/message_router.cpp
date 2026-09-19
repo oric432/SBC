@@ -28,6 +28,9 @@ void MessageRouter::on_rx_request(pjsip_rx_data* request) {
     else if (method == "OPTIONS") {
         process_options(request);
     }
+    else if (method == "REGISTER") {
+        process_register(request);
+    }
     else if (method == "BYE" || method == "CANCEL") {
         request_actions_.handle_unmatched_dialog_request(request);
     }
@@ -140,6 +143,10 @@ void MessageRouter::process_options(pjsip_rx_data* request) {
     options_actions_.set_request(request);
     options_sm_.reset(extract_call_id(request));
     options_sm_.process_event(MessageReceived{});
+}
+
+void MessageRouter::process_register(pjsip_rx_data* request) {
+    registrar_actions_.handle(request);
 }
 
 void MessageRouter::process_pending_media_events() {

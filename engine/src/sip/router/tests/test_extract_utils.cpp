@@ -8,6 +8,8 @@
 #include "sip/router/extract_utils.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/registrar/binding_store.hpp"
+#include "sip/registrar/users_store.hpp"
 #include "sip/route_table/routes_store.hpp"
 
 namespace SbcEngine {
@@ -218,6 +220,39 @@ TEST_CASE("extract_uri_user returns empty for an empty string", "[extract_utils]
     CHECK(extract_uri_user("").empty());
 }
 
+TEST_CASE("extract_uri_host extracts the host after the user part", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@sbc.local") == "sbc.local");
+}
+
+TEST_CASE("extract_uri_host extracts the host from a bare host URI with no user part", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:10.0.0.1:5060") == "10.0.0.1");
+}
+
+TEST_CASE("extract_uri_host stops at the port colon", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@sbc.local:5060") == "sbc.local");
+}
+
+TEST_CASE("extract_uri_host stops at a URI parameter", "[extract_utils]") {
+    // A Cisco phone's outbound Request-URI commonly carries ";transport=udp" --
+    // without stopping here, UsersStore::is_local_domain() would miss this
+    // exact domain and fall through to the static route table.
+    CHECK(extract_uri_host("sip:alice@sbc.local;transport=udp") == "sbc.local");
+}
+
+TEST_CASE("extract_uri_host stops at a URI header", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@sbc.local?Subject=test") == "sbc.local");
+}
+
+TEST_CASE("extract_uri_host stops at the first of a port, a parameter, or a header", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@sbc.local:5060;transport=udp?Subject=test") == "sbc.local");
+}
+
+TEST_CASE(
+    "extract_uri_host returns empty for a bare host with no scheme separator and no user part",
+    "[extract_utils]") {
+    CHECK(extract_uri_host("sbc.local").empty());
+}
+
 TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][call_session]") {
     constexpr int kTestRoutePort = 5060;
     boost::asio::io_context ioc;
@@ -229,13 +264,16 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
         1,
         Protocols::SipRouteRule{.uri = "*", .sip_address = "192.0.2.1", .port = kTestRoutePort, .codec = std::nullopt});
     routes.set_snapshot(std::move(snapshot));
+    UsersStore users;
+    BindingStore bindings;
     CallManager manager;
     const ScopedPool pool;
     auto request = parse_rdata(pool.get(), kInviteWithSdp);
     // No signaling legs are installed: the malformed offer must be rejected
     // before outbound creation. This exercises the synchronous exchange-result handling,
     // real exchange actions, both runners, and deferred session retirement.
-    auto* session = manager.create_session("exchange-reject", &context, &routes, ioc.get_executor(), &request);
+    auto* session =
+        manager.create_session("exchange-reject", &context, &routes, &users, &bindings, ioc.get_executor(), &request);
     session->setup_sm().process_event(Setup::Requested{});
     REQUIRE(session->setup_sm().is_done());
     REQUIRE_FALSE(session->setup_sm().is_established());

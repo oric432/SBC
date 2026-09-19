@@ -1,7 +1,9 @@
 #include "control_plane_client.hpp"
 
+#include <deque>
 #include <future>
 #include <utility>
+#include <boost/asio/buffer.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/error.hpp>
@@ -20,6 +22,12 @@ namespace Beast = boost::beast;
 namespace Websocket = Beast::websocket;
 namespace Asio = boost::asio;
 using Tcp = Asio::ip::tcp;
+
+// The mirror is already best-effort (see send_registration()); this just
+// bounds how much memory a control plane that's connected but slow (or
+// stalled) can make outbound_queue_ consume under sustained REGISTER
+// refreshes.
+constexpr std::size_t kMaxOutboundQueueSize = 64;
 } // namespace
 
 Result<WsUrlParts> parse_ws_url(std::string_view url) {
@@ -45,10 +53,15 @@ Result<WsUrlParts> parse_ws_url(std::string_view url) {
 }
 
 struct ControlPlaneClient::Impl {
-    Impl(Asio::any_io_executor executor, ControlPlaneClientConfig config, RoutesStore* routes_store)
+    Impl(
+        Asio::any_io_executor executor,
+        ControlPlaneClientConfig config,
+        RoutesStore* routes_store,
+        UsersStore* users_store)
         : executor_(std::move(executor))
         , config_(std::move(config))
         , routes_store_(routes_store)
+        , users_store_(users_store)
         , resolver_(executor_)
         , retry_timer_(executor_)
         , first_snapshot_future_(first_snapshot_promise_.get_future()) {}
@@ -56,6 +69,7 @@ struct ControlPlaneClient::Impl {
     Asio::any_io_executor executor_;
     ControlPlaneClientConfig config_;
     RoutesStore* routes_store_;
+    UsersStore* users_store_;
     Tcp::resolver resolver_;
     Asio::steady_timer retry_timer_;
     // unique_ptr rather than optional: torn down and rebuilt fresh on every
@@ -71,13 +85,23 @@ struct ControlPlaneClient::Impl {
     bool first_snapshot_resolved_{false};
     std::promise<VoidResult> first_snapshot_promise_;
     std::future<VoidResult> first_snapshot_future_;
+    // True only once on_handshake() has actually succeeded -- ws_ itself is
+    // non-null for the whole resolve/connect/handshake sequence, so it can't
+    // stand in for "the handshake finished and it's safe to write."
+    bool connected_{false};
+    // Beast allows one outstanding read and one outstanding write
+    // concurrently, but not two writes -- outgoing registration events queue
+    // up behind whichever write is already in flight.
+    std::deque<std::string> outbound_queue_;
+    bool writing_{false};
 };
 
 ControlPlaneClient::ControlPlaneClient(
     boost::asio::any_io_executor executor,
     ControlPlaneClientConfig config,
-    RoutesStore* routes_store)
-    : impl_(std::make_unique<Impl>(std::move(executor), std::move(config), routes_store)) {}
+    RoutesStore* routes_store,
+    UsersStore* users_store)
+    : impl_(std::make_unique<Impl>(std::move(executor), std::move(config), routes_store, users_store)) {}
 
 ControlPlaneClient::~ControlPlaneClient() = default;
 
@@ -89,6 +113,14 @@ void ControlPlaneClient::do_connect() {
     if (impl_->stopped_) {
         return;
     }
+    // A registration event queued against the previous connection may
+    // already describe stale binding state by the time we reconnect (the
+    // phone could have refreshed, re-registered or expired meanwhile) --
+    // consistent with the mirror being best-effort throughout, drop it
+    // rather than replay it into a fresh connection.
+    impl_->outbound_queue_.clear();
+    impl_->writing_ = false;
+    impl_->connected_ = false;
     impl_->ws_ = std::make_unique<Websocket::stream<Beast::tcp_stream>>(impl_->executor_);
     impl_->resolver_.async_resolve(
         impl_->config_.endpoint_.host_,
@@ -134,6 +166,7 @@ void ControlPlaneClient::on_handshake(boost::system::error_code err) {
         handle_pre_read_failure(err, "handshake");
         return;
     }
+    impl_->connected_ = true;
     Log::app()->info(
         "connected to control plane at ws://{}:{}",
         impl_->config_.endpoint_.host_,
@@ -154,6 +187,7 @@ void ControlPlaneClient::do_read() {
 
 void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*bytes*/) {
     if (err) {
+        impl_->connected_ = false;
         if (impl_->stopped_) {
             return;
         }
@@ -174,14 +208,20 @@ void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*by
     }
 
     const auto& envelope = *envelope_result;
-    if (envelope.type == Protocols::WsMessageType::kSnapshot && envelope.routes_snapshot) {
-        const auto& snapshot = *envelope.routes_snapshot;
-        Log::app()->info(
-            "applied routing table '{}' version {} with {} routes",
-            snapshot.table_id,
-            snapshot.version,
-            snapshot.routes.size());
-        impl_->routes_store_->set_snapshot(snapshot);
+    if (envelope.type == Protocols::WsMessageType::kSnapshot) {
+        if (envelope.routes_snapshot) {
+            const auto& snapshot = *envelope.routes_snapshot;
+            Log::app()->info(
+                "applied routing table '{}' version {} with {} routes",
+                snapshot.table_id,
+                snapshot.version,
+                snapshot.routes.size());
+            impl_->routes_store_->set_snapshot(snapshot);
+        }
+        if (envelope.users_snapshot) {
+            Log::app()->info("applied {} SIP user(s)", envelope.users_snapshot->users.size());
+            impl_->users_store_->set_snapshot(*envelope.users_snapshot);
+        }
         resolve_first_snapshot({});
     }
     else {
@@ -189,6 +229,75 @@ void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*by
     }
 
     do_read();
+}
+// NOLINTEND(misc-no-recursion)
+
+void ControlPlaneClient::send_registration(Protocols::RegistrationEvent event) {
+    Asio::post(impl_->executor_, [self = shared_from_this(), event = std::move(event)]() mutable {
+        self->do_send_registration(std::move(event));
+    });
+}
+
+void ControlPlaneClient::do_send_registration(Protocols::RegistrationEvent event) {
+    if (!impl_->connected_ || impl_->stopped_) {
+        return; // best-effort: dropped rather than queued for a future connection
+    }
+
+    Protocols::WsEnvelope envelope;
+    envelope.type = std::string(Protocols::WsMessageType::kRegistration);
+    envelope.registration = std::move(event);
+
+    const auto payload = glz::write_json(envelope);
+    if (!payload) {
+        Log::app()->error("failed to serialize registration event: {}", glz::format_error(payload.error()));
+        return;
+    }
+
+    // Drop the incoming event rather than an already-queued one: the front
+    // of outbound_queue_ may be in flight under async_write() right now, and
+    // popping it out from under that write would leave the operation's
+    // buffer dangling.
+    if (impl_->outbound_queue_.size() >= kMaxOutboundQueueSize) {
+        Log::app()->warn(
+            "control-plane outbound queue full ({} events); dropping this registration event",
+            kMaxOutboundQueueSize);
+        return;
+    }
+
+    impl_->outbound_queue_.push_back(payload.value());
+    if (!impl_->writing_) {
+        do_write();
+    }
+}
+
+// on_write() calls back into do_write() to drain the rest of the queue, for
+// the same not-actually-recursive reason as do_read()/on_read() above.
+// NOLINTBEGIN(misc-no-recursion)
+void ControlPlaneClient::do_write() {
+    if (impl_->outbound_queue_.empty()) {
+        return;
+    }
+    impl_->writing_ = true;
+    impl_->ws_->async_write(
+        Asio::buffer(impl_->outbound_queue_.front()),
+        [self = shared_from_this()](boost::system::error_code err, std::size_t /*bytes*/) { self->on_write(err); });
+}
+
+void ControlPlaneClient::on_write(boost::system::error_code err) {
+    impl_->writing_ = false;
+    impl_->outbound_queue_.pop_front();
+    if (err) {
+        // A write failure means the connection is already on its way down --
+        // on_read()'s own error path (a concurrent pending read) drives the
+        // actual reconnect. Whatever's left in the queue would fail the same
+        // way, and do_connect() clears it on the next attempt regardless.
+        Log::app()->warn(
+            "control-plane websocket write failed ({}); dropping queued registration events",
+            err.message());
+        impl_->outbound_queue_.clear();
+        return;
+    }
+    do_write();
 }
 // NOLINTEND(misc-no-recursion)
 
@@ -243,6 +352,7 @@ void ControlPlaneClient::stop() {
         return;
     }
     Asio::post(impl_->executor_, [self = shared_from_this()] {
+        self->impl_->connected_ = false;
         self->impl_->retry_timer_.cancel();
         if (self->impl_->ws_) {
             boost::system::error_code err;

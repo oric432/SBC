@@ -1,5 +1,7 @@
 #include "pjsip_init.hpp"
 
+#include <algorithm>
+#include <array>
 #include <format>
 
 #include <pjlib-util.h>
@@ -182,11 +184,20 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
 
     // pjsip_inv_usage_init() already registered INVITE/ACK/BYE/CANCEL/UPDATE
     // (plus PRACK via 100rel) in the endpoint's Allow capability; add OPTIONS
-    // so responses built from that capability (see OptionsActions) advertise
-    // it too, per RFC 3261.
-    static std::string options_method = "OPTIONS";
-    const pj_str_t options_tag = pj_str(options_method.data());
-    status = pjsip_endpt_add_capability(endpt_, &module_, PJSIP_H_ALLOW, nullptr, 1, &options_tag);
+    // and REGISTER so responses built from that capability (see
+    // OptionsActions, RegistrarActions) advertise them too, per RFC 3261.
+    static std::array<std::string, 2> extra_methods = {"OPTIONS", "REGISTER"};
+    std::array<pj_str_t, extra_methods.size()> extra_method_tags{};
+    std::ranges::transform(extra_methods, extra_method_tags.begin(), [](std::string& method) {
+        return pj_str(method.data());
+    });
+    status = pjsip_endpt_add_capability(
+        endpt_,
+        &module_,
+        PJSIP_H_ALLOW,
+        nullptr,
+        extra_method_tags.size(),
+        extra_method_tags.data());
     if (status != PJ_SUCCESS) {
         return std::unexpected(pj_error("pjsip_endpt_add_capability failed", status));
     }

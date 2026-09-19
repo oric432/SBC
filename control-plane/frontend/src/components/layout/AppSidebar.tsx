@@ -1,4 +1,4 @@
-import { History, Radio, Waypoints } from "lucide-react";
+import { History, Radio, Users, Waypoints } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 import {
@@ -18,6 +18,8 @@ import { useUnseenCallCount } from "@/features/call-history/unseen";
 
 const navItems = [
     { title: "Routes", url: "/routes", icon: Waypoints },
+    { title: "SIP Users", url: "/sip-users", icon: Users },
+    { title: "Registrations", url: "/registrations", icon: Radio },
     { title: "Call History", url: "/call-history", icon: History },
 ];
 

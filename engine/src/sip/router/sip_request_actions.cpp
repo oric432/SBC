@@ -79,7 +79,8 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
 
     // CallSession extracts its own request-URI/offer SDP from rx_data at
     // construction; nothing here needs to parse the message itself.
-    CallSession* session = call_manager_->create_session(call_id, ctx_, routes_store_, executor_, rx_data);
+    CallSession* session =
+        call_manager_->create_session(call_id, ctx_, routes_store_, users_store_, binding_store_, executor_, rx_data);
     session->set_inv_caller(inv);
 
     Log::call()->info(

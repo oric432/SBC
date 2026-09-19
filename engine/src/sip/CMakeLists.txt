@@ -16,6 +16,9 @@ add_library(sip STATIC
     router/sip_request_actions.cpp
     router/extract_utils.cpp
     route_table/routes_store.cpp
+    registrar/binding_store.cpp
+    registrar/users_store.cpp
+    registrar/registrar_actions.cpp
     sm/sm_runner.cpp
     sm/options_actions.cpp
 )
@@ -36,6 +39,7 @@ target_precompile_headers(sip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pch.hpp)
 if(BUILD_TESTS)
     add_executable(sip_tests
         call/handlers/tests/test_mid_dialog_offer.cpp
+        registrar/tests/test_binding_store.cpp
         route_table/tests/test_routes_store.cpp
         router/tests/test_extract_utils.cpp
         sm/tests/test_setup_sm.cpp
@@ -60,6 +64,10 @@ if(BUILD_TESTS)
 
     target_link_libraries(sip_tests PRIVATE
         sip
+        # RegistrarActions calls ControlPlaneClient::send_registration();
+        # sip itself doesn't link control_plane (SbcApp does, alongside sip,
+        # in the top-level CMakeLists.txt) so this executable needs it too.
+        control_plane
         third_party::catch2
         third_party::spdlog
         third_party::boost_asio

@@ -32,6 +32,8 @@ Before running, copy `settings-example.toml` to `settings.toml` (repo root — t
 | `[control_plane]` | `ws_url` | `"ws://127.0.0.1:3001/ws/engine"` | Websocket URL the engine connects to for its route table and (once it lands) SIP user snapshots. Plaintext `ws://` only -- TLS is out of scope for the whole engine today. |
 | `[control_plane]` | `connect_timeout_s` | `5` | Seconds to wait for each connect/handshake attempt before treating it as failed. |
 | `[control_plane]` | `retry_interval_s` | `5` | Seconds to wait between reconnect attempts. |
+| `[registrar]` | `min_expires_s` | `60` | Below this, a REGISTER is rejected with `423 Interval Too Brief` instead of granted a shorter expiry. |
+| `[registrar]` | `max_expires_s` | `120` | Upper bound on a granted registration's expiry; also the default when a REGISTER specifies none. |
 
 ## Build & test
 

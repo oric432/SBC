@@ -10,7 +10,7 @@ from typing import Callable
 import pytest
 from jinja2 import Environment, FileSystemLoader
 
-from ..conftest import RouteRule
+from ..conftest import RouteRule, SipUserFixture
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _PCAP_PATHS = {
@@ -34,6 +34,7 @@ class Ports:
     sbc_port: int = 5060
     callee_port: int = 5061
     caller_port: int = 5062
+    register_port: int = 5063
     callee_media_port: int = 6006
     caller_media_port: int = 6002
 
@@ -46,6 +47,27 @@ def ports() -> Ports:
 @pytest.fixture(scope="session")
 def sip_port(ports: Ports) -> int:
     return ports.sbc_port
+
+
+@pytest.fixture(scope="session")
+def registered_user() -> SipUserFixture:
+    # A domain distinct from anything the call scenarios route through
+    # (which all use bare IP:port destinations), so the registrar's local-
+    # domain check never interacts with them.
+    return SipUserFixture(username="alice", realm="sbc-test.local", password="secret123")
+
+
+@pytest.fixture(scope="session")
+def other_registered_user(registered_user: SipUserFixture) -> SipUserFixture:
+    # A second, unrelated account in the same realm as registered_user --
+    # only exists so a test can authenticate as one user and try to bind
+    # this one's AOR instead (see test_b2bua_register_wrong_aor_rejected).
+    return SipUserFixture(username="bob", realm=registered_user.realm, password="hunter2")
+
+
+@pytest.fixture(scope="session")
+def sip_users(registered_user: SipUserFixture, other_registered_user: SipUserFixture) -> list[SipUserFixture]:
+    return [registered_user, other_registered_user]
 
 
 @pytest.fixture(scope="session")
@@ -144,5 +166,31 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
             pytest.fail(f"caller sipp failed ({caller.returncode}):\n{caller_output}")
         if callee.returncode != 0:
             pytest.fail(f"callee sipp failed ({callee.returncode}):\n{callee_output}")
+
+    return _run
+
+
+@pytest.fixture
+def run_sipp_register(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path], None]:
+    """A single SIPp instance against the SBC, no callee -- REGISTER never
+    reaches a second leg. Each register.xml.j2 render already declares its
+    own expected final status (see expected_status), so a clean SIPp exit
+    *is* the assertion, exactly like run_sipp_pair."""
+
+    def _run(scenario: Path) -> None:
+        process = _run_sipp(
+            sipp_binary,
+            scenario,
+            f"{ports.local_ip}:{ports.sbc_port}",
+            ports.local_ip,
+            ports.register_port,
+            ports.caller_media_port,
+        )
+        try:
+            output, _ = process.communicate(timeout=15)
+        finally:
+            _stop(process)
+        if process.returncode != 0:
+            pytest.fail(f"register sipp failed ({process.returncode}):\n{output}")
 
     return _run

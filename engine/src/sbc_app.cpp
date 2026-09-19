@@ -12,7 +12,15 @@ SbcApp* SbcApp::instance_ = nullptr;
 
 SbcApp::SbcApp()
     : work_guard_(boost::asio::make_work_guard(ioc_))
-    , router_(&ctx_, &call_manager_, &routes_store_, ioc_.get_executor()) {}
+    , router_(
+          &ctx_,
+          &call_manager_,
+          &routes_store_,
+          &users_store_,
+          &binding_store_,
+          &control_plane_client_,
+          &registrar_config_,
+          ioc_.get_executor()) {}
 
 void SbcApp::handle_signal(int /*signum*/) {
     if (instance_ != nullptr) {
@@ -24,6 +32,8 @@ void SbcApp::init() {
     Log::init_logging();
 
     const Settings settings = init_settings();
+    registrar_config_.min_expires_s_ = settings.registrar.min_expires_s;
+    registrar_config_.max_expires_s_ = settings.registrar.max_expires_s;
     const PjsipConfig config = init_pjsip(settings);
     init_pjmedia();
     start_asio_thread();
@@ -55,7 +65,8 @@ void SbcApp::init_control_plane(const Settings& settings) {
         .connect_timeout_ = std::chrono::seconds{settings.control_plane.connect_timeout_s},
         .retry_interval_ = std::chrono::seconds{settings.control_plane.retry_interval_s}};
 
-    control_plane_client_ = std::make_shared<ControlPlaneClient>(ioc_.get_executor(), client_config, &routes_store_);
+    control_plane_client_ =
+        std::make_shared<ControlPlaneClient>(ioc_.get_executor(), client_config, &routes_store_, &users_store_);
     control_plane_client_->start();
 
     if (auto res = control_plane_client_->wait_for_first_snapshot(); !res) {

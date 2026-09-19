@@ -9,6 +9,9 @@
 #include "net/rtp/pjmedia_endpoint.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/pj_context.hpp"
+#include "sip/registrar/binding_store.hpp"
+#include "sip/registrar/registrar_actions.hpp"
+#include "sip/registrar/users_store.hpp"
 #include "sip/router/message_router.hpp"
 #include "sip/route_table/routes_store.hpp"
 #include "sip/stack/pjsip_init.hpp"
@@ -79,6 +82,12 @@ private:
     PjmediaEndpoint pjmedia_endpoint_;
     CallManager call_manager_;
     RoutesStore routes_store_;
+    UsersStore users_store_;
+    BindingStore binding_store_;
+    // Populated from settings in init(), after router_ (and the
+    // RegistrarActions it owns) is already constructed -- same lazy-pointer
+    // reasoning as ctx_.endpt_ (see RegistrarActions).
+    RegistrarConfig registrar_config_{};
     PjContext ctx_;
     MessageRouter router_;
     std::shared_ptr<ControlPlaneClient> control_plane_client_;

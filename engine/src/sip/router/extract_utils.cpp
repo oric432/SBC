@@ -91,4 +91,30 @@ std::string extract_uri_user(const std::string& uri) {
     return uri.substr(scheme_end + 1, at_pos - scheme_end - 1);
 }
 
+std::string extract_uri_host(const std::string& uri) {
+    // No "@" (e.g. a bare "sip:host:port" catch-all destination) -- the host
+    // starts right after the scheme instead.
+    auto at_pos = uri.find('@');
+    std::size_t host_start{};
+    if (at_pos == std::string::npos) {
+        auto scheme_end = uri.find(':');
+        if (scheme_end == std::string::npos) {
+            return {};
+        }
+        host_start = scheme_end + 1;
+    }
+    else {
+        host_start = at_pos + 1;
+    }
+    // The host ends at the port colon, or -- for "sip:alice@sbc.local;transport=udp"
+    // style URIs -- at the first URI parameter (';') or header (`?`) instead;
+    // stopping at ':' alone left those trailing on the "host" and broke
+    // UsersStore::is_local_domain() lookups for exactly that URI shape.
+    auto end = uri.find_first_of(":;?", host_start);
+    if (end == std::string::npos) {
+        end = uri.size();
+    }
+    return uri.substr(host_start, end - host_start);
+}
+
 } // namespace SbcEngine
