@@ -31,9 +31,23 @@ output), add `--live-engine`:
 just test-b2bua --live-engine -k <name>
 ```
 
-See `../README.md`'s `--live-engine` section for what this changes —
-notably, that engine's routes/users must already match what a scenario
+See `../README.md`'s `--live-engine` section for what this changes overall —
+notably, that engine's routes must already match what a call scenario
 expects, since nothing here seeds them in this mode.
+
+The register scenarios are the exception: rather than requiring
+`registered_user`/`other_registered_user` (`alice`/`bob`@`sbc-test.local`,
+see `conftest.py`) to already exist on whatever real Backend the live engine
+is connected to, `run_sipp_register` provisions them for real over that
+Backend's REST API (`POST /api/sip-users`) at the start of the session and
+deletes them again at the end (`_live_registered_users` in `conftest.py`).
+`broadcastSnapshot()` (`control-plane/backend/src/ws/engineChannel.ts`) pushes
+each create/delete to the already-connected engine live, so no restart is
+needed. This only runs under `--live-engine`; point it at a non-default
+Backend with `--live-backend-url` (default `http://127.0.0.1:3001`, matching
+`settings-example.toml`'s `[control_plane].ws_url` port). If a prior
+`--live-engine` run was interrupted before cleanup ran, the next run deletes
+and recreates the leftover row rather than failing on the conflict.
 
 ## Adding a new scenario
 

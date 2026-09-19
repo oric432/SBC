@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -13,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader
 from ..conftest import RouteRule, SipUserFixture
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
+_BACKEND_TIMEOUT_S = 5
 _PCAP_PATHS = {
     "g711a": Path(__file__).parent / "g711a.pcap",
     # g711a.pcap re-encoded to real G.722 (same SSRC/seq/timestamps/packet
@@ -47,6 +51,20 @@ def ports() -> Ports:
 @pytest.fixture(scope="session")
 def sip_port(ports: Ports) -> int:
     return ports.sbc_port
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--live-backend-url",
+        default="http://127.0.0.1:3001",
+        help=(
+            "Base URL of the real Backend a --live-engine SbcEngine is connected "
+            "to (see settings.toml's [control_plane].ws_url on that engine). Used "
+            "only to provision this suite's registered_user/other_registered_user "
+            "through the Backend's REST API for the register scenarios -- ignored "
+            "otherwise."
+        ),
+    )
 
 
 @pytest.fixture(scope="session")
@@ -170,8 +188,84 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
     return _run
 
 
+def _backend_call(base_url: str, method: str, path: str, body: dict | None = None) -> tuple[int, bytes]:
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"Content-Type": "application/json"} if data is not None else {}
+    request = urllib.request.Request(f"{base_url}{path}", data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=_BACKEND_TIMEOUT_S) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
+    except urllib.error.URLError as exc:
+        pytest.fail(f"could not reach Backend at {base_url} ({exc.reason}); is it running?")
+
+
+def _create_sip_user(base_url: str, user: SipUserFixture) -> int | None:
+    status, raw = _backend_call(
+        base_url,
+        "POST",
+        "/api/sip-users",
+        {"username": user.username, "realm": user.realm, "password": user.password, "enabled": user.enabled},
+    )
+    if status == 409:
+        return None  # a leftover row from an earlier interrupted --live-engine run
+    if status != 201:
+        pytest.fail(f"POST /api/sip-users for {user.username}@{user.realm} failed ({status}): {raw.decode()}")
+    return json.loads(raw)["data"]["id"]
+
+
+def _find_sip_user_id(base_url: str, username: str, realm: str) -> int | None:
+    status, raw = _backend_call(base_url, "GET", "/api/sip-users")
+    if status != 200:
+        pytest.fail(f"GET /api/sip-users failed ({status}): {raw.decode()}")
+    for row in json.loads(raw)["data"]:
+        if row["username"] == username and row["realm"] == realm:
+            return row["id"]
+    return None
+
+
+def _delete_sip_user(base_url: str, user_id: int) -> None:
+    _backend_call(base_url, "DELETE", f"/api/sip-users/{user_id}")
+
+
+@pytest.fixture(scope="session")
+def _live_registered_users(request, sip_users: list[SipUserFixture]):
+    """Provisions this suite's registered_user/other_registered_user for real
+    through the Backend's REST API when --live-engine is set -- the register
+    scenarios need them to exist for the already-running engine's registrar
+    to recognize `sbc-test.local` as a known realm at all (see
+    RegistrarActions::local_domain in registrar_actions.cpp), and there's no
+    owned engine process left for this suite to seed them into directly.
+    Only requested by run_sipp_register, so plain call scenarios never touch
+    the real Backend. No-op outside --live-engine."""
+    if not request.config.getoption("--live-engine"):
+        yield
+        return
+
+    base_url = request.config.getoption("--live-backend-url")
+    created_ids = []
+    for user in sip_users:
+        user_id = _create_sip_user(base_url, user)
+        if user_id is None:
+            existing_id = _find_sip_user_id(base_url, user.username, user.realm)
+            if existing_id is not None:
+                _delete_sip_user(base_url, existing_id)
+            user_id = _create_sip_user(base_url, user)
+            if user_id is None:
+                pytest.fail(f"could not provision SIP user {user.username}@{user.realm} on the Backend")
+        created_ids.append(user_id)
+
+    yield
+
+    for user_id in created_ids:
+        _delete_sip_user(base_url, user_id)
+
+
 @pytest.fixture
-def run_sipp_register(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path], None]:
+def run_sipp_register(
+    sipp_binary: Path, sbc_engine, ports: Ports, _live_registered_users
+) -> Callable[[Path], None]:
     """A single SIPp instance against the SBC, no callee -- REGISTER never
     reaches a second leg. Each register.xml.j2 render already declares its
     own expected final status (see expected_status), so a clean SIPp exit
