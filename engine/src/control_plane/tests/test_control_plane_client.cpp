@@ -80,6 +80,17 @@ TEST_CASE("ControlPlaneClient leaves seq unset when absent") {
     CHECK_FALSE(result->seq.has_value());
 }
 
+TEST_CASE("ControlPlaneClient parses a seq value beyond int32 range") {
+    // A long-running backend's counter isn't bounded at 2^31 (see WsEnvelope::seq's
+    // own doc comment) -- seq has to be wide enough that this doesn't fail the
+    // whole envelope's parse.
+    const auto result = ControlPlaneClient::parse_envelope(R"({"type": "snapshot", "seq": 3000000000})");
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->seq.has_value());
+    CHECK(*result->seq == 3000000000);
+}
+
 TEST_CASE("ControlPlaneClient parses an unrecognized message type without failing") {
     const auto result = ControlPlaneClient::parse_envelope(R"({"type": "something_new"})");
 

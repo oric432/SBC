@@ -1,6 +1,7 @@
 // clang-format off
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <glaze/glaze.hpp>
@@ -33,12 +34,15 @@ struct WsEnvelope {
     std::optional<RegistrationEvent> registration;
     // Monotonically increasing per backend process, stamped on every
     // control-plane -> engine message so ControlPlaneClient can drop one
-    // that arrives out of order (see its on_read()). Optional because the
-    // engine -> control-plane registration direction doesn't sequence --
-    // glaze's default skip_null_members omits it on write rather than
-    // writing "seq: null". Absent on read means unsequenced, i.e. accepted
-    // unconditionally.
-    std::optional<int> seq;
+    // that arrives out of order (see its on_read()). int64_t rather than
+    // int32: a 32-bit counter is reachable by a long-running backend process
+    // (JS numbers don't overflow at 2^31, but glaze rejects an out-of-range
+    // int32 outright, failing the whole envelope's parse rather than just
+    // this field). Optional because the engine -> control-plane registration
+    // direction doesn't sequence -- glaze's default skip_null_members omits
+    // it on write rather than writing "seq: null". Absent on read means
+    // unsequenced, i.e. accepted unconditionally.
+    std::optional<std::int64_t> seq;
 
     struct glaze_json_schema {
         glz::schema type{.description = R"(Message discriminator: "snapshot" or "registration")"};

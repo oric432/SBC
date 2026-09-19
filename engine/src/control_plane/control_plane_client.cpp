@@ -109,7 +109,7 @@ struct ControlPlaneClient::Impl {
     // Highest WsEnvelope::seq applied so far this connection. Reset on every
     // (re)connect -- a backend restart resets its own counter too, so
     // without this the engine would reject every message forever after.
-    int last_seq_{0};
+    std::int64_t last_seq_{0};
 };
 
 ControlPlaneClient::ControlPlaneClient(
