@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -9,11 +8,10 @@
 
 #include "sip/call/pj_context.hpp"
 #include "sip/registrar/binding_store.hpp"
+#include "sip/registrar/i_registration_sink.hpp"
 #include "sip/registrar/users_store.hpp"
 
 namespace SbcEngine {
-
-class ControlPlaneClient;
 
 struct RegistrarConfig {
     int min_expires_s_;
@@ -34,21 +32,19 @@ struct RegistrarConfig {
 // Holds PjContext* (not pjsip_endpoint* directly) and reads ctx_->endpt_
 // lazily: MessageRouter -- and therefore this object -- is constructed in
 // SbcApp's member-init list, before SbcApp::init() populates ctx_.endpt_
-// (see OptionsActions for the same requirement). control_plane_client_ and
-// config_ are pointers to SbcApp's own members for the identical reason --
-// neither is populated until well into SbcApp::init(), well after this
-// object is constructed, but both are always valid by the time a REGISTER
-// actually arrives.
+// (see OptionsActions for the same requirement). config_ is a pointer to
+// SbcApp's own member for the identical reason -- it isn't populated until
+// well into SbcApp::init(), well after this object is constructed, but it's
+// always valid by the time a REGISTER actually arrives. sink_ starts null
+// and is wired up later still, via set_registration_sink() --
+// ControlPlaneClient itself isn't constructed until after MessageRouter (and
+// the RegistrarActions it owns) already is.
 class RegistrarActions {
 public:
-    RegistrarActions(
-        PjContext* ctx,
-        UsersStore* users_store,
-        BindingStore* binding_store,
-        std::shared_ptr<ControlPlaneClient>* control_plane_client,
-        RegistrarConfig* config);
+    RegistrarActions(PjContext* ctx, UsersStore* users_store, BindingStore* binding_store, RegistrarConfig* config);
 
     void handle(pjsip_rx_data* rdata);
+    void set_registration_sink(IRegistrationSink* sink) { sink_ = sink; }
 
 private:
     // The To-header's host, if it's a domain UsersStore currently knows
@@ -81,7 +77,7 @@ private:
     PjContext* ctx_;
     UsersStore* users_store_;
     BindingStore* binding_store_;
-    std::shared_ptr<ControlPlaneClient>* control_plane_client_;
+    IRegistrationSink* sink_ = nullptr;
     RegistrarConfig* config_;
 };
 

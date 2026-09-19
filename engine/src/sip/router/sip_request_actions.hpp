@@ -4,13 +4,11 @@
 #include <pjsip.h>
 
 #include "sip/call/pj_context.hpp"
+#include "sip/engine_stores.hpp"
 
 namespace SbcEngine {
 class CallSession;
 class CallManager;
-class RoutesStore;
-class UsersStore;
-class BindingStore;
 
 // SIP request admission and responses that do not belong to a live call.
 // Creates signaling legs, but leaves lifecycle activation to MessageRouter.
@@ -19,15 +17,11 @@ public:
     SipRequestActions(
         PjContext* ctx,
         CallManager* manager,
-        RoutesStore* routes,
-        UsersStore* users_store,
-        BindingStore* binding_store,
+        const EngineStores& stores,
         boost::asio::any_io_executor executor)
         : ctx_(ctx)
         , call_manager_(manager)
-        , routes_store_(routes)
-        , users_store_(users_store)
-        , binding_store_(binding_store)
+        , stores_(stores)
         , executor_(std::move(executor)) {}
 
     CallSession* create_call(pjsip_rx_data* rx_data);
@@ -40,9 +34,7 @@ private:
 
     PjContext* ctx_;
     CallManager* call_manager_;
-    RoutesStore* routes_store_;
-    UsersStore* users_store_;
-    BindingStore* binding_store_;
+    EngineStores stores_;
     boost::asio::any_io_executor executor_;
 };
 } // namespace SbcEngine

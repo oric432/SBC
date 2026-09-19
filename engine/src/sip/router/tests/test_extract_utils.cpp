@@ -272,8 +272,12 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
     // No signaling legs are installed: the malformed offer must be rejected
     // before outbound creation. This exercises the synchronous exchange-result handling,
     // real exchange actions, both runners, and deferred session retirement.
-    auto* session =
-        manager.create_session("exchange-reject", &context, &routes, &users, &bindings, ioc.get_executor(), &request);
+    auto* session = manager.create_session(
+        "exchange-reject",
+        &context,
+        EngineStores{.routes_ = &routes, .users_ = &users, .bindings_ = &bindings},
+        ioc.get_executor(),
+        &request);
     session->setup_sm().process_event(Setup::Requested{});
     REQUIRE(session->setup_sm().is_done());
     REQUIRE_FALSE(session->setup_sm().is_established());

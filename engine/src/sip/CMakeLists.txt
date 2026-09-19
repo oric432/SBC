@@ -64,10 +64,6 @@ if(BUILD_TESTS)
 
     target_link_libraries(sip_tests PRIVATE
         sip
-        # RegistrarActions calls ControlPlaneClient::send_registration();
-        # sip itself doesn't link control_plane (SbcApp does, alongside sip,
-        # in the top-level CMakeLists.txt) so this executable needs it too.
-        control_plane
         third_party::catch2
         third_party::spdlog
         third_party::boost_asio

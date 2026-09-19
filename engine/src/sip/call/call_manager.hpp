@@ -11,13 +11,12 @@
 #include <pjsip.h>
 #include <pjsip_ua.h>
 
+#include "sip/engine_stores.hpp"
+
 namespace SbcEngine {
 
 class CallSession;
 class RtpInactivityTimer;
-class RoutesStore;
-class UsersStore;
-class BindingStore;
 struct PjContext;
 
 // Owns all CallSessions and provides authoritative lookup by Call-ID or by
@@ -37,9 +36,7 @@ public:
     CallSession* create_session(
         const std::string& call_id,
         PjContext* ctx,
-        RoutesStore* routes_store,
-        UsersStore* users_store,
-        BindingStore* binding_store,
+        const EngineStores& stores,
         const boost::asio::any_io_executor& executor,
         pjsip_rx_data* rdata);
     CallSession* find_by_call_id(const std::string& call_id);

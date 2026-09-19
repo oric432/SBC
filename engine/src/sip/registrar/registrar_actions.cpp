@@ -7,7 +7,6 @@
 #include <format>
 #include <vector>
 
-#include "control_plane/control_plane_client.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
@@ -82,12 +81,10 @@ RegistrarActions::RegistrarActions(
     PjContext* ctx,
     UsersStore* users_store,
     BindingStore* binding_store,
-    std::shared_ptr<ControlPlaneClient>* control_plane_client,
     RegistrarConfig* config)
     : ctx_(ctx)
     , users_store_(users_store)
     , binding_store_(binding_store)
-    , control_plane_client_(control_plane_client)
     , config_(config) {
     g_users_store = users_store;
 }
@@ -369,24 +366,23 @@ void RegistrarActions::send_ok(pjsip_rx_data* rdata, const std::string& aor) {
 }
 
 void RegistrarActions::mirror_registration(const std::string& aor, const Binding& binding, bool removed) {
-    if (control_plane_client_ == nullptr || *control_plane_client_ == nullptr) {
+    if (sink_ == nullptr) {
         return;
     }
     const auto expires_in_s = removed ? 0
                                       : static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
                                                              binding.expires_at_ - std::chrono::steady_clock::now())
                                                              .count());
-    (*control_plane_client_)
-        ->send_registration(
-            Protocols::RegistrationEvent{
-                .aor = aor,
-                .contact_uri = binding.contact_uri_,
-                .source_address = binding.source_address_,
-                .source_port = binding.source_port_,
-                .transport = binding.transport_,
-                .user_agent = std::nullopt,
-                .expires_in_s = expires_in_s,
-                .removed = removed});
+    sink_->send_registration(
+        Protocols::RegistrationEvent{
+            .aor = aor,
+            .contact_uri = binding.contact_uri_,
+            .source_address = binding.source_address_,
+            .source_port = binding.source_port_,
+            .transport = binding.transport_,
+            .user_agent = std::nullopt,
+            .expires_in_s = expires_in_s,
+            .removed = removed});
 }
 
 } // namespace SbcEngine

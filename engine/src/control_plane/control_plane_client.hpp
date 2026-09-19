@@ -11,6 +11,7 @@
 
 #include "core/utils/error.hpp"
 #include "protocols/control_plane_ws.hpp"
+#include "sip/registrar/i_registration_sink.hpp"
 #include "sip/registrar/users_store.hpp"
 #include "sip/route_table/routes_store.hpp"
 
@@ -41,14 +42,14 @@ struct ControlPlaneClientConfig {
 //
 // start()/stop() may be called from any thread; every other operation runs
 // on the executor this object was constructed with (see the .cpp).
-class ControlPlaneClient : public std::enable_shared_from_this<ControlPlaneClient> {
+class ControlPlaneClient : public IRegistrationSink, public std::enable_shared_from_this<ControlPlaneClient> {
 public:
     ControlPlaneClient(
         boost::asio::any_io_executor executor,
         ControlPlaneClientConfig config,
         RoutesStore* routes_store,
         UsersStore* users_store);
-    ~ControlPlaneClient();
+    ~ControlPlaneClient() override;
 
     ControlPlaneClient(const ControlPlaneClient&) = delete;
     ControlPlaneClient& operator=(const ControlPlaneClient&) = delete;
@@ -74,7 +75,7 @@ public:
     // if the channel isn't currently connected, this is silently dropped
     // rather than queued for a future reconnect (see RegistrationEvent).
     // Safe to call from any thread.
-    void send_registration(Protocols::RegistrationEvent event);
+    void send_registration(Protocols::RegistrationEvent event) override;
 
     // A pure parsing step, exposed publicly (rather than as a private test
     // seam) because boost::asio::any_io_executor pulls in <any>, and the
