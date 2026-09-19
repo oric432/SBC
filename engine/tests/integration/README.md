@@ -29,4 +29,25 @@ A suite adding new scenario types (e.g. registration, media failure) should
 extend the *assertion* side via `EngineHandle` rather than re-deriving engine
 startup — that part is meant to be reused as-is.
 
+## `--live-engine`
+
+Pass `--live-engine` to run against an `SbcEngine` and Backend you already
+started yourself (e.g. each in its own terminal, so you get their real-time
+logs and can attach a debugger), instead of having `sbc_engine` spawn and own
+a throwaway engine process. In this mode:
+
+- `sip_port` must match the already-running engine's actual SIP port (the
+  default, `5060`, matches `settings-example.toml`'s default).
+- The routes that engine serves come from whatever the real Backend has
+  configured — a suite's `initial_routes` fixture is never pushed anywhere,
+  since there's no owned engine process to seed it into.
+- `EngineHandle.has_error_logs()`/`.log_tail()` have nothing captured to
+  check (they trivially return `False`/`""`); read the engine's own terminal
+  instead.
+
+A suite that also needs SIP users (registrar tests) can provision them for
+real through the Backend's REST API instead of relying on pre-existing
+data — see `b2bua/README.md`'s `--live-engine` section for how the b2bua
+suite does this for its own `registered_user`/`other_registered_user`.
+
 See `b2bua/README.md` for the concrete B2BUA suite built on top of this.
