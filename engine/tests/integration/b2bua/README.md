@@ -22,6 +22,19 @@ RTP is streamed at realistic packet pacing (~30ms per packet) by both legs,
 using `g711a.pcap` (G.711) unless a scenario's callee overrides it (see
 `transcode_mismatched_codecs` below).
 
+To instead run against an `SbcEngine` + Backend you've already started
+yourself in their own terminals (so you get their live logs and can attach a
+debugger, rather than this suite's captured-and-only-shown-on-failure
+output), add `--live-engine`:
+
+```bash
+just test-b2bua --live-engine -k <name>
+```
+
+See `../README.md`'s `--live-engine` section for what this changes —
+notably, that engine's routes/users must already match what a scenario
+expects, since nothing here seeds them in this mode.
+
 ## Adding a new scenario
 
 Scenario XML lives in `templates/*.xml.j2` (Jinja2), rendered per test case by
