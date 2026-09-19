@@ -212,7 +212,8 @@ class RoutesStubServer:
 
 @dataclass
 class EngineHandle:
-    process: subprocess.Popen[str]
+    # None under --live-engine, where this suite doesn't own the process.
+    process: subprocess.Popen[str] | None
     log_lines: list[str] = field(default_factory=list)
 
     def has_error_logs(self) -> bool:
@@ -226,6 +227,25 @@ def _drain_stdout(process: subprocess.Popen[str], sink: list[str]) -> None:
     assert process.stdout is not None
     for line in process.stdout:
         sink.append(line.rstrip("\n"))
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--live-engine",
+        action="store_true",
+        default=False,
+        help=(
+            "Assume a real SbcEngine and Backend are already running "
+            "externally (e.g. in another terminal, so you can watch their "
+            "own logs) instead of having this suite spawn and own an "
+            "engine process. `sip_port` must match that engine's actual "
+            "SIP port, and its routes/users must already be configured "
+            "through the real Backend -- the per-test `initial_routes` / "
+            "`sip_users` seeding has no effect in this mode. Log-based "
+            "assertions (`has_error_logs`/`log_tail`) trivially pass since "
+            "there is nothing captured to check."
+        ),
+    )
 
 
 @pytest.fixture(scope="session")
@@ -264,7 +284,18 @@ def sip_users() -> list[SipUserFixture]:
 
 
 @pytest.fixture(scope="session")
-def sbc_engine(tmp_path_factory, engine_binary, routes_stub_server, sip_port, initial_routes, sip_users):
+def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_routes, sip_users):
+    if request.config.getoption("--live-engine"):
+        _log.info(
+            "--live-engine set: assuming SbcEngine + Backend are already running "
+            "on port %d; skipping engine startup and route/user seeding "
+            "(check the engine's own terminal for its logs)",
+            sip_port,
+        )
+        yield EngineHandle(process=None)
+        return
+
+    engine_binary = request.getfixturevalue("engine_binary")
     routes_stub_server.set_routes(initial_routes)
     routes_stub_server.set_users(sip_users)
 
