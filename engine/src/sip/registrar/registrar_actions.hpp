@@ -72,7 +72,11 @@ private:
     void respond(pjsip_rx_data* rdata, int status_code);
     // 200 OK listing every live binding currently on file for `aor`.
     void send_ok(pjsip_rx_data* rdata, const std::string& aor);
-    void mirror_registration(const std::string& aor, const Binding& binding, bool removed);
+    void mirror_registration(
+        const std::string& aor,
+        const Binding& binding,
+        bool removed,
+        const std::optional<std::string>& user_agent);
 
     PjContext* ctx_;
     UsersStore* users_store_;

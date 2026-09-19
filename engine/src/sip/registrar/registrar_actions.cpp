@@ -75,6 +75,19 @@ int raw_expires_for_contact(
     return default_expires;
 }
 
+// PJSIP has no typed header for User-Agent (sip_msg.h lists it as
+// PJSIP_H_USER_AGENT_UNIMP, "use pjsip_generic_string_hdr" instead), so it
+// has to be looked up by name.
+std::optional<std::string> extract_user_agent(const pjsip_msg* msg) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — PJSIP C API (pj_str never mutates the buffer)
+    const pj_str_t name = pj_str(const_cast<char*>("User-Agent"));
+    const auto* hdr = static_cast<const pjsip_generic_string_hdr*>(pjsip_msg_find_hdr_by_name(msg, &name, nullptr));
+    if (hdr == nullptr) {
+        return std::nullopt;
+    }
+    return to_std_string(hdr->hvalue);
+}
+
 } // namespace
 
 RegistrarActions::RegistrarActions(
@@ -205,6 +218,7 @@ void RegistrarActions::process_registration(
     const std::string& to_user) {
     const pjsip_msg* msg = rdata->msg_info.msg;
     const std::string aor = make_aor(to_user, realm);
+    const auto user_agent = extract_user_agent(msg);
 
     const auto* expires_hdr = static_cast<pjsip_expires_hdr*>(pjsip_msg_find_hdr(msg, PJSIP_H_EXPIRES, nullptr));
     const std::optional<int> top_level_expires =
@@ -235,7 +249,7 @@ void RegistrarActions::process_registration(
         }
         const auto now = std::chrono::steady_clock::now();
         for (const auto& binding : binding_store_->find_live(aor, now)) {
-            mirror_registration(aor, binding, /*removed=*/true);
+            mirror_registration(aor, binding, /*removed=*/true, user_agent);
         }
         binding_store_->remove_all(aor);
         send_ok(rdata, aor);
@@ -286,7 +300,7 @@ void RegistrarActions::process_registration(
 
     for (const auto& binding : new_bindings) {
         const bool removed = binding.expires_at_ <= binding.refreshed_at_;
-        mirror_registration(aor, binding, removed);
+        mirror_registration(aor, binding, removed, user_agent);
     }
 
     send_ok(rdata, aor);
@@ -365,7 +379,11 @@ void RegistrarActions::send_ok(pjsip_rx_data* rdata, const std::string& aor) {
     pjsip_endpt_send_response(ctx_->endpt_, &res_addr, tdata, nullptr, nullptr);
 }
 
-void RegistrarActions::mirror_registration(const std::string& aor, const Binding& binding, bool removed) {
+void RegistrarActions::mirror_registration(
+    const std::string& aor,
+    const Binding& binding,
+    bool removed,
+    const std::optional<std::string>& user_agent) {
     if (sink_ == nullptr) {
         return;
     }
@@ -380,7 +398,7 @@ void RegistrarActions::mirror_registration(const std::string& aor, const Binding
             .source_address = binding.source_address_,
             .source_port = binding.source_port_,
             .transport = binding.transport_,
-            .user_agent = std::nullopt,
+            .user_agent = user_agent,
             .expires_in_s = expires_in_s,
             .removed = removed});
 }
