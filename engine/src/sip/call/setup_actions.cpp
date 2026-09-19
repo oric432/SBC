@@ -51,7 +51,7 @@ RouteResolution SetupActions::resolve_route() {
         if (stores_.users_->is_local_domain(host)) {
             const std::string user = extract_uri_user(request_uri);
             if (stores_.users_->find(user, host)) {
-                const std::string aor = std::format("{}@{}", user, host);
+                const std::string aor = make_aor(user, host);
                 if (auto binding = stores_.bindings_->find_preferred(aor, std::chrono::steady_clock::now())) {
                     Log::sip()->info("[{}] routing {} to its current registration", session_.call_id(), aor);
                     return {

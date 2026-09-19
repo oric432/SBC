@@ -253,6 +253,10 @@ TEST_CASE(
     CHECK(extract_uri_host("sbc.local").empty());
 }
 
+TEST_CASE("make_aor composes user@host", "[extract_utils]") {
+    CHECK(make_aor("alice", "sbc.local") == "alice@sbc.local");
+}
+
 TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][call_session]") {
     constexpr int kTestRoutePort = 5060;
     boost::asio::io_context ioc;

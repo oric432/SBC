@@ -4,9 +4,9 @@
 #include <array>
 #include <chrono>
 #include <cstring>
-#include <format>
 #include <vector>
 
+#include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
@@ -204,7 +204,7 @@ void RegistrarActions::process_registration(
     const std::string& realm,
     const std::string& to_user) {
     const pjsip_msg* msg = rdata->msg_info.msg;
-    const std::string aor = std::format("{}@{}", to_user, realm);
+    const std::string aor = make_aor(to_user, realm);
 
     const auto* expires_hdr = static_cast<pjsip_expires_hdr*>(pjsip_msg_find_hdr(msg, PJSIP_H_EXPIRES, nullptr));
     const std::optional<int> top_level_expires =
