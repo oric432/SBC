@@ -36,11 +36,14 @@ struct SipUserSnapshot {
     };
 };
 
-// One binding's mirror update, pushed engine -> control plane on a state
-// change (create, refresh, expiry, de-registration) -- never on every
-// REGISTER refresh, which would otherwise be steady noise. Best-effort: if
-// the websocket is down when this would be sent, it's dropped, not queued
-// (see ControlPlaneClient::send_registration()).
+// One binding's mirror update, pushed engine -> control plane when the
+// binding is new, removed, or its source address/port/transport changed, or
+// when it hasn't been mirrored in over half its granted lifetime (so a
+// still-live registration's mirrored expiry never lapses even if nothing
+// else changed) -- never on every REGISTER refresh, which would otherwise be
+// steady noise (see RegistrarActions::should_mirror()). Best-effort: if the
+// websocket is down when this would be sent, it's dropped, not queued (see
+// ControlPlaneClient::send_registration()).
 struct RegistrationEvent {
     std::string aor;
     std::string contact_uri;

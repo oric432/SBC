@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 
 #include "sip/router/extract_utils.hpp"
@@ -290,20 +291,72 @@ void RegistrarActions::process_registration(
                 .call_id_ = call_id,
                 .cseq_ = cseq,
                 .expires_at_ = now + std::chrono::seconds(granted),
-                .refreshed_at_ = now});
+                .refreshed_at_ = now,
+                .mirrored_at_ = {}});
     }
+
+    const std::vector<bool> mirror_decisions = decide_mirrors(aor, new_bindings, now);
 
     if (binding_store_->apply_contacts(aor, new_bindings) == BindingStore::ApplyResult::kCallIdCseqConflict) {
         respond(rdata, PJSIP_SC_BAD_REQUEST);
         return;
     }
 
-    for (const auto& binding : new_bindings) {
+    for (std::size_t i = 0; i < new_bindings.size(); ++i) {
+        if (!mirror_decisions[i]) {
+            continue;
+        }
+        const auto& binding = new_bindings[i];
         const bool removed = binding.expires_at_ <= binding.refreshed_at_;
         mirror_registration(aor, binding, removed, user_agent);
     }
 
     send_ok(rdata, aor);
+}
+
+std::vector<bool> RegistrarActions::decide_mirrors(
+    const std::string& aor,
+    std::vector<Binding>& new_bindings,
+    std::chrono::steady_clock::time_point now) const {
+    // Snapshot what was live before the caller's apply_contacts() call
+    // overwrites it -- each decision below needs to compare an incoming
+    // contact against its own prior state.
+    std::unordered_map<std::string, Binding> previous_by_contact;
+    for (auto& binding : binding_store_->find_live(aor, now)) {
+        previous_by_contact.emplace(binding.contact_uri_, std::move(binding));
+    }
+
+    std::vector<bool> decisions;
+    decisions.reserve(new_bindings.size());
+    for (auto& binding : new_bindings) {
+        const bool removed = binding.expires_at_ <= binding.refreshed_at_;
+        const auto previous_iter = previous_by_contact.find(binding.contact_uri_);
+        const std::optional<Binding> previous =
+            previous_iter != previous_by_contact.end() ? std::optional<Binding>(previous_iter->second) : std::nullopt;
+        const bool mirror = should_mirror(previous, binding, removed, now);
+        // Skipped: carry the prior mirror timestamp forward rather than
+        // losing it -- should_mirror() guarantees previous is set whenever
+        // mirror is false (only removed/new bindings mirror unconditionally).
+        binding.mirrored_at_ = mirror ? now : previous->mirrored_at_;
+        decisions.push_back(mirror);
+    }
+    return decisions;
+}
+
+bool RegistrarActions::should_mirror(
+    const std::optional<Binding>& previous,
+    const Binding& incoming,
+    bool removed,
+    std::chrono::steady_clock::time_point now) {
+    if (removed || !previous) {
+        return true;
+    }
+    if (previous->source_address_ != incoming.source_address_ || previous->source_port_ != incoming.source_port_ ||
+        previous->transport_ != incoming.transport_) {
+        return true;
+    }
+    const auto granted_lifetime = incoming.expires_at_ - incoming.refreshed_at_;
+    return now - previous->mirrored_at_ >= granted_lifetime / 2;
 }
 
 bool RegistrarActions::reject_if_too_brief(

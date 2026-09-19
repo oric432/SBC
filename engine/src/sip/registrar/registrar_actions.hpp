@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -46,6 +47,21 @@ public:
     void handle(pjsip_rx_data* rdata);
     void set_registration_sink(IRegistrationSink* sink) { sink_ = sink; }
 
+    // Whether a binding's state change is significant enough to mirror to
+    // the control plane, rather than a plain refresh with nothing new to
+    // report. `previous` is nullopt for a binding that didn't exist before
+    // this REGISTER. A pure state-change rule alone would let a live
+    // binding's mirrored expiry lapse while the phone keeps refreshing it --
+    // RegistrationsTable.tsx renders a past expiresAt as "stale" -- so the
+    // half-granted-lifetime floor exists to keep re-mirroring a still-live
+    // registration even when nothing else changed. Public and static so it's
+    // testable without PJSIP.
+    [[nodiscard]] static bool should_mirror(
+        const std::optional<Binding>& previous,
+        const Binding& incoming,
+        bool removed,
+        std::chrono::steady_clock::time_point now);
+
 private:
     // The To-header's host, if it's a domain UsersStore currently knows
     // about (i.e. some enabled user's realm) -- else nullopt, in which case
@@ -72,6 +88,14 @@ private:
     void respond(pjsip_rx_data* rdata, int status_code);
     // 200 OK listing every live binding currently on file for `aor`.
     void send_ok(pjsip_rx_data* rdata, const std::string& aor);
+    // Finalizes mirrored_at_ on every binding in `new_bindings` (in place)
+    // and returns which ones should_mirror() says to actually mirror, in the
+    // same order -- must run before apply_contacts() overwrites `aor`'s
+    // stored bindings.
+    [[nodiscard]] std::vector<bool> decide_mirrors(
+        const std::string& aor,
+        std::vector<Binding>& new_bindings,
+        std::chrono::steady_clock::time_point now) const;
     void mirror_registration(
         const std::string& aor,
         const Binding& binding,

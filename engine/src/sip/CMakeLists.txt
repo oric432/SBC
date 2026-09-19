@@ -40,6 +40,7 @@ if(BUILD_TESTS)
     add_executable(sip_tests
         call/handlers/tests/test_mid_dialog_offer.cpp
         registrar/tests/test_binding_store.cpp
+        registrar/tests/test_registrar_actions.cpp
         route_table/tests/test_routes_store.cpp
         router/tests/test_extract_utils.cpp
         sm/tests/test_setup_sm.cpp
