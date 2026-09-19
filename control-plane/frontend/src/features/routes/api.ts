@@ -1,12 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse } from "@/lib/api";
+import { unwrap } from "@/lib/api";
 import type { CreateRoutePayload, RouteRule, RouteSnapshot, SwapRoutePayload, UpdateRoutePayload } from "./types";
-
-// 2xx responses are always { success: true, data }; fetchBaseQuery routes
-// non-2xx responses to transformErrorResponse instead, so this only ever
-// sees the success shape. Unwrap it so the rest of the app works with the
-// payload type directly.
-const unwrap = <T>(response: ApiResponse<T>): T => (response as { data: T }).data;
 
 export const routesApi = createApi({
     reducerPath: "routesApi",

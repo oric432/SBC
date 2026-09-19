@@ -15,6 +15,12 @@ export interface ApiErrorBody {
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiErrorBody;
 
+// 2xx responses are always { success: true, data }; fetchBaseQuery routes
+// non-2xx responses to transformErrorResponse instead, so this only ever
+// sees the success shape. Unwrap it so the rest of the app works with the
+// payload type directly.
+export const unwrap = <T>(response: ApiResponse<T>): T => (response as { data: T }).data;
+
 const FALLBACK_ERROR_MESSAGE = "Something went wrong, try again later";
 const BACKEND_UNREACHABLE_MESSAGE = "Failed to establish HTTP connection to control plane backend";
 
