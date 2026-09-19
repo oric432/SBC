@@ -1,9 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse } from "@/lib/api";
+import { unwrap } from "@/lib/api";
 import type { Registration } from "./types";
-
-const unwrap = <T>(response: ApiResponse<T>): T =>
-    (response as { data: T }).data;
 
 // Polled rather than pushed: the control plane has no browser-facing
 // websocket today (only the engine-facing channel in ws/engineChannel.ts),

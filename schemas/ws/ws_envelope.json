@@ -1,6 +1,64 @@
 {
    "type": "object",
    "properties": {
+      "registration": {
+         "anyOf": [
+            {
+               "type": "object",
+               "properties": {
+                  "aor": {
+                     "type": "string",
+                     "description": "Address of record, e.g. \"alice@sbc.local\""
+                  },
+                  "contact_uri": {
+                     "type": "string",
+                     "description": "The registered Contact URI"
+                  },
+                  "expires_in_s": {
+                     "$ref": "#/$defs/int32_t",
+                     "description": "Seconds until expiry, meaningless when removed is true"
+                  },
+                  "removed": {
+                     "type": "boolean",
+                     "description": "True if this binding was explicitly de-registered or expired"
+                  },
+                  "source_address": {
+                     "type": "string",
+                     "description": "Observed source IP the REGISTER arrived from (NAT-safe binding target)"
+                  },
+                  "source_port": {
+                     "$ref": "#/$defs/int32_t",
+                     "description": "Observed source port"
+                  },
+                  "transport": {
+                     "type": "string",
+                     "description": "Transport the registration arrived on, e.g. \"udp\""
+                  },
+                  "user_agent": {
+                     "type": [
+                        "string",
+                        "null"
+                     ],
+                     "description": "The registering device's User-Agent header, if present"
+                  }
+               },
+               "additionalProperties": false,
+               "required": [
+                  "aor",
+                  "contact_uri",
+                  "source_address",
+                  "source_port",
+                  "transport",
+                  "expires_in_s",
+                  "removed"
+               ]
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "One registration mirror update, sent as a \"registration\" message"
+      },
       "routes_snapshot": {
          "anyOf": [
             {
@@ -65,11 +123,71 @@
                "type": "null"
             }
          ],
-         "description": "Full route table. Sent as the first message on every connect or reconnect, and again whenever the table changes."
+         "description": "Full route table, part of a \"snapshot\" message"
+      },
+      "seq": {
+         "anyOf": [
+            {
+               "$ref": "#/$defs/int64_t"
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "Monotonically increasing sequence number, set on control-plane -> engine messages only"
       },
       "type": {
          "type": "string",
-         "description": "Message discriminator, currently only \"snapshot\""
+         "description": "Message discriminator: \"snapshot\" or \"registration\""
+      },
+      "users_snapshot": {
+         "anyOf": [
+            {
+               "type": "object",
+               "properties": {
+                  "users": {
+                     "type": "array",
+                     "items": {
+                        "type": "object",
+                        "properties": {
+                           "enabled": {
+                              "type": "boolean",
+                              "description": "Disabled users are rejected as if they didn't exist"
+                           },
+                           "ha1": {
+                              "type": "string",
+                              "description": "MD5(username:realm:password) hex digest, never the plaintext password"
+                           },
+                           "realm": {
+                              "type": "string",
+                              "description": "Digest realm, also the local domain this user belongs to"
+                           },
+                           "username": {
+                              "type": "string",
+                              "description": "SIP AOR username"
+                           }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                           "username",
+                           "realm",
+                           "ha1",
+                           "enabled"
+                        ]
+                     },
+                     "description": "Every SIP user the control plane currently has provisioned"
+                  }
+               },
+               "additionalProperties": false,
+               "required": [
+                  "users"
+               ]
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "Full SIP user table, part of a \"snapshot\" message"
       }
    },
    "additionalProperties": false,
@@ -78,6 +196,11 @@
          "type": "integer",
          "minimum": -2147483648,
          "maximum": 2147483647
+      },
+      "int64_t": {
+         "type": "integer",
+         "minimum": -9223372036854775808,
+         "maximum": 9223372036854775807
       }
    },
    "required": [

@@ -15,22 +15,12 @@ CallManager::~CallManager() = default;
 CallSession* CallManager::create_session(
     const std::string& call_id,
     PjContext* ctx,
-    RoutesStore* routes_store,
-    UsersStore* users_store,
-    BindingStore* binding_store,
+    const EngineStores& stores,
     const boost::asio::any_io_executor& executor,
     pjsip_rx_data* rdata) {
     auto [iter, inserted] = sessions_.try_emplace(call_id);
     if (inserted) {
-        iter->second = std::make_unique<CallSession>(
-            call_id,
-            ctx,
-            this,
-            routes_store,
-            users_store,
-            binding_store,
-            executor,
-            rdata);
+        iter->second = std::make_unique<CallSession>(call_id, ctx, this, stores, executor, rdata);
     }
     return iter->second.get();
 }

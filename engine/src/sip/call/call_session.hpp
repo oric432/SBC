@@ -12,6 +12,7 @@
 #include <pjsip_ua.h>
 
 #include "sip/call/pj_context.hpp"
+#include "sip/engine_stores.hpp"
 #include "sip/sm/leg.hpp"
 #include "sip/call/dialog_actions.hpp"
 #include "sip/call/setup_actions.hpp"
@@ -24,9 +25,6 @@
 namespace SbcEngine {
 
 class CallManager;
-class RoutesStore;
-class UsersStore;
-class BindingStore;
 
 // Owns everything for one B2BUA call: the two PJSIP invite-session legs, the two
 // RTP relay sockets, and the Setup/Dialog state machines with their per-call
@@ -42,15 +40,13 @@ public:
     };
 
     // request_uri/caller_offer_sdp are extracted from rdata internally.
-    // routes_store/users_store/binding_store are forwarded to SetupActions
-    // only — CallSession does not retain any of them.
+    // stores is forwarded to SetupActions only — CallSession does not retain
+    // it.
     CallSession(
         std::string call_id,
         PjContext* ctx,
         CallManager* call_manager,
-        RoutesStore* routes_store,
-        UsersStore* users_store,
-        BindingStore* binding_store,
+        const EngineStores& stores,
         const boost::asio::any_io_executor& executor,
         pjsip_rx_data* rdata);
     ~CallSession();

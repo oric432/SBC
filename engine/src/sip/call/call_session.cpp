@@ -15,9 +15,7 @@ CallSession::CallSession(
     std::string call_id,
     PjContext* ctx,
     CallManager* call_manager,
-    RoutesStore* routes_store,
-    UsersStore* users_store,
-    BindingStore* binding_store,
+    const EngineStores& stores,
     const boost::asio::any_io_executor& executor,
     pjsip_rx_data* rdata)
     : call_id_(std::move(call_id))
@@ -30,7 +28,7 @@ CallSession::CallSession(
     , request_uri_(extract_request_uri(rdata))
     , caller_uri_(extract_from_uri(rdata))
     , caller_display_name_(extract_from_display_name(rdata))
-    , setup_actions_(*this, routes_store, users_store, binding_store)
+    , setup_actions_(*this, stores)
     , dialog_actions_(*this)
     , setup_sm_(setup_actions_, call_id_)
     , dialog_sm_(dialog_actions_, call_id_) {

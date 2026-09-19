@@ -8,6 +8,8 @@
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/registrar/binding_store.hpp"
+#include "sip/registrar/users_store.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/route_table/routes_store.hpp"
 #include "sip/stack/inv_session.hpp"
@@ -44,13 +46,13 @@ RouteResolution SetupActions::resolve_route() {
     // sends everything to us. With no users provisioned there are no local
     // domains at all, so this is inert and routing behaves exactly as it
     // did before the registrar existed.
-    if (users_store_ != nullptr && binding_store_ != nullptr) {
+    if (stores_.users_ != nullptr && stores_.bindings_ != nullptr) {
         const std::string host = extract_uri_host(request_uri);
-        if (users_store_->is_local_domain(host)) {
+        if (stores_.users_->is_local_domain(host)) {
             const std::string user = extract_uri_user(request_uri);
-            if (users_store_->find(user, host)) {
-                const std::string aor = std::format("{}@{}", user, host);
-                if (auto binding = binding_store_->find_preferred(aor, std::chrono::steady_clock::now())) {
+            if (stores_.users_->find(user, host)) {
+                const std::string aor = make_aor(user, host);
+                if (auto binding = stores_.bindings_->find_preferred(aor, std::chrono::steady_clock::now())) {
                     Log::sip()->info("[{}] routing {} to its current registration", session_.call_id(), aor);
                     return {
                         .kind_ = RouteResolution::Kind::kFound,
@@ -64,7 +66,7 @@ RouteResolution SetupActions::resolve_route() {
         }
     }
 
-    auto route = routes_store_ != nullptr ? routes_store_->find_route(request_uri) : std::nullopt;
+    auto route = stores_.routes_ != nullptr ? stores_.routes_->find_route(request_uri) : std::nullopt;
     if (!route) {
         Log::sip()->warn("[{}] no route found for {}", session_.call_id(), request_uri);
         return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};

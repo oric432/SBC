@@ -15,10 +15,7 @@ SbcApp::SbcApp()
     , router_(
           &ctx_,
           &call_manager_,
-          &routes_store_,
-          &users_store_,
-          &binding_store_,
-          &control_plane_client_,
+          EngineStores{.routes_ = &routes_store_, .users_ = &users_store_, .bindings_ = &binding_store_},
           &registrar_config_,
           ioc_.get_executor()) {}
 
@@ -67,6 +64,7 @@ void SbcApp::init_control_plane(const Settings& settings) {
 
     control_plane_client_ =
         std::make_shared<ControlPlaneClient>(ioc_.get_executor(), client_config, &routes_store_, &users_store_);
+    router_.set_registration_sink(control_plane_client_.get());
     control_plane_client_->start();
 
     if (auto res = control_plane_client_->wait_for_first_snapshot(); !res) {

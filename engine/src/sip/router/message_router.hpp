@@ -1,7 +1,6 @@
 #pragma once
 
-#include <memory>
-
+#include "sip/engine_stores.hpp"
 #include "sip/registrar/registrar_actions.hpp"
 #include "sip/sm/options_actions.hpp"
 #include "sip/router/sip_request_actions.hpp"
@@ -9,8 +8,6 @@
 
 namespace SbcEngine {
 class CallManager;
-class ControlPlaneClient;
-class RoutesStore;
 
 // Selects the request handler or active call lifecycle. SIP validation,
 // signaling actions and callback interpretation live behind those adapters.
@@ -19,17 +16,19 @@ public:
     MessageRouter(
         PjContext* ctx,
         CallManager* manager,
-        RoutesStore* routes,
-        UsersStore* users_store,
-        BindingStore* binding_store,
-        std::shared_ptr<ControlPlaneClient>* control_plane_client,
+        const EngineStores& stores,
         RegistrarConfig* registrar_config,
         boost::asio::any_io_executor executor)
         : call_manager_(manager)
-        , request_actions_(ctx, manager, routes, users_store, binding_store, std::move(executor))
+        , request_actions_(ctx, manager, stores, std::move(executor))
         , options_actions_(ctx)
         , options_sm_(options_actions_, "")
-        , registrar_actions_(ctx, users_store, binding_store, control_plane_client, registrar_config) {}
+        , registrar_actions_(ctx, stores.users_, stores.bindings_, registrar_config) {}
+
+    // Pass-through: RegistrarActions is constructed before ControlPlaneClient
+    // exists (see its own doc comment), so the sink is wired up separately,
+    // once ControlPlaneClient is.
+    void set_registration_sink(IRegistrationSink* sink) { registrar_actions_.set_registration_sink(sink); }
 
     void on_rx_request(pjsip_rx_data* request);
     pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata);

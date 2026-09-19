@@ -89,8 +89,12 @@ private:
     // reasoning as ctx_.endpt_ (see RegistrarActions).
     RegistrarConfig registrar_config_{};
     PjContext ctx_;
-    MessageRouter router_;
+    // Declared before router_: once router_ (and the RegistrarActions it
+    // owns) holds a raw IRegistrationSink* into this, it must outlive
+    // router_, which means it must destruct after it -- i.e. precede it in
+    // declaration order.
     std::shared_ptr<ControlPlaneClient> control_plane_client_;
+    MessageRouter router_;
     std::thread asio_thread_;
 };
 

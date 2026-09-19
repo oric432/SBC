@@ -24,7 +24,8 @@ Binding make_binding(
         .call_id_ = std::move(call_id),
         .cseq_ = cseq,
         .expires_at_ = now + expires_in,
-        .refreshed_at_ = now};
+        .refreshed_at_ = now,
+        .mirrored_at_ = {}};
 }
 
 } // namespace

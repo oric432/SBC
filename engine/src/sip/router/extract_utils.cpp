@@ -1,6 +1,7 @@
 #include "extract_utils.hpp"
 
 #include <array>
+#include <format>
 
 namespace SbcEngine {
 
@@ -115,6 +116,10 @@ std::string extract_uri_host(const std::string& uri) {
         end = uri.size();
     }
     return uri.substr(host_start, end - host_start);
+}
+
+std::string make_aor(const std::string& user, const std::string& host) {
+    return std::format("{}@{}", user, host);
 }
 
 } // namespace SbcEngine

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <memory>
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -9,11 +9,10 @@
 
 #include "sip/call/pj_context.hpp"
 #include "sip/registrar/binding_store.hpp"
+#include "sip/registrar/i_registration_sink.hpp"
 #include "sip/registrar/users_store.hpp"
 
 namespace SbcEngine {
-
-class ControlPlaneClient;
 
 struct RegistrarConfig {
     int min_expires_s_;
@@ -34,21 +33,34 @@ struct RegistrarConfig {
 // Holds PjContext* (not pjsip_endpoint* directly) and reads ctx_->endpt_
 // lazily: MessageRouter -- and therefore this object -- is constructed in
 // SbcApp's member-init list, before SbcApp::init() populates ctx_.endpt_
-// (see OptionsActions for the same requirement). control_plane_client_ and
-// config_ are pointers to SbcApp's own members for the identical reason --
-// neither is populated until well into SbcApp::init(), well after this
-// object is constructed, but both are always valid by the time a REGISTER
-// actually arrives.
+// (see OptionsActions for the same requirement). config_ is a pointer to
+// SbcApp's own member for the identical reason -- it isn't populated until
+// well into SbcApp::init(), well after this object is constructed, but it's
+// always valid by the time a REGISTER actually arrives. sink_ starts null
+// and is wired up later still, via set_registration_sink() --
+// ControlPlaneClient itself isn't constructed until after MessageRouter (and
+// the RegistrarActions it owns) already is.
 class RegistrarActions {
 public:
-    RegistrarActions(
-        PjContext* ctx,
-        UsersStore* users_store,
-        BindingStore* binding_store,
-        std::shared_ptr<ControlPlaneClient>* control_plane_client,
-        RegistrarConfig* config);
+    RegistrarActions(PjContext* ctx, UsersStore* users_store, BindingStore* binding_store, RegistrarConfig* config);
 
     void handle(pjsip_rx_data* rdata);
+    void set_registration_sink(IRegistrationSink* sink) { sink_ = sink; }
+
+    // Whether a binding's state change is significant enough to mirror to
+    // the control plane, rather than a plain refresh with nothing new to
+    // report. `previous` is nullopt for a binding that didn't exist before
+    // this REGISTER. A pure state-change rule alone would let a live
+    // binding's mirrored expiry lapse while the phone keeps refreshing it --
+    // RegistrationsTable.tsx renders a past expiresAt as "stale" -- so the
+    // half-granted-lifetime floor exists to keep re-mirroring a still-live
+    // registration even when nothing else changed. Public and static so it's
+    // testable without PJSIP.
+    [[nodiscard]] static bool should_mirror(
+        const std::optional<Binding>& previous,
+        const Binding& incoming,
+        bool removed,
+        std::chrono::steady_clock::time_point now);
 
 private:
     // The To-header's host, if it's a domain UsersStore currently knows
@@ -76,12 +88,24 @@ private:
     void respond(pjsip_rx_data* rdata, int status_code);
     // 200 OK listing every live binding currently on file for `aor`.
     void send_ok(pjsip_rx_data* rdata, const std::string& aor);
-    void mirror_registration(const std::string& aor, const Binding& binding, bool removed);
+    // Finalizes mirrored_at_ on every binding in `new_bindings` (in place)
+    // and returns which ones should_mirror() says to actually mirror, in the
+    // same order -- must run before apply_contacts() overwrites `aor`'s
+    // stored bindings.
+    [[nodiscard]] std::vector<bool> decide_mirrors(
+        const std::string& aor,
+        std::vector<Binding>& new_bindings,
+        std::chrono::steady_clock::time_point now) const;
+    void mirror_registration(
+        const std::string& aor,
+        const Binding& binding,
+        bool removed,
+        const std::optional<std::string>& user_agent);
 
     PjContext* ctx_;
     UsersStore* users_store_;
     BindingStore* binding_store_;
-    std::shared_ptr<ControlPlaneClient>* control_plane_client_;
+    IRegistrationSink* sink_ = nullptr;
     RegistrarConfig* config_;
 };
 

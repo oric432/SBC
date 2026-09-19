@@ -43,4 +43,11 @@ std::string extract_uri_user(const std::string& uri);
 // user's realm (UsersStore::is_local_domain()).
 std::string extract_uri_host(const std::string& uri);
 
+// Composes the BindingStore key RegistrarActions writes on REGISTER and
+// SetupActions::resolve_route() reads on an inbound INVITE. The two sides
+// derive user/host independently (To-header user + matched realm vs.
+// extract_uri_user()/extract_uri_host() on the request-URI) -- both must
+// agree on this format or routing to a registered user silently breaks.
+std::string make_aor(const std::string& user, const std::string& host);
+
 } // namespace SbcEngine

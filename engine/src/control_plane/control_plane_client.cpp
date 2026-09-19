@@ -28,6 +28,13 @@ using Tcp = Asio::ip::tcp;
 // stalled) can make outbound_queue_ consume under sustained REGISTER
 // refreshes.
 constexpr std::size_t kMaxOutboundQueueSize = 64;
+
+// How long a handshake that succeeded is given to actually deliver the first
+// snapshot before wait_for_first_snapshot() gives up. Guards against a
+// protocol mismatch on the very first message (on_read()'s parse-failure and
+// unrecognized-type branches both just re-read forever) hanging startup
+// indefinitely. Not a settings key -- nobody has a reason to tune it.
+constexpr std::chrono::seconds kFirstSnapshotTimeout{10};
 } // namespace
 
 Result<WsUrlParts> parse_ws_url(std::string_view url) {
@@ -64,6 +71,7 @@ struct ControlPlaneClient::Impl {
         , users_store_(users_store)
         , resolver_(executor_)
         , retry_timer_(executor_)
+        , first_snapshot_timer_(executor_)
         , first_snapshot_future_(first_snapshot_promise_.get_future()) {}
 
     Asio::any_io_executor executor_;
@@ -72,6 +80,10 @@ struct ControlPlaneClient::Impl {
     UsersStore* users_store_;
     Tcp::resolver resolver_;
     Asio::steady_timer retry_timer_;
+    // Armed on a successful handshake, while the first snapshot is still
+    // outstanding; cancelled the moment it arrives (or the object is torn
+    // down). See kFirstSnapshotTimeout.
+    Asio::steady_timer first_snapshot_timer_;
     // unique_ptr rather than optional: torn down and rebuilt fresh on every
     // connect attempt, and a raw pointer sidesteps
     // bugprone-unchecked-optional-access on every dereference below, which
@@ -94,6 +106,10 @@ struct ControlPlaneClient::Impl {
     // up behind whichever write is already in flight.
     std::deque<std::string> outbound_queue_;
     bool writing_{false};
+    // Highest WsEnvelope::seq applied so far this connection. Reset on every
+    // (re)connect -- a backend restart resets its own counter too, so
+    // without this the engine would reject every message forever after.
+    std::int64_t last_seq_{0};
 };
 
 ControlPlaneClient::ControlPlaneClient(
@@ -121,6 +137,11 @@ void ControlPlaneClient::do_connect() {
     impl_->outbound_queue_.clear();
     impl_->writing_ = false;
     impl_->connected_ = false;
+    impl_->last_seq_ = 0;
+    // A prior attempt's countdown (started on its own handshake, now
+    // abandoned) must not fire during this fresh one -- on_handshake()
+    // re-arms it once this attempt's handshake actually succeeds.
+    impl_->first_snapshot_timer_.cancel();
     impl_->ws_ = std::make_unique<Websocket::stream<Beast::tcp_stream>>(impl_->executor_);
     impl_->resolver_.async_resolve(
         impl_->config_.endpoint_.host_,
@@ -171,6 +192,23 @@ void ControlPlaneClient::on_handshake(boost::system::error_code err) {
         "connected to control plane at ws://{}:{}",
         impl_->config_.endpoint_.host_,
         impl_->config_.endpoint_.port_);
+
+    if (!impl_->first_snapshot_resolved_) {
+        impl_->first_snapshot_timer_.expires_after(kFirstSnapshotTimeout);
+        impl_->first_snapshot_timer_.async_wait([self = shared_from_this()](boost::system::error_code err) {
+            // err is only set when resolve_first_snapshot() (a snapshot
+            // arrived) or do_connect() (this attempt was abandoned) cancelled
+            // this timer -- either way, not a timeout.
+            if (err) {
+                return;
+            }
+            self->resolve_first_snapshot(
+                std::unexpected(Error(
+                    "control plane never sent a valid snapshot within {}s of connecting",
+                    kFirstSnapshotTimeout.count())));
+        });
+    }
+
     do_read();
 }
 
@@ -191,6 +229,12 @@ void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*by
         if (impl_->stopped_) {
             return;
         }
+        // A first_snapshot_timer_ armed by this connection's own on_handshake()
+        // must not be left running against the reconnect below -- if
+        // retry_interval_ is configured longer than the timer's remaining
+        // budget, it would fire and fail startup before do_connect() ever
+        // gets a chance to cancel it itself.
+        impl_->first_snapshot_timer_.cancel();
         Log::app()->warn(
             "control-plane websocket disconnected ({}); reconnecting in {}s",
             err.message(),
@@ -208,6 +252,24 @@ void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*by
     }
 
     const auto& envelope = *envelope_result;
+    // Absent seq (the engine -> control-plane registration direction never
+    // sets it) means unsequenced -- accept unconditionally. Otherwise drop
+    // anything at or below the last applied seq: two snapshot fetches
+    // triggered by successive mutations can resolve out of order, and
+    // applying the older one after the newer one would roll live state
+    // backward until the next change or reconnect papered over it.
+    if (envelope.seq && *envelope.seq <= impl_->last_seq_) {
+        Log::app()->warn(
+            "control-plane websocket: dropping out-of-order message (seq {} <= last applied {})",
+            *envelope.seq,
+            impl_->last_seq_);
+        do_read();
+        return;
+    }
+    if (envelope.seq) {
+        impl_->last_seq_ = *envelope.seq;
+    }
+
     if (envelope.type == Protocols::WsMessageType::kSnapshot) {
         if (envelope.routes_snapshot) {
             const auto& snapshot = *envelope.routes_snapshot;
@@ -340,6 +402,7 @@ void ControlPlaneClient::resolve_first_snapshot(VoidResult result) {
         return;
     }
     impl_->first_snapshot_resolved_ = true;
+    impl_->first_snapshot_timer_.cancel();
     impl_->first_snapshot_promise_.set_value(result);
 }
 
@@ -354,6 +417,7 @@ void ControlPlaneClient::stop() {
     Asio::post(impl_->executor_, [self = shared_from_this()] {
         self->impl_->connected_ = false;
         self->impl_->retry_timer_.cancel();
+        self->impl_->first_snapshot_timer_.cancel();
         if (self->impl_->ws_) {
             boost::system::error_code err;
             (void)Beast::get_lowest_layer(*self->impl_->ws_).socket().close(err); // NOLINT

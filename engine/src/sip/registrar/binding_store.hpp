@@ -22,6 +22,11 @@ struct Binding {
     // different expiry than its previous one) -- this is what
     // find_preferred() actually orders by.
     std::chrono::steady_clock::time_point refreshed_at_;
+    // When this binding was last mirrored to the control plane -- default-
+    // constructed (epoch) until RegistrarActions::should_mirror() decides to
+    // mirror it for the first time. See its own doc comment for the
+    // throttling rule this feeds.
+    std::chrono::steady_clock::time_point mirrored_at_;
 };
 
 // The SBC's location service: AOR -> live Contact bindings. Touched only on
