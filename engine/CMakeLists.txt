@@ -81,6 +81,7 @@ enable_clang_tidy_globally(${ENABLE_CLANG_TIDY})
 if(BUILD_ENGINE OR BUILD_TESTS)
     add_subdirectory(src/core)
     add_subdirectory(src/net)
+    add_subdirectory(src/control_plane)
     add_subdirectory(src/sip)
     add_subdirectory(src/protocols)
 endif()
@@ -105,6 +106,7 @@ if(BUILD_ENGINE)
         net
         sip
         protocols
+        control_plane
         third_party::spdlog
         third_party::boost_asio
         third_party::boost_system

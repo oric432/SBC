@@ -1,11 +1,11 @@
-set(BOOST_INCLUDE_LIBRARIES asio system CACHE STRING "" FORCE)
+set(BOOST_INCLUDE_LIBRARIES asio system beast CACHE STRING "" FORCE)
 set(BOOST_ENABLE_CMAKE ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 sbc_build_dependency(Boost)
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
-  foreach(_boost_target Boost::headers Boost::asio Boost::system)
+  foreach(_boost_target Boost::headers Boost::asio Boost::system Boost::beast)
     if(TARGET ${_boost_target})
       get_target_property(_aliased_target ${_boost_target} ALIASED_TARGET)
       if(_aliased_target)
@@ -19,3 +19,5 @@ endif()
 
 sbc_expose_third_party(third_party::boost_asio Boost::asio)
 sbc_expose_third_party(third_party::boost_system Boost::system)
+# Header-only; only pulled in by the control-plane websocket client.
+sbc_expose_third_party(third_party::boost_beast Boost::beast)

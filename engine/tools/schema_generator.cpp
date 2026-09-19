@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <glaze/glaze.hpp>
 #include <print>
+#include "protocols/control_plane_ws.hpp"
 #include "protocols/sip_routes.hpp"
 
 using namespace ::SbcEngine::Protocols;
@@ -40,6 +41,8 @@ int main() {
         export_schema<ApiError>(output_directory / "api_error.json");
         export_schema<ApiResponse<glz::raw_json>>(output_directory / "api_response.json");
 
+        const Fs::path ws_output_directory = "schemas/ws";
+        export_schema<WsEnvelope>(ws_output_directory / "ws_envelope.json");
 
     } catch (const std::exception& err) {
         std::println("Failed to generate schemas {}", err.what());

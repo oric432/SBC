@@ -1,4 +1,5 @@
 import cors from 'cors';
+import { createServer } from 'http';
 import { StatusCodes } from 'http-status-codes';
 import { logger } from './utils/logger';
 import express from 'express';
@@ -10,6 +11,7 @@ import { checkDbConnection } from './db/client';
 import errorHandlerMiddleware from './middlewares/errorHandlerMiddleware';
 import routesRouter from './routes/routesRouter';
 import { sendError } from './utils/apiResponse';
+import { attachEngineChannel } from './ws/engineChannel';
 
 const app = express();
 
@@ -36,7 +38,12 @@ app.use('*', (req, res) => {
   sendError(res, 'Route not found', StatusCodes.NOT_FOUND);
 });
 
-app.listen(env.port, () => {
+// A plain http.Server (rather than app.listen()'s implicit one) so the
+// engine's websocket channel can share the same port as the REST API.
+const server = createServer(app);
+attachEngineChannel(server);
+
+server.listen(env.port, () => {
   logger.info(`Server started on port ${env.port}`);
 
   checkDbConnection().then((connected) => {

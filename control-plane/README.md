@@ -5,7 +5,7 @@ Web control plane for SBC: React/Vite frontend + Express/Postgres backend for ma
 ## Stack
 
 - **Frontend**: React 18, TypeScript, Vite 7, Tailwind, Radix/shadcn, Redux Toolkit, React Router
-- **Backend**: Express, TypeScript, Drizzle ORM, PostgreSQL, Socket.IO
+- **Backend**: Express, TypeScript, Drizzle ORM, PostgreSQL, ws (websocket channel to the engine)
 - **DB**: Postgres 16 (via Docker Compose)
 
 ## Prerequisites
