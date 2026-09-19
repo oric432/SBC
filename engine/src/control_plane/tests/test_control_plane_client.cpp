@@ -65,6 +65,21 @@ TEST_CASE("ControlPlaneClient parses a snapshot envelope") {
     CHECK(result->routes_snapshot->routes.at(10).uri == "sip:alice@example.com");
 }
 
+TEST_CASE("ControlPlaneClient parses a seq field when present") {
+    const auto result = ControlPlaneClient::parse_envelope(R"({"type": "snapshot", "seq": 7})");
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->seq.has_value());
+    CHECK(*result->seq == 7);
+}
+
+TEST_CASE("ControlPlaneClient leaves seq unset when absent") {
+    const auto result = ControlPlaneClient::parse_envelope(R"({"type": "registration"})");
+
+    REQUIRE(result.has_value());
+    CHECK_FALSE(result->seq.has_value());
+}
+
 TEST_CASE("ControlPlaneClient parses an unrecognized message type without failing") {
     const auto result = ControlPlaneClient::parse_envelope(R"({"type": "something_new"})");
 

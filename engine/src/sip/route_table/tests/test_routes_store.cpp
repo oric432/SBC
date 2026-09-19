@@ -47,27 +47,19 @@ TEST_CASE("RoutesStore applies a newer version for the same table", "[routes_sto
     REQUIRE(route->sip_address == "192.0.2.2");
 }
 
-TEST_CASE("RoutesStore ignores a stale snapshot for the same table", "[routes_store]") {
+TEST_CASE(
+    "RoutesStore applies a snapshot unconditionally even at a non-increasing version for the same table",
+    "[routes_store]") {
+    // Out-of-order delivery is guarded upstream now, by WsEnvelope::seq (see
+    // ControlPlaneClient::on_read()) -- RoutesStore itself no longer filters.
     RoutesStore routes;
     routes.set_snapshot(make_snapshot("default", 2, "192.0.2.2"));
-    // An older mutation's async fetch resolving after a newer one's must not
-    // roll the live table backward.
     routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1"));
-    REQUIRE(routes.version() == 2);
+    REQUIRE(routes.version() == 1);
     const auto route = routes.find_route("sip:anything");
     REQUIRE(route.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    REQUIRE(route->sip_address == "192.0.2.2");
-}
-
-TEST_CASE("RoutesStore ignores a repeated snapshot at the same version", "[routes_store]") {
-    RoutesStore routes;
-    routes.set_snapshot(make_snapshot("default", 2, "192.0.2.2"));
-    routes.set_snapshot(make_snapshot("default", 2, "192.0.2.99"));
-    const auto route = routes.find_route("sip:anything");
-    REQUIRE(route.has_value());
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    REQUIRE(route->sip_address == "192.0.2.2");
+    REQUIRE(route->sip_address == "192.0.2.1");
 }
 
 TEST_CASE("RoutesStore applies a snapshot for a different table regardless of version", "[routes_store]") {

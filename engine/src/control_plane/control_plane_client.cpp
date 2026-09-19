@@ -94,6 +94,10 @@ struct ControlPlaneClient::Impl {
     // up behind whichever write is already in flight.
     std::deque<std::string> outbound_queue_;
     bool writing_{false};
+    // Highest WsEnvelope::seq applied so far this connection. Reset on every
+    // (re)connect -- a backend restart resets its own counter too, so
+    // without this the engine would reject every message forever after.
+    int last_seq_{0};
 };
 
 ControlPlaneClient::ControlPlaneClient(
@@ -121,6 +125,7 @@ void ControlPlaneClient::do_connect() {
     impl_->outbound_queue_.clear();
     impl_->writing_ = false;
     impl_->connected_ = false;
+    impl_->last_seq_ = 0;
     impl_->ws_ = std::make_unique<Websocket::stream<Beast::tcp_stream>>(impl_->executor_);
     impl_->resolver_.async_resolve(
         impl_->config_.endpoint_.host_,
@@ -208,6 +213,24 @@ void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*by
     }
 
     const auto& envelope = *envelope_result;
+    // Absent seq (the engine -> control-plane registration direction never
+    // sets it) means unsequenced -- accept unconditionally. Otherwise drop
+    // anything at or below the last applied seq: two snapshot fetches
+    // triggered by successive mutations can resolve out of order, and
+    // applying the older one after the newer one would roll live state
+    // backward until the next change or reconnect papered over it.
+    if (envelope.seq && *envelope.seq <= impl_->last_seq_) {
+        Log::app()->warn(
+            "control-plane websocket: dropping out-of-order message (seq {} <= last applied {})",
+            *envelope.seq,
+            impl_->last_seq_);
+        do_read();
+        return;
+    }
+    if (envelope.seq) {
+        impl_->last_seq_ = *envelope.seq;
+    }
+
     if (envelope.type == Protocols::WsMessageType::kSnapshot) {
         if (envelope.routes_snapshot) {
             const auto& snapshot = *envelope.routes_snapshot;
