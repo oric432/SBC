@@ -38,11 +38,16 @@ int main() {
         export_schema<SipRouteRule>(output_directory / "sip_route_rule.json");
         export_schema<SipRouteSnapshot>(output_directory / "sip_route_snapshot.json");
         export_schema<SipRouteUpdate>(output_directory / "sip_route_update.json");
-        export_schema<ApiError>(output_directory / "api_error.json");
-        export_schema<ApiResponse<glz::raw_json>>(output_directory / "api_response.json");
+
+        const Fs::path api_output_directory = "schemas/api";
+        export_schema<ApiError>(api_output_directory / "api_error.json");
+        export_schema<ApiResponse<glz::raw_json>>(api_output_directory / "api_response.json");
 
         const Fs::path ws_output_directory = "schemas/ws";
         export_schema<WsEnvelope>(ws_output_directory / "ws_envelope.json");
+        export_schema<SipUser>(ws_output_directory / "sip_user.json");
+        export_schema<SipUserSnapshot>(ws_output_directory / "sip_user_snapshot.json");
+        export_schema<RegistrationEvent>(ws_output_directory / "registration_event.json");
 
     } catch (const std::exception& err) {
         std::println("Failed to generate schemas {}", err.what());

@@ -1,0 +1,29 @@
+{
+   "type": "object",
+   "properties": {
+      "enabled": {
+         "type": "boolean",
+         "description": "Disabled users are rejected as if they didn't exist"
+      },
+      "ha1": {
+         "type": "string",
+         "description": "MD5(username:realm:password) hex digest, never the plaintext password"
+      },
+      "realm": {
+         "type": "string",
+         "description": "Digest realm, also the local domain this user belongs to"
+      },
+      "username": {
+         "type": "string",
+         "description": "SIP AOR username"
+      }
+   },
+   "additionalProperties": false,
+   "required": [
+      "username",
+      "realm",
+      "ha1",
+      "enabled"
+   ],
+   "title": "SbcEngine::Protocols::SipUser"
+}
