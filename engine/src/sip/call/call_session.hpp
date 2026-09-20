@@ -5,8 +5,10 @@
 #include <array>
 #include <boost/asio/any_io_executor.hpp>
 #include <cstdint>
+#include <chrono>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <pjsip.h>
 #include <pjsip_ua.h>
@@ -113,8 +115,18 @@ public:
     [[nodiscard]] pjsip_rx_data* current_rdata() const { return current_rdata_; }
     void clear_rdata() { current_rdata_ = nullptr; }
 
+    // Call-history events (see ICallEventSink); no-ops when no sink is wired.
+    // report_call_answered() also starts the clock report_call_terminated()
+    // measures duration from. report_call_updated() is only for an answered
+    // call, and report_call_terminated() only ever reports once.
+    void report_call_started();
+    void report_call_answered();
+    void report_call_updated();
+    void report_call_terminated(std::string_view status, std::optional<std::string> failure_reason);
 
 private:
+    void send_call_updated();
+
     std::string call_id_;
     PjContext* ctx_;
     CallManager* call_manager_;
@@ -142,6 +154,9 @@ private:
     std::unique_ptr<OfferAnswerExchange> exchange_;
     std::string negotiated_offer_;
     std::string negotiated_answer_;
+
+    std::optional<std::chrono::steady_clock::time_point> answered_at_;
+    bool terminated_reported_ = false;
 };
 
 } // namespace SbcEngine

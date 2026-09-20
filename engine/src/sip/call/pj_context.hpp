@@ -7,6 +7,8 @@
 
 namespace SbcEngine {
 
+class ICallEventSink;
+
 struct PjContext {
     pjsip_endpoint* endpt_ = nullptr;
     PjsipConfig config_;
@@ -14,6 +16,9 @@ struct PjContext {
     // Non-owning: points at SbcApp's (or a test harness's) value-owned
     // instance, mirroring endpt_ above.
     PjmediaEndpoint* pjmedia_endpoint_ = nullptr;
+    // Non-owning, wired after the control plane connects; null means call
+    // events aren't reported (e.g. unit tests).
+    ICallEventSink* call_events_ = nullptr;
 };
 
 } // namespace SbcEngine
