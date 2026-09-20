@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import { env } from './config/env';
 import { checkDbConnection } from './db/client';
 import errorHandlerMiddleware from './middlewares/errorHandlerMiddleware';
+import callsRouter from './routes/callsRouter';
 import registrationsRouter from './routes/registrationsRouter';
 import routesRouter from './routes/routesRouter';
 import sipUsersRouter from './routes/sipUsersRouter';
@@ -33,6 +34,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/b2bua/routes', routesRouter);
 app.use('/api/sip-users', sipUsersRouter);
 app.use('/api/registrations', registrationsRouter);
+app.use('/api/calls', callsRouter);
 
 // Error handling middleware (must be last)
 app.use(errorHandlerMiddleware);
