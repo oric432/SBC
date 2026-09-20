@@ -3,12 +3,17 @@
 #include <csignal>
 #include <cstdlib>
 
+#include "control_plane/ws_utils.hpp"
 #include "core/settings.hpp"
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
 
 SbcApp* SbcApp::instance_ = nullptr;
+
+namespace {
+constexpr std::chrono::milliseconds kShutdownFlushTimeout{2000};
+} // namespace
 
 SbcApp::SbcApp()
     : work_guard_(boost::asio::make_work_guard(ioc_))
@@ -128,6 +133,7 @@ void SbcApp::init_context(const PjsipConfig& config) {
     ctx_.config_ = config;
     ctx_.module_id_ = stack_.module_id();
     ctx_.pjmedia_endpoint_ = &pjmedia_endpoint_;
+    ctx_.call_events_ = control_plane_client_.get();
 
     stack_.set_router(&router_);
 }
@@ -153,6 +159,9 @@ void SbcApp::run() {
     // messages is a surprising side effect, not just a resource cleanup.
     call_manager_.terminate_established_calls();
 
+    // Lets the call_terminated events that terminate_established_calls() just
+    // queued reach the control plane instead of being cut off by stop().
+    control_plane_client_->flush(kShutdownFlushTimeout);
     control_plane_client_->stop();
     work_guard_.reset();
     ioc_.stop();

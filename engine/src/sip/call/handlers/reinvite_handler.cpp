@@ -44,9 +44,7 @@ ExchangeOutcome ReinviteHandler::answer(const std::string& offer, Leg leg) {
     if (!respond(inv, PJSIP_SC_OK, negotiated->answer_sdp_)) {
         return ExchangeOutcome::kFailed;
     }
-    CallSession::CallLeg& current = session_.leg(leg);
-    current.codec_ = negotiated->codec_;
-    current.dtmf_pt_ = negotiated->dtmf_pt_;
+    commit_negotiated_media(session_, leg, *negotiated);
     return ExchangeOutcome::kCommitted;
 }
 

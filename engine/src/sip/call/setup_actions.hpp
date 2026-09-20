@@ -1,9 +1,12 @@
 #pragma once
 
 #include <optional>
+#include <string>
+#include <string_view>
 
 #include <pjsip_ua.h>
 
+#include "protocols/call_event.hpp"
 #include "protocols/supported_codecs.hpp"
 #include "sip/engine_stores.hpp"
 #include "sip/sm/i_setup_actions.hpp"
@@ -38,11 +41,16 @@ public:
 private:
     void handle_early(pjsip_rx_data* rdata);
     void handle_disconnect(pjsip_inv_session* inv);
+    // Keeps only the first failure noted -- the specific cause a failing path
+    // recorded, not the generic fallback terminate_call() adds afterward.
+    void note_failure(std::string_view status, std::string reason);
     CallSession& session_;
     EngineStores stores_;
     // The status code report_progress() last actually sent the caller (post
     // callee-code mirroring), 0 before the first one -- lets is_new_progress()
     // tell a genuine status change from a retransmission (see #214).
     int last_relayed_status_code_ = 0;
+    std::string_view failure_status_ = Protocols::CallStatus::kFailed;
+    std::string failure_reason_;
 };
 } // namespace SbcEngine

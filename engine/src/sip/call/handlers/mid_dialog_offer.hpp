@@ -44,4 +44,15 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
     std::string_view chosen,
     std::optional<std::uint8_t> dtmf_pt);
 
+// Whether replacing `before` with `after` on `leg` changes the codec reported
+// for the call, which is the caller leg's (see CallUpdated).
+[[nodiscard]] bool caller_codec_changed(
+    Leg leg,
+    const std::optional<Sdp::AudioCodecInfo>& before,
+    const std::optional<Sdp::AudioCodecInfo>& after);
+
+// Records a committed mid-dialog negotiation on `leg` and reports a changed
+// call codec to the control plane.
+void commit_negotiated_media(CallSession& session, Leg leg, const NegotiatedOffer& negotiated);
+
 } // namespace SbcEngine
