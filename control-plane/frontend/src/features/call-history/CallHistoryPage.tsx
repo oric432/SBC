@@ -3,7 +3,11 @@ import { useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useGetAllCallsQuery, useGetCallHistoryQuery } from "@/features/call-history/api";
+import {
+    CALL_HISTORY_POLL_INTERVAL_MS,
+    useGetAllCallsQuery,
+    useGetCallHistoryQuery,
+} from "@/features/call-history/api";
 import { CallHistoryDetailDialog } from "@/features/call-history/components/CallHistoryDetailDialog";
 import { CallHistoryPagination } from "@/features/call-history/components/CallHistoryPagination";
 import { CallHistoryStatusFilter } from "@/features/call-history/components/CallHistoryStatusFilter";
@@ -20,16 +24,19 @@ export function CallHistoryPage() {
     const [page, setPage] = useState(1);
     const [selectedCall, setSelectedCall] = useState<CallRecord | undefined>(undefined);
     const [lastSeenAt, markAllAsRead] = useLastSeenCheckpoint();
-    const { data: allCalls } = useGetAllCallsQuery();
+    const { data: allCalls } = useGetAllCallsQuery(undefined, { pollingInterval: CALL_HISTORY_POLL_INTERVAL_MS });
     const hasUnread = useMemo(() => (allCalls ?? []).some((call) => isCallNew(call, lastSeenAt)), [allCalls, lastSeenAt]);
 
-    const { data, isLoading } = useGetCallHistoryQuery({
-        statuses,
-        sortField,
-        sortDir,
-        page,
-        pageSize: PAGE_SIZE,
-    });
+    const { data, isLoading } = useGetCallHistoryQuery(
+        {
+            statuses,
+            sortField,
+            sortDir,
+            page,
+            pageSize: PAGE_SIZE,
+        },
+        { pollingInterval: CALL_HISTORY_POLL_INTERVAL_MS },
+    );
 
     const handleStatusChange = useCallback((next: CallStatus[]) => {
         setStatuses(next);

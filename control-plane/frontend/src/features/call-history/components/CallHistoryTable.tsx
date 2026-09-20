@@ -117,7 +117,7 @@ export const CallHistoryTable = memo(function CallHistoryTable({
                                             "—"
                                         )}
                                     </TableCell>
-                                    <TableCell className="text-sm">{call.codec}</TableCell>
+                                    <TableCell className="text-sm">{call.codec ?? "—"}</TableCell>
                                     <TableCell>
                                         <Badge className={cn(STATUS_BADGE_STYLES[call.status])}>{call.status}</Badge>
                                     </TableCell>

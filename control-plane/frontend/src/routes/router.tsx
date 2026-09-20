@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import { AppShell } from "@/components/layout/AppShell";
+import { ActiveCallsPage } from "@/features/active-calls/ActiveCallsPage";
 import { CallHistoryPage } from "@/features/call-history/CallHistoryPage";
 import { RegistrationsPage } from "@/features/registrations/RegistrationsPage";
 import { RoutesPage } from "@/features/routes/RoutesPage";
@@ -13,6 +14,7 @@ export const router = createBrowserRouter([
         children: [
             { index: true, element: <Navigate to="/routes" replace /> },
             { path: "routes", element: <RoutesPage />, handle: { title: "Routes" } },
+            { path: "active-calls", element: <ActiveCallsPage />, handle: { title: "Active Calls" } },
             { path: "call-history", element: <CallHistoryPage />, handle: { title: "Call History" } },
             { path: "sip-users", element: <SipUsersPage />, handle: { title: "SIP Users" } },
             { path: "registrations", element: <RegistrationsPage />, handle: { title: "Registrations" } },

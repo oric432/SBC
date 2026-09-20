@@ -33,7 +33,7 @@ export function CallHistoryDetailDialog({ call, onOpenChange }: CallHistoryDetai
                         <DetailRow label="Caller" value={<span className="font-mono">{call.caller}</span>} />
                         <DetailRow label="Callee" value={<span className="font-mono">{call.callee}</span>} />
                         <DetailRow label="Route" value={<span className="font-mono">{call.route ?? "—"}</span>} />
-                        <DetailRow label="Codec" value={call.codec} />
+                        <DetailRow label="Codec" value={call.codec ?? "—"} />
                         <DetailRow
                             label="Status"
                             value={

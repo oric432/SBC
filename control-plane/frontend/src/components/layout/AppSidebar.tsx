@@ -1,4 +1,4 @@
-import { History, Radio, Users, Waypoints } from "lucide-react";
+import { History, PhoneCall, Radio, Users, Waypoints } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 import {
@@ -20,6 +20,7 @@ const navItems = [
     { title: "Routes", url: "/routes", icon: Waypoints },
     { title: "SIP Users", url: "/sip-users", icon: Users },
     { title: "Registrations", url: "/registrations", icon: Radio },
+    { title: "Active Calls", url: "/active-calls", icon: PhoneCall },
     { title: "Call History", url: "/call-history", icon: History },
 ];
 
