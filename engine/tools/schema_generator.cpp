@@ -48,6 +48,9 @@ int main() {
         export_schema<SipUser>(ws_output_directory / "sip_user.json");
         export_schema<SipUserSnapshot>(ws_output_directory / "sip_user_snapshot.json");
         export_schema<RegistrationEvent>(ws_output_directory / "registration_event.json");
+        export_schema<CallStarted>(ws_output_directory / "call_started.json");
+        export_schema<CallUpdated>(ws_output_directory / "call_updated.json");
+        export_schema<CallTerminated>(ws_output_directory / "call_terminated.json");
 
     } catch (const std::exception& err) {
         std::println("Failed to generate schemas {}", err.what());
