@@ -1,0 +1,33 @@
+{
+   "type": "object",
+   "properties": {
+      "codec": {
+         "type": [
+            "string",
+            "null"
+         ],
+         "description": "Codec negotiated with the caller"
+      },
+      "route": {
+         "type": [
+            "string",
+            "null"
+         ],
+         "description": "Destination the call was routed to"
+      },
+      "sip_call_id": {
+         "type": "string",
+         "description": "SIP Call-ID of the caller-facing leg"
+      },
+      "updated_at": {
+         "type": "string",
+         "description": "ISO-8601 UTC time of this update, engine clock"
+      }
+   },
+   "additionalProperties": false,
+   "required": [
+      "sip_call_id",
+      "updated_at"
+   ],
+   "title": "SbcEngine::Protocols::CallUpdated"
+}
