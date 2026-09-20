@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
-import { useGetAllCallsQuery } from "@/features/call-history/api";
+import { CALL_HISTORY_POLL_INTERVAL_MS, useGetAllCallsQuery } from "@/features/call-history/api";
 
 const LAST_SEEN_KEY = "sbc.callHistory.lastSeenAt";
 
@@ -72,7 +72,7 @@ export function isCallNew(call: { timestamp: string }, lastSeenAt: string | null
 // fire again *after* the page's checkpoint-advancing effect had already run
 // once, capturing the just-advanced value and permanently zeroing the count.
 export function useUnseenCallCount(): number {
-    const { data: calls } = useGetAllCallsQuery();
+    const { data: calls } = useGetAllCallsQuery(undefined, { pollingInterval: CALL_HISTORY_POLL_INTERVAL_MS });
     const lastSeenAt = useSyncExternalStore(subscribe, getLastSeenAt);
 
     return useMemo(() => (calls ?? []).filter((call) => isCallNew(call, lastSeenAt)).length, [calls, lastSeenAt]);

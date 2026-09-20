@@ -9,7 +9,7 @@ export interface CallRecord {
     caller: string;
     callee: string;
     route: string | null;
-    codec: Codec;
+    codec: Codec | null;
     status: CallStatus;
     timestamp: string;
     durationSeconds?: number;
