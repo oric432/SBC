@@ -1,4 +1,4 @@
-import { CheckCheck, History } from "lucide-react";
+import { AlertTriangle, CheckCheck, History } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { CallHistoryStatusFilter } from "@/features/call-history/components/Call
 import { CallHistoryTable } from "@/features/call-history/components/CallHistoryTable";
 import type { CallHistorySortField, CallRecord, CallStatus, SortDirection } from "@/features/call-history/types";
 import { isCallNew, useLastSeenCheckpoint } from "@/features/call-history/unseen";
+import { getApiErrorMessage } from "@/lib/api";
 
 const PAGE_SIZE = 10;
 
@@ -27,7 +28,7 @@ export function CallHistoryPage() {
     const { data: allCalls } = useGetAllCallsQuery(undefined, { pollingInterval: CALL_HISTORY_POLL_INTERVAL_MS });
     const hasUnread = useMemo(() => (allCalls ?? []).some((call) => isCallNew(call, lastSeenAt)), [allCalls, lastSeenAt]);
 
-    const { data, isLoading } = useGetCallHistoryQuery(
+    const { data, isLoading, isError, error } = useGetCallHistoryQuery(
         {
             statuses,
             sortField,
@@ -74,7 +75,7 @@ export function CallHistoryPage() {
                 <CallHistoryStatusFilter selected={statuses} onChange={handleStatusChange} />
             </div>
 
-            {!isLoading && (
+            {!isLoading && !isError && (
                 <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <span className="font-mono tabular-nums text-foreground">{totalCount}</span>
@@ -96,6 +97,11 @@ export function CallHistoryPage() {
                     <Skeleton className="h-10 w-full" />
                     <Skeleton className="h-10 w-full" />
                     <Skeleton className="h-10 w-full" />
+                </div>
+            ) : isError ? (
+                <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border border-dashed text-sm text-destructive">
+                    <AlertTriangle className="h-5 w-5" />
+                    {getApiErrorMessage(error)}
                 </div>
             ) : (
                 <CallHistoryTable
