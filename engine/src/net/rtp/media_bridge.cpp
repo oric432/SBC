@@ -1,5 +1,6 @@
 #include "media_bridge.hpp"
 
+#include <cassert>
 #include <cstdint>
 #include <optional>
 #include <system_error>
@@ -86,6 +87,12 @@ struct MediaBridge::Impl {
     // socket — see close()'s doc comment for why that specific ordering
     // matters (issue #208).
     bool closing_ = false;
+
+    // Set unconditionally and directly by start_bridge_loop() itself (not by
+    // its posted task) -- same reasoning as last_packet_time_ above: it must
+    // be readable from set_remote_leg_a/b's assert below without a
+    // cross-thread data race, so it can't wait for the executor to run.
+    std::atomic<bool> loop_start_requested_{false};
 
     // Set by start_bridge_loop()'s posted task the first time it actually
     // runs. Confined to this executor like closing_, so a second
@@ -309,10 +316,16 @@ std::expected<unsigned short, std::error_code> MediaBridge::leg_b_port() const {
 }
 
 void MediaBridge::set_remote_leg_a(const std::string& addr, unsigned short port) {
+    assert(
+        !impl_->loop_start_requested_.load(std::memory_order_relaxed) &&
+        "set_remote_leg_a called after start_bridge_loop(); use retarget_remote_leg_a instead");
     impl_->dest_a_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
 }
 
 void MediaBridge::set_remote_leg_b(const std::string& addr, unsigned short port) {
+    assert(
+        !impl_->loop_start_requested_.load(std::memory_order_relaxed) &&
+        "set_remote_leg_b called after start_bridge_loop(); use retarget_remote_leg_b instead");
     impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
 }
 
@@ -383,6 +396,7 @@ void MediaBridge::start_bridge_loop() {
     // is even armed (see last_packet_time()'s doc comment), and a repeat
     // call re-marking "just armed" on an already-running relay is harmless.
     impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
+    impl_->loop_start_requested_.store(true, std::memory_order_relaxed);
 
     boost::asio::post(impl_->executor_, [self = shared_from_this()] {
         if (self->impl_->loop_started_ || self->impl_->closing_) {
