@@ -81,9 +81,11 @@ void SbcApp::init_control_plane(const Settings& settings) {
 PjsipConfig SbcApp::init_pjsip(const Settings& settings) {
     PjsipConfig config;
     config.bind_ip_ = settings.sip.address;
-    // Single-homed deployment: the address we bind to is also the address we
-    // advertise (Contact/SDP). Breaks if sip.address is ever "0.0.0.0".
-    config.local_ip_ = settings.sip.address;
+    // sip.advertised_address defaults to empty -- "same as sip.address", the
+    // single-homed case. Set separately for NAT/reverse-proxy/multi-homed
+    // deployments (bind on 0.0.0.0 or a private interface, advertise a
+    // public/floating IP).
+    config.local_ip_ = settings.sip.advertised_address.empty() ? settings.sip.address : settings.sip.advertised_address;
     config.sip_port_ = settings.sip.port;
     config.identity_user_ = settings.sip.identity_user;
     config.invite_timeout_ms_ = settings.sip.invite_timeout_ms;
