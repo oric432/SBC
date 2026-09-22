@@ -107,6 +107,17 @@ std::string extract_uri_host(const std::string& uri) {
     else {
         host_start = at_pos + 1;
     }
+    // A bracketed IPv6 literal (RFC 3261 19.1.3, e.g. "sip:alice@[2001:db8::1]:5060")
+    // has colons inside the host itself, so the port-colon search below would stop
+    // at the first one and truncate mid-address. PJSIP's own URI parser strips the
+    // brackets from the host it stores (sip_parser.c), so this must match that --
+    // both feed UsersStore::is_local_domain() and must agree on the same host string.
+    if (host_start < uri.size() && uri[host_start] == '[') {
+        auto close = uri.find(']', host_start + 1);
+        if (close != std::string::npos) {
+            return uri.substr(host_start + 1, close - host_start - 1);
+        }
+    }
     // The host ends at the port colon, or -- for "sip:alice@sbc.local;transport=udp"
     // style URIs -- at the first URI parameter (';') or header (`?`) instead;
     // stopping at ':' alone left those trailing on the "host" and broke
