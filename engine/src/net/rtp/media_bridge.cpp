@@ -88,11 +88,19 @@ struct MediaBridge::Impl {
     bool closing_ = false;
 
     // Set by start_bridge_loop()'s posted task the first time it actually
-    // arms the loop. Confined to this executor like closing_, so a second
+    // runs. Confined to this executor like closing_, so a second
     // start_bridge_loop() call (issue #214: arming early on a provisional,
     // then again on the following 200 OK) is a safe no-op instead of a
     // second outstanding async_receive_pkt() tearing the shared rx buffer.
-    bool started_ = false;
+    bool loop_started_ = false;
+
+    // Set once each direction's receive loop is actually armed. A leg's
+    // destination may still be unknown when loop_started_ first flips (e.g.
+    // the caller's offer had no usable c= line) -- these let a later
+    // retarget_remote_leg_a/b arm that direction instead of leaving it
+    // permanently unarmed once its destination finally becomes known.
+    bool leg_a_rx_armed_ = false;
+    bool leg_b_rx_armed_ = false;
 
     // Receive/error-handling/re-arm loop; `process` is a function pointer
     // (never a closure) so re-arming just means calling listen() again.
@@ -223,6 +231,36 @@ struct MediaBridge::Impl {
         out_stream
             .send_audio(transcoded->encoded_, transcoded->timestamp_delta_, dst_ep, std::move(keep_session_alive));
     }
+
+    // Arms whichever direction(s) have a known destination and aren't armed
+    // yet. Called both from start_bridge_loop()'s posted task and from
+    // retarget_remote_leg_a/b()'s, since either one can be the first to learn
+    // a leg's destination.
+    static void arm_pending_legs(const std::shared_ptr<MediaBridge>& self) {
+        if (!self->impl_->loop_started_ || self->impl_->closing_) {
+            return;
+        }
+        if (!self->impl_->leg_a_rx_armed_ && self->impl_->dest_b_) {
+            self->impl_->leg_a_rx_armed_ = true;
+            listen(
+                self,
+                RelayLeg::kLegA,
+                self->impl_->session_a_,
+                self->impl_->session_b_,
+                *self->impl_->dest_b_,
+                &Impl::process_packet);
+        }
+        if (!self->impl_->leg_b_rx_armed_ && self->impl_->dest_a_) {
+            self->impl_->leg_b_rx_armed_ = true;
+            listen(
+                self,
+                RelayLeg::kLegB,
+                self->impl_->session_b_,
+                self->impl_->session_a_,
+                *self->impl_->dest_a_,
+                &Impl::process_packet);
+        }
+    }
 };
 
 MediaBridge::MediaBridge(const boost::asio::any_io_executor& executor)
@@ -281,12 +319,14 @@ void MediaBridge::set_remote_leg_b(const std::string& addr, unsigned short port)
 void MediaBridge::retarget_remote_leg_a(std::string addr, unsigned short port) {
     boost::asio::post(impl_->executor_, [self = shared_from_this(), addr = std::move(addr), port] {
         self->impl_->dest_a_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
+        Impl::arm_pending_legs(self);
     });
 }
 
 void MediaBridge::retarget_remote_leg_b(std::string addr, unsigned short port) {
     boost::asio::post(impl_->executor_, [self = shared_from_this(), addr = std::move(addr), port] {
         self->impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
+        Impl::arm_pending_legs(self);
     });
 }
 
@@ -345,29 +385,11 @@ void MediaBridge::start_bridge_loop() {
     impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
 
     boost::asio::post(impl_->executor_, [self = shared_from_this()] {
-        if (self->impl_->started_ || self->impl_->closing_) {
+        if (self->impl_->loop_started_ || self->impl_->closing_) {
             return;
         }
-        self->impl_->started_ = true;
-
-        if (self->impl_->dest_b_) {
-            Impl::listen(
-                self,
-                RelayLeg::kLegA,
-                self->impl_->session_a_,
-                self->impl_->session_b_,
-                *self->impl_->dest_b_,
-                &Impl::process_packet);
-        }
-        if (self->impl_->dest_a_) {
-            Impl::listen(
-                self,
-                RelayLeg::kLegB,
-                self->impl_->session_b_,
-                self->impl_->session_a_,
-                *self->impl_->dest_a_,
-                &Impl::process_packet);
-        }
+        self->impl_->loop_started_ = true;
+        Impl::arm_pending_legs(self);
     });
 }
 

@@ -67,7 +67,9 @@ public:
     // bridge's own executor so it can never race the relay loop's concurrent
     // reads of the remote endpoint. Use this (not set_remote_leg_a/b) to
     // retarget an already-active call's media path, e.g. for a re-INVITE
-    // that only changes one leg's own RTP address/port.
+    // that only changes one leg's own RTP address/port. Also arms the
+    // opposite leg's receive loop if it was never armed because this
+    // endpoint was still unknown when start_bridge_loop() first ran.
     void retarget_remote_leg_a(std::string addr, unsigned short port);
     void retarget_remote_leg_b(std::string addr, unsigned short port);
 
