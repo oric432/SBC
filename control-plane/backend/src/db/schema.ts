@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, serial, text, timestamp, unique } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, pgTable, serial, text, timestamp, unique } from 'drizzle-orm/pg-core';
 
 export const routeTables = pgTable('route_tables', {
   tableId: text('table_id').primaryKey(),
@@ -63,17 +63,22 @@ export const sipRegistrations = pgTable(
 // nothing in the HTTP API writes to this table. ended_at IS NULL is what
 // makes a call "active"; every timestamp is the engine's own clock reading,
 // never derived from when the event arrived here.
-export const calls = pgTable('calls', {
-  id: serial('id').primaryKey(),
-  sipCallId: text('sip_call_id').notNull().unique(),
-  caller: text('caller').notNull(),
-  callee: text('callee').notNull(),
-  route: text('route'),
-  codec: text('codec'),
-  status: text('status'),
-  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
-  answeredAt: timestamp('answered_at', { withTimezone: true }),
-  endedAt: timestamp('ended_at', { withTimezone: true }),
-  durationSeconds: integer('duration_seconds'),
-  failureReason: text('failure_reason'),
-});
+export const calls = pgTable(
+  'calls',
+  {
+    id: serial('id').primaryKey(),
+    sipCallId: text('sip_call_id').notNull().unique(),
+    caller: text('caller').notNull(),
+    callee: text('callee').notNull(),
+    route: text('route'),
+    codec: text('codec'),
+    status: text('status'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    answeredAt: timestamp('answered_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    durationSeconds: integer('duration_seconds'),
+    failureReason: text('failure_reason'),
+  },
+  // Scanned by the retention cleanup job (jobs/callHistoryCleanup.ts) on every tick.
+  (table) => [index('calls_ended_at_idx').on(table.endedAt)],
+);
