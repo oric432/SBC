@@ -40,6 +40,7 @@ Copy `.env-example` to `.env` and configure the following:
 - `NODE_ENV`: Application environment (`development`, `production`, `test`).
 - `FRONTEND_URL`: Frontend server URL for CORS validation.
 - `LOG_LEVEL`: Log severity threshold (`error`, `warn`, `info`, `http`, `verbose`, `debug`, `silly`). Stack traces are printed only for `verbose` and `debug` levels.
+- `CALL_HISTORY_RETENTION_DAYS`: How many days of terminated calls to keep before the nightly cleanup job (`src/jobs/callHistoryCleanup.ts`) deletes them (defaults to `30`). Active calls are never deleted.
 
 ## Database (Postgres + Drizzle ORM)
 
