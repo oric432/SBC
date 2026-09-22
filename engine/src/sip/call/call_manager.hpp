@@ -43,6 +43,12 @@ public:
     CallSession* find_by_inv(pjsip_inv_session* inv);
     void remove_session(const std::string& call_id);
 
+    // Set once at startup from PjContext::module_id_ (see sbc_app.cpp), so
+    // find_by_inv() can read a CallSession* straight out of inv->mod_data
+    // instead of scanning sessions_. Left at -1 (the default) in tests that
+    // never wire a real PJSIP module, where find_by_inv() falls back to a scan.
+    void set_module_id(int module_id) { module_id_ = module_id; }
+
     // A session cannot delete itself from inside its own SM action (the SM is
     // still executing). Scheduling immediately removes every lookup path, then
     // purge_scheduled() destroys the retired object after PJSIP dispatch returns.
@@ -70,6 +76,7 @@ private:
     std::unordered_map<std::string, std::unique_ptr<CallSession>> sessions_;
     std::vector<std::unique_ptr<CallSession>> retired_sessions_;
     std::shared_ptr<RtpInactivityTimer> rtp_inactivity_timer_;
+    int module_id_ = -1;
 };
 
 } // namespace SbcEngine
