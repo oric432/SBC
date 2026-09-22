@@ -8,6 +8,7 @@ import morgan from 'morgan';
 
 import { env } from './config/env';
 import { checkDbConnection } from './db/client';
+import { scheduleCallHistoryCleanup } from './jobs/callHistoryCleanup';
 import errorHandlerMiddleware from './middlewares/errorHandlerMiddleware';
 import callsRouter from './routes/callsRouter';
 import registrationsRouter from './routes/registrationsRouter';
@@ -61,6 +62,8 @@ server.listen(env.port, () => {
       logger.info('Database connection OK');
     }
   });
+
+  scheduleCallHistoryCleanup();
 });
 
 process.on('unhandledRejection', (reason) => {
