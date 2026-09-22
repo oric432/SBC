@@ -64,6 +64,10 @@ void PjmediaEndpoint::shutdown() {
         endpt_ = nullptr;
     }
     pj_caching_pool_destroy(&caching_pool_);
+
+    // Balances init()'s pj_init() -- refcounted, like every other
+    // pj_init()/pj_shutdown() pairing in this codebase.
+    pj_shutdown();
 }
 
 } // namespace SbcEngine
