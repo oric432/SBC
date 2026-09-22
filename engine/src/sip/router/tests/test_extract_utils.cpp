@@ -253,6 +253,22 @@ TEST_CASE(
     CHECK(extract_uri_host("sbc.local").empty());
 }
 
+TEST_CASE("extract_uri_host strips brackets from an IPv6 literal with a port", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@[2001:db8::1]:5060") == "2001:db8::1");
+}
+
+TEST_CASE("extract_uri_host strips brackets from an IPv6 literal with no port", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@[2001:db8::1]") == "2001:db8::1");
+}
+
+TEST_CASE("extract_uri_host strips brackets from a bare IPv6 host URI with no user part", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:[2001:db8::1]:5060") == "2001:db8::1");
+}
+
+TEST_CASE("extract_uri_host stops at a URI parameter after a bracketed IPv6 literal", "[extract_utils]") {
+    CHECK(extract_uri_host("sip:alice@[2001:db8::1]:5060;transport=udp") == "2001:db8::1");
+}
+
 TEST_CASE("make_aor composes user@host", "[extract_utils]") {
     CHECK(make_aor("alice", "sbc.local") == "alice@sbc.local");
 }
