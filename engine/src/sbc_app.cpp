@@ -53,6 +53,9 @@ Settings SbcApp::init_settings() {
     }
     Settings settings = *settings_result;
     Log::set_log_level(settings.logging.level);
+    for (const auto& [category, level] : settings.logging.categories) {
+        Log::set_category_level(category, level);
+    }
     log_applied_settings(settings);
     return settings;
 }

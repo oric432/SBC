@@ -1,6 +1,11 @@
 [logging]
 level = "info"
 pjsip_level = "disabled"
+# Optional per-category overrides of `level` above. Category names match the
+# spdlog sub-loggers in src/core/utils/log.hpp (app/sip/call/sm/rtp/pjsip); a
+# category not listed here inherits `level`. Example:
+# [logging.categories]
+# sip = "warn"
 
 [sip]
 address = "127.0.0.1"
