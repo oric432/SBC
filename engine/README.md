@@ -34,6 +34,7 @@ Before running, copy `settings-example.toml` to `settings.toml` (repo root — t
 | `[control_plane]` | `retry_interval_s` | `5` | Seconds to wait between reconnect attempts. |
 | `[registrar]` | `min_expires_s` | `60` | Below this, a REGISTER is rejected with `423 Interval Too Brief` instead of granted a shorter expiry. |
 | `[registrar]` | `max_expires_s` | `120` | Upper bound on a granted registration's expiry; also the default when a REGISTER specifies none. |
+| `[registrar]` | `binding_sweep_interval_s` | `60` | How often to drop registrations that expired without an explicit de-register. `0` disables sweeping. |
 
 ## Build & test
 

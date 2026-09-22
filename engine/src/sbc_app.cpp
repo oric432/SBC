@@ -36,6 +36,7 @@ void SbcApp::init() {
     const Settings settings = init_settings();
     registrar_config_.min_expires_s_ = settings.registrar.min_expires_s;
     registrar_config_.max_expires_s_ = settings.registrar.max_expires_s;
+    registrar_config_.binding_sweep_interval_s_ = settings.registrar.binding_sweep_interval_s;
     const PjsipConfig config = init_pjsip(settings);
     init_pjmedia();
     start_asio_thread();
@@ -151,6 +152,11 @@ void SbcApp::run() {
             ioc_.get_executor(),
             std::chrono::seconds{ctx_.config_.rtp_inactivity_timeout_s_});
     }
+    if (registrar_config_.binding_sweep_interval_s_ > 0) {
+        router_.start_binding_sweep_timer(
+            ioc_.get_executor(),
+            std::chrono::seconds{registrar_config_.binding_sweep_interval_s_});
+    }
 
     Log::app()->info("SBC running: SIP on {}:{}", ctx_.config_.bind_ip_, ctx_.config_.sip_port_);
 
@@ -159,6 +165,7 @@ void SbcApp::run() {
     // Explicit call, not ~CallManager(): a destructor silently sending SIP
     // messages is a surprising side effect, not just a resource cleanup.
     call_manager_.terminate_established_calls();
+    router_.stop_binding_sweep_timer();
 
     // Lets the call_terminated events that terminate_established_calls() just
     // queued reach the control plane instead of being cut off by stop().

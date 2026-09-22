@@ -1,10 +1,12 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include <boost/asio/any_io_executor.hpp>
 #include <pjsip.h>
 
 #include "sip/call/pj_context.hpp"
@@ -14,9 +16,12 @@
 
 namespace SbcEngine {
 
+class RtpInactivityTimer;
+
 struct RegistrarConfig {
     int min_expires_s_;
     int max_expires_s_;
+    int binding_sweep_interval_s_;
 };
 
 // Stateless REGISTER responder (the SBC's registrar role): digest-challenges
@@ -46,6 +51,18 @@ public:
 
     void handle(pjsip_rx_data* rdata);
     void set_registration_sink(IRegistrationSink* sink) { sink_ = sink; }
+
+    // A single Asio timer requests periodic sweeps of BindingStore's expired
+    // entries, mirroring CallManager::start_rtp_inactivity_timer()'s pattern
+    // (RtpInactivityTimer is a generic periodic-scan-request timer despite
+    // its RTP-specific name/location). The actual sweep runs in
+    // process_pending_binding_sweep() on the SIP thread, where BindingStore
+    // is otherwise exclusively touched.
+    void start_binding_sweep_timer(
+        const boost::asio::any_io_executor& executor,
+        std::chrono::steady_clock::duration interval);
+    void stop_binding_sweep_timer();
+    void process_pending_binding_sweep();
 
     // Whether a binding's state change is significant enough to mirror to
     // the control plane, rather than a plain refresh with nothing new to
@@ -107,6 +124,7 @@ private:
     BindingStore* binding_store_;
     IRegistrationSink* sink_ = nullptr;
     RegistrarConfig* config_;
+    std::shared_ptr<RtpInactivityTimer> binding_sweep_timer_;
 };
 
 } // namespace SbcEngine
