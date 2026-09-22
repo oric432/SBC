@@ -63,7 +63,7 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
     pjsip_dialog* dlg = nullptr;
     status = pjsip_dlg_create_uas_and_inc_lock(pjsip_ua_instance(), rx_data, &contact, &dlg);
     if (status != PJ_SUCCESS) {
-        Log::sip()->error("pjsip_dlg_create_uas failed ({})", status);
+        Log::sip()->error("[{}] pjsip_dlg_create_uas failed ({})", call_id, status);
         respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
         return nullptr;
     }
@@ -72,7 +72,7 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
     status = pjsip_inv_create_uas(dlg, rx_data, nullptr, options, &inv);
     pjsip_dlg_dec_lock(dlg);
     if (status != PJ_SUCCESS) {
-        Log::sip()->error("pjsip_inv_create_uas failed ({})", status);
+        Log::sip()->error("[{}] pjsip_inv_create_uas failed ({})", call_id, status);
         respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
         return nullptr;
     }
@@ -82,11 +82,7 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
     CallSession* session = call_manager_->create_session(call_id, ctx_, stores_, executor_, rx_data);
     session->set_inv_caller(inv);
 
-    Log::call()->info(
-        "[{}] received INVITE from caller ({}), request-uri {}",
-        call_id,
-        session->caller_uri(),
-        session->request_uri());
+    Log::call()->info("[{}] invite: {} -> {}", call_id, session->caller_uri(), session->request_uri());
 
     return session;
 }
@@ -109,7 +105,7 @@ void SipRequestActions::reject_unsupported_method(pjsip_rx_data* rx_data) {
 void SipRequestActions::respond_stateless(pjsip_rx_data* rx_data, int code) {
     const pj_status_t status = pjsip_endpt_respond_stateless(ctx_->endpt_, rx_data, code, nullptr, nullptr, nullptr);
     if (status != PJ_SUCCESS) {
-        Log::sip()->error("Stateless response {} failed ({})", code, status);
+        Log::sip()->error("[{}] stateless response {} failed ({})", extract_call_id(rx_data), code, status);
     }
 }
 } // namespace SbcEngine

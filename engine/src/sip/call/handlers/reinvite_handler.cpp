@@ -76,7 +76,7 @@ void ReinviteHandler::on_media_update(pjsip_inv_session* inv, pj_status_t status
     }
     *found = nullptr;
     const ExchangeOutcome outcome = status == PJ_SUCCESS ? ExchangeOutcome::kCommitted : ExchangeOutcome::kFailed;
-    Log::call()->info(
+    Log::call()->debug(
         "[{}] offerless re-INVITE answer in ACK {}",
         session_.call_id(),
         status == PJ_SUCCESS ? "accepted" : "failed");

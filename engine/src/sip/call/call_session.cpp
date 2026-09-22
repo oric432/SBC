@@ -140,6 +140,13 @@ void CallSession::report_call_terminated(std::string_view status, std::optional<
     ctx_->call_events_->send_call_terminated(std::move(event));
 }
 
+std::optional<std::chrono::seconds> CallSession::established_duration() const {
+    if (!answered_at_) {
+        return std::nullopt;
+    }
+    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - *answered_at_);
+}
+
 Leg CallSession::leg_for(const pjsip_inv_session* inv) const {
     return inv == leg(Leg::kCallee).inv_ ? Leg::kCallee : Leg::kCaller;
 }

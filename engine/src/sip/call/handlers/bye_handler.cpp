@@ -10,16 +10,13 @@ namespace SbcEngine {
 
 void ByeHandler::forward_to_other_leg(Leg leg) {
     Inv::end_session(session_.leg(other(leg)).inv_, PJSIP_SC_OK);
-    const bool from_caller = leg == Leg::kCaller;
-    const std::string& sender_uri = from_caller ? session_.caller_uri() : session_.outbound_destination();
-    const std::string& recipient_uri = from_caller ? session_.outbound_destination() : session_.caller_uri();
-    Log::call()->info(
-        "[{}] received BYE from {} ({}), forwarded to {} ({})",
-        session_.call_id(),
-        to_string(leg),
-        sender_uri,
-        to_string(other(leg)),
-        recipient_uri);
+    if (const auto duration = session_.established_duration()) {
+        Log::call()
+            ->info("[{}] ended: bye from {}, duration {}s", session_.call_id(), to_string(leg), duration->count());
+    }
+    else {
+        Log::call()->info("[{}] ended: bye from {}", session_.call_id(), to_string(leg));
+    }
 }
 
 } // namespace SbcEngine

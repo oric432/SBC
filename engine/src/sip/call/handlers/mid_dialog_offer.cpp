@@ -96,8 +96,8 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
     const auto dtmf_pt = Sdp::extract_telephone_event_pt(offer_sdp);
 
     const CallSession::CallLeg& current = session.leg(leg);
-    if (media_changed(current.codec_, current.dtmf_pt_, chosen->name_, dtmf_pt) &&
-        !reconfigure_media_bridge(session, leg, *chosen, dtmf_pt)) {
+    const bool codec_or_dtmf_changed = media_changed(current.codec_, current.dtmf_pt_, chosen->name_, dtmf_pt);
+    if (codec_or_dtmf_changed && !reconfigure_media_bridge(session, leg, *chosen, dtmf_pt)) {
         return std::unexpected(ExchangeOutcome::kRolledBack);
     }
 
@@ -121,13 +121,17 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
         session.media_bridge()->retarget_remote_leg_b(offer_endpoint.ip_, offer_endpoint.port_);
     }
 
-    Log::call()->info(
-        "[{}] negotiated mid-dialog offer from {} with {}; relay retargeted to {}:{}",
-        session.call_id(),
-        leg_name,
-        chosen->name_,
-        offer_endpoint.ip_,
-        offer_endpoint.port_);
+    if (codec_or_dtmf_changed) {
+        Log::call()->info("[{}] codec changed to {} (re-INVITE from {})", session.call_id(), chosen->name_, leg_name);
+    }
+    else {
+        Log::call()->debug(
+            "[{}] re-INVITE from {} re-negotiated {} (no codec change)",
+            session.call_id(),
+            leg_name,
+            chosen->name_);
+    }
+    Log::call()->debug("[{}] relay retargeted to {}:{}", session.call_id(), offer_endpoint.ip_, offer_endpoint.port_);
 
     return NegotiatedOffer{
         .answer_sdp_ = offer_sdp,
