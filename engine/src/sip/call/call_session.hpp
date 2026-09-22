@@ -84,8 +84,16 @@ public:
 
     [[nodiscard]] pjsip_inv_session* inv_caller() const { return leg(Leg::kCaller).inv_; }
     [[nodiscard]] pjsip_inv_session* inv_callee() const { return leg(Leg::kCallee).inv_; }
-    void set_inv_caller(pjsip_inv_session* inv) { leg(Leg::kCaller).inv_ = inv; }
-    void set_inv_callee(pjsip_inv_session* inv) { leg(Leg::kCallee).inv_ = inv; }
+    // Also claims inv->mod_data[ctx_->module_id_] so CallManager::find_by_inv()
+    // can look this session up in O(1) instead of scanning every session.
+    void set_inv_caller(pjsip_inv_session* inv) {
+        leg(Leg::kCaller).inv_ = inv;
+        claim_mod_data(inv);
+    }
+    void set_inv_callee(pjsip_inv_session* inv) {
+        leg(Leg::kCallee).inv_ = inv;
+        claim_mod_data(inv);
+    }
 
     // Indexed access for call sites that resolve "which leg" generically
     // (as opposed to a call site that always means one specific leg, which
@@ -126,6 +134,13 @@ public:
 
 private:
     void send_call_updated();
+    void claim_mod_data(pjsip_inv_session* inv) {
+        if (inv != nullptr && ctx_->module_id_ >= 0) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, module_id_ is not a
+            // constant expression
+            inv->mod_data[ctx_->module_id_] = this;
+        }
+    }
 
     std::string call_id_;
     PjContext* ctx_;
