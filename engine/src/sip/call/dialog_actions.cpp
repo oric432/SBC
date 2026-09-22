@@ -20,7 +20,7 @@ void DialogActions::reject_update_collision(Leg leg) {
     // No rdata-based custom response is available for UPDATE via on_rx_offer2
     // (#116): pjsip auto-rejects with 488 once we return without setting an
     // answer, so there's nothing to send here beyond this log line.
-    Log::call()->info(
+    Log::call()->debug(
         "[{}] rejecting colliding UPDATE from {} (pjsip will send 488)",
         session_.call_id(),
         to_string(leg));
@@ -44,28 +44,21 @@ void DialogActions::cleanup() {
     session_.media_bridge()->close();
 
     session_.call_manager()->schedule_remove(session_.call_id());
-    Log::call()->info("[{}] dialog cleanup complete", session_.call_id());
+    Log::call()->trace("[{}] dialog cleanup complete", session_.call_id());
 }
 
 void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* /*rdata*/) {
     auto& dialog = session_.dialog_sm();
     const Leg leg = session_.leg_for(inv);
 
+    Inv::log_state_transition(session_.call_id(), leg, inv);
+
     switch (inv->state) {
     case PJSIP_INV_STATE_EARLY:
-        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_EARLY", session_.call_id());
-        break;
-
     case PJSIP_INV_STATE_CONNECTING:
-        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_CONNECTING", session_.call_id());
-        break;
-
-    case PJSIP_INV_STATE_CONFIRMED:
-        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_CONFIRMED", session_.call_id());
-        break;
+    case PJSIP_INV_STATE_CONFIRMED: break;
 
     case PJSIP_INV_STATE_DISCONNECTED:
-        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
         if (is_session_timer_expiry(inv)) {
             Log::call()->warn(
                 "[{}] RFC 4028 session timer expired on {} leg; PJSIP sent BYE because the session refresh was "

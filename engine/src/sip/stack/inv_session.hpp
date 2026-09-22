@@ -1,6 +1,10 @@
 #pragma once
 
+#include <string_view>
+
 #include <pjsip_ua.h>
+
+#include "sip/sm/leg.hpp"
 
 // Thin wrappers over the pjsip invite-session send paths shared by every
 // per-call adapter. Each logs its own failure and returns false when the
@@ -8,6 +12,12 @@
 namespace SbcEngine::Inv {
 
 bool send(pjsip_inv_session* inv, pjsip_tx_data* tdata);
+
+// One trace line per invite-session state entry, via PJSIP's own state-name
+// lookup. Both SetupActions and DialogActions call this from
+// on_leg_state_changed() instead of hand-maintaining a switch of per-state
+// log lines.
+void log_state_transition(std::string_view call_id, Leg leg, const pjsip_inv_session* inv);
 
 // Response to the transaction pjsip is currently tracking (initial INVITE only).
 bool answer(pjsip_inv_session* inv, int code, const pjmedia_sdp_session* sdp = nullptr);
