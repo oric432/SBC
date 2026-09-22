@@ -54,7 +54,7 @@ RouteResolution SetupActions::resolve_route() {
             if (stores_.users_->find(user, host)) {
                 const std::string aor = make_aor(user, host);
                 if (auto binding = stores_.bindings_->find_preferred(aor, std::chrono::steady_clock::now())) {
-                    Log::sip()->info("[{}] routing {} to its current registration", session_.call_id(), aor);
+                    Log::sip()->debug("[{}] routing {} to its current registration", session_.call_id(), aor);
                     return {
                         .kind_ = RouteResolution::Kind::kFound,
                         .destination_ =
@@ -123,7 +123,8 @@ RouteResolution SetupActions::resolve_route() {
     std::string user = extract_uri_user(route->uri);
     const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
                                           : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
-    Log::sip()->info("Found route for request uri {}, route uri : {}:{}", request_uri, route->sip_address, route->port);
+    Log::sip()
+        ->debug("Found route for request uri {}, route uri : {}:{}", request_uri, route->sip_address, route->port);
     return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest, .required_codec_ = required_codec};
 }
 
@@ -210,11 +211,13 @@ void SetupActions::establish_call() {
     const auto caller_rtp = session_.media_bridge()->remote_leg_a();
     const auto callee_rtp = session_.media_bridge()->remote_leg_b();
     Log::call()->info(
-        "[{}] call established between caller ({}) and callee ({}); media: mode=relay-only, "
-        "caller RTP={}, SBC caller-facing port={}, callee RTP={}, SBC callee-facing port={}",
+        "[{}] established: {} -> {}",
         session_.call_id(),
         session_.caller_uri(),
-        session_.outbound_destination(),
+        session_.outbound_destination());
+    Log::call()->debug(
+        "[{}] media: relay-only, caller {}<->{}, callee {}<->{}",
+        session_.call_id(),
         caller_rtp ? std::format("{}:{}", caller_rtp->address().to_string(), caller_rtp->port()) : "unknown",
         caller_relay_port.value_or(0),
         callee_rtp ? std::format("{}:{}", callee_rtp->address().to_string(), callee_rtp->port()) : "unknown",
@@ -239,7 +242,7 @@ void SetupActions::cleanup() {
     session_.media_bridge()->close();
 
     session_.call_manager()->schedule_remove(session_.call_id());
-    Log::call()->info("[{}] setup cleanup complete", session_.call_id());
+    Log::call()->trace("[{}] setup cleanup complete", session_.call_id());
 }
 
 void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata) {
@@ -252,9 +255,10 @@ void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* r
         return;
     }
 
+    Inv::log_state_transition(session_.call_id(), leg, inv);
+
     switch (inv->state) {
     case PJSIP_INV_STATE_EARLY:
-        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_EARLY", session_.call_id());
         if (leg == Leg::kCallee) {
             handle_early(rdata);
         }
@@ -262,7 +266,6 @@ void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* r
 
     case PJSIP_INV_STATE_CONNECTING:
         // 200 OK from the callee (ACK auto-sent by PJSIP) → forward answer.
-        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_CONNECTING", session_.call_id());
         if (leg == Leg::kCallee) {
             if (setup.is_cancelling()) {
                 // A success raced with cancellation: end the now-accepted leg.
@@ -278,7 +281,6 @@ void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* r
 
     case PJSIP_INV_STATE_CONFIRMED:
         // ACK from the caller → dialog established.
-        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_CONFIRMED", session_.call_id());
         if (leg == Leg::kCaller) {
             if (session_.exchange() != nullptr) {
                 finish_exchange(session_, session_.exchange()->confirm());
@@ -287,8 +289,6 @@ void SetupActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* r
         break;
 
     case PJSIP_INV_STATE_DISCONNECTED:
-        Log::sip()->trace("[{}] Entering inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
-
         if (!setup.is_done()) {
             handle_disconnect(inv);
         }

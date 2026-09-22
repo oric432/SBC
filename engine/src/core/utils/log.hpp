@@ -70,6 +70,49 @@ inline std::shared_ptr<spdlog::logger> call() {
     return logger;
 }
 
+// Looks up a sub-logger by its category name (as it appears in settings.toml
+// and in the %n field of a log line), or nullptr if the name isn't one of them.
+inline std::shared_ptr<spdlog::logger> by_category(const std::string& name) {
+    if (name == "app") {
+        return app();
+    }
+    if (name == "sip") {
+        return sip();
+    }
+    if (name == "pjsip") {
+        return pjsip();
+    }
+    if (name == "sm") {
+        return sm();
+    }
+    if (name == "rtp") {
+        return rtp();
+    }
+    if (name == "call") {
+        return call();
+    }
+    return nullptr;
+}
+
+// Overrides one category's level independently of the global default set by
+// set_log_level(). Sub-loggers aren't registered with spdlog's registry (they
+// are cloned via make_sub_logger(), not spdlog::register_logger()), so a
+// later global set_log_level() call would not touch a level set here -- apply
+// overrides after set_log_level(), never before.
+inline void set_category_level(const std::string& name, const std::string& log_level) {
+    auto logger = by_category(name);
+    if (!logger) {
+        Log::app()->warn("Unknown log category '{}' in [logging.categories], ignoring", name);
+        return;
+    }
+    auto level = spdlog::level::from_str(log_level);
+    if (level == spdlog::level::off && log_level != "off") {
+        Log::app()->warn("Invalid log level '{}' for category '{}', ignoring", log_level, name);
+        return;
+    }
+    logger->set_level(level);
+}
+
 inline void crash_error(const std::string_view msg) {
     Log::app()->critical(msg);
     std::quick_exit(EXIT_FAILURE);

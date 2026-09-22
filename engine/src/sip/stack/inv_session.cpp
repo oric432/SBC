@@ -10,6 +10,10 @@ bool is_gone(const pjsip_inv_session* inv) {
 }
 } // namespace
 
+void log_state_transition(std::string_view call_id, Leg leg, const pjsip_inv_session* inv) {
+    Log::sip()->trace("[{}] {} inv -> {}", call_id, to_string(leg), pjsip_inv_state_name(inv->state));
+}
+
 bool send(pjsip_inv_session* inv, pjsip_tx_data* tdata) {
     if (tdata == nullptr) {
         return false;

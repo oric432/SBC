@@ -132,6 +132,10 @@ public:
     void report_call_updated();
     void report_call_terminated(std::string_view status, std::optional<std::string> failure_reason);
 
+    // Time since report_call_answered() was called, for the dialog-teardown
+    // log line -- nullopt before the call was answered.
+    [[nodiscard]] std::optional<std::chrono::seconds> established_duration() const;
+
 private:
     void send_call_updated();
     void claim_mod_data(pjsip_inv_session* inv) {
