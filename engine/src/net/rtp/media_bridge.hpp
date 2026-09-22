@@ -59,6 +59,11 @@ public:
     std::expected<unsigned short, std::error_code> leg_a_port() const;
     std::expected<unsigned short, std::error_code> leg_b_port() const;
 
+    // Not safe once start_bridge_loop() has been called: writes dest_a_/dest_b_
+    // directly on the caller's thread with no marshalling, unlike
+    // retarget_remote_leg_a/b below. Call only during setup, before the relay
+    // loop is armed; use retarget_remote_leg_a/b to change either leg's
+    // destination on a call whose loop may already be running.
     void set_remote_leg_a(const std::string& addr, unsigned short port);
     void set_remote_leg_b(const std::string& addr, unsigned short port);
 
