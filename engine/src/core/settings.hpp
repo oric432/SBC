@@ -31,6 +31,11 @@ struct LoggingSettings {
 
 struct SipSettings {
     std::string address = "127.0.0.1";
+    // Address advertised in rewritten SDP and Contact headers. Empty (the
+    // default) means "same as address" -- the single-homed case. Set this
+    // separately from address for NAT/reverse-proxy/multi-homed deployments,
+    // where the interface bound to isn't the address peers should reach.
+    std::string advertised_address;
     uint16_t port = SettingsDefaults::kLocalSipPort;
     std::string identity_user = "sbc"; // user part of our own Contact/From URI
     // How long to wait for a final response to an outbound INVITE before

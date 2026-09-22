@@ -25,6 +25,7 @@ Before running, copy `settings-example.toml` to `settings.toml` (repo root — t
 | `[logging]` | `level` | `"info"` | App log verbosity (spdlog levels). |
 | `[logging]` | `pjsip_level` | `"disabled"` | PJSIP's own log verbosity. `"disabled"` (or anything unrecognized) maps to `0`; otherwise it's parsed as a native PJSIP level `0`-`6` (see `pj_log_set_level`). |
 | `[sip]` | `address` | `"127.0.0.1"` | IP the SIP transport binds to. Must be a real interface address, not `0.0.0.0`, if you want SDP-anchored RTP to reach this box from other hosts. |
+| `[sip]` | `advertised_address` | `""` | Address advertised in rewritten SDP and Contact headers. Empty means "same as `address`"; set separately for NAT/reverse-proxy/multi-homed deployments. |
 | `[sip]` | `port` | `5060` | Local SIP listening port. |
 | `[sip]` | `identity_user` | `"sbc"` | User part of this SBC's own Contact/From URI. |
 | `[sip]` | `invite_timeout_ms` | `32000` | How long to wait for a final response to an outbound INVITE before timing it out. |

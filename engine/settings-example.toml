@@ -4,6 +4,11 @@ pjsip_level = "disabled"
 
 [sip]
 address = "127.0.0.1"
+# Address advertised in rewritten SDP and Contact headers. Leave unset (or
+# "") for a single-homed deployment, where it's the same as `address`. Set
+# this separately behind NAT/a reverse proxy/on a multi-homed host, where
+# `address` is the interface to bind and this is the reachable public IP.
+advertised_address = ""
 port = 5060
 identity_user = "sbc"
 # How long to wait for the callee to answer an outbound INVITE before giving
