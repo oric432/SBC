@@ -188,7 +188,10 @@ void RegistrarActions::send_challenge(pjsip_rx_data* rdata, const std::string& r
     }
 
     pjsip_tx_data* tdata = nullptr;
-    if (pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_UNAUTHORIZED, nullptr, &tdata) != PJ_SUCCESS) {
+    const pj_status_t create_status =
+        pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_UNAUTHORIZED, nullptr, &tdata);
+    if (create_status != PJ_SUCCESS) {
+        Log::sip()->error("send_challenge: pjsip_endpt_create_response failed ({})", create_status);
         return;
     }
 
@@ -212,7 +215,9 @@ void RegistrarActions::send_challenge(pjsip_rx_data* rdata, const std::string& r
     pjsip_auth_srv_challenge(&auth_srv, nullptr, nullptr, nullptr, PJ_FALSE, tdata);
 
     pjsip_response_addr res_addr;
-    if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+    const pj_status_t addr_status = pjsip_get_response_addr(tdata->pool, rdata, &res_addr);
+    if (addr_status != PJ_SUCCESS) {
+        Log::sip()->error("send_challenge: pjsip_get_response_addr failed ({})", addr_status);
         pjsip_tx_data_dec_ref(tdata);
         return;
     }
@@ -375,15 +380,19 @@ bool RegistrarActions::reject_if_too_brief(
             continue;
         }
         pjsip_tx_data* tdata = nullptr;
-        if (pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_INTERVAL_TOO_BRIEF, nullptr, &tdata) !=
-            PJ_SUCCESS) {
+        const pj_status_t create_status =
+            pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_INTERVAL_TOO_BRIEF, nullptr, &tdata);
+        if (create_status != PJ_SUCCESS) {
+            Log::sip()->error("reject_if_too_brief: pjsip_endpt_create_response failed ({})", create_status);
             return true;
         }
         auto* min_expires = pjsip_min_expires_hdr_create(tdata->pool, static_cast<unsigned>(config_->min_expires_s_));
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
         pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(min_expires));
         pjsip_response_addr res_addr;
-        if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+        const pj_status_t addr_status = pjsip_get_response_addr(tdata->pool, rdata, &res_addr);
+        if (addr_status != PJ_SUCCESS) {
+            Log::sip()->error("reject_if_too_brief: pjsip_get_response_addr failed ({})", addr_status);
             pjsip_tx_data_dec_ref(tdata);
             return true;
         }
@@ -399,11 +408,15 @@ void RegistrarActions::respond(pjsip_rx_data* rdata, int status_code) {
         return;
     }
     pjsip_tx_data* tdata = nullptr;
-    if (pjsip_endpt_create_response(ctx_->endpt_, rdata, status_code, nullptr, &tdata) != PJ_SUCCESS) {
+    const pj_status_t create_status = pjsip_endpt_create_response(ctx_->endpt_, rdata, status_code, nullptr, &tdata);
+    if (create_status != PJ_SUCCESS) {
+        Log::sip()->error("respond: pjsip_endpt_create_response failed ({})", create_status);
         return;
     }
     pjsip_response_addr res_addr;
-    if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+    const pj_status_t addr_status = pjsip_get_response_addr(tdata->pool, rdata, &res_addr);
+    if (addr_status != PJ_SUCCESS) {
+        Log::sip()->error("respond: pjsip_get_response_addr failed ({})", addr_status);
         pjsip_tx_data_dec_ref(tdata);
         return;
     }
@@ -416,7 +429,9 @@ void RegistrarActions::send_ok(pjsip_rx_data* rdata, const std::string& aor) {
         return;
     }
     pjsip_tx_data* tdata = nullptr;
-    if (pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_OK, nullptr, &tdata) != PJ_SUCCESS) {
+    const pj_status_t create_status = pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_OK, nullptr, &tdata);
+    if (create_status != PJ_SUCCESS) {
+        Log::sip()->error("send_ok: pjsip_endpt_create_response failed ({})", create_status);
         return;
     }
 
@@ -440,7 +455,9 @@ void RegistrarActions::send_ok(pjsip_rx_data* rdata, const std::string& aor) {
     }
 
     pjsip_response_addr res_addr;
-    if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+    const pj_status_t addr_status = pjsip_get_response_addr(tdata->pool, rdata, &res_addr);
+    if (addr_status != PJ_SUCCESS) {
+        Log::sip()->error("send_ok: pjsip_get_response_addr failed ({})", addr_status);
         pjsip_tx_data_dec_ref(tdata);
         return;
     }
