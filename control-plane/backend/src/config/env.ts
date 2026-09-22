@@ -11,6 +11,7 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly'])
     .default('info'),
+  CALL_HISTORY_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -28,4 +29,5 @@ export const env = {
   nodeEnv: parsed.data.NODE_ENV,
   frontendUrl: parsed.data.FRONTEND_URL,
   logLevel: parsed.data.LOG_LEVEL,
+  callHistoryRetentionDays: parsed.data.CALL_HISTORY_RETENTION_DAYS,
 };
