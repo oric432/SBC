@@ -202,7 +202,12 @@ void RegistrarActions::send_challenge(pjsip_rx_data* rdata, const std::string& r
     // No qop: unqualified digest is valid per RFC 2617 and every target
     // client here (Cisco desk phones, SIPp) supports it -- one less moving
     // part than negotiating qop=auth.
-    pjsip_auth_srv_init2(tdata->pool, &auth_srv, &init_param);
+    const pj_status_t init_status = pjsip_auth_srv_init2(tdata->pool, &auth_srv, &init_param);
+    if (init_status != PJ_SUCCESS) {
+        Log::sip()->error("send_challenge: pjsip_auth_srv_init2 failed ({})", init_status);
+        pjsip_tx_data_dec_ref(tdata);
+        return;
+    }
     pjsip_auth_srv_challenge(&auth_srv, nullptr, nullptr, nullptr, PJ_FALSE, tdata);
 
     pjsip_response_addr res_addr;
