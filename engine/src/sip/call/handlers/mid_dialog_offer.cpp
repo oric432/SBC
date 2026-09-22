@@ -78,7 +78,7 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
         return std::unexpected(ExchangeOutcome::kFailed);
     }
 
-    const char* leg_name = leg == Leg::kCaller ? "caller" : "callee";
+    const char* leg_name = to_string(leg);
 
     pjmedia_sdp_session* offer_sdp = Sdp::parse(session.pool(), offer);
     const auto offer_endpoint = Sdp::extract_rtp_endpoint(offer_sdp);
