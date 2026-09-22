@@ -11,4 +11,8 @@ enum class Leg : std::uint8_t { kCaller, kCallee };
     return leg == Leg::kCaller ? Leg::kCallee : Leg::kCaller;
 }
 
+[[nodiscard]] constexpr const char* to_string(Leg leg) {
+    return leg == Leg::kCaller ? "caller" : "callee";
+}
+
 } // namespace SbcEngine

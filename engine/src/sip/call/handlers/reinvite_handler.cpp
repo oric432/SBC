@@ -23,7 +23,7 @@ ExchangeOutcome ReinviteHandler::answer(const std::string& offer, Leg leg) {
         Log::call()->debug(
             "[{}] received offerless re-INVITE from {}; awaiting answer in ACK",
             session_.call_id(),
-            leg == Leg::kCaller ? "caller" : "callee");
+            to_string(leg));
         return ExchangeOutcome::kPending;
     }
 

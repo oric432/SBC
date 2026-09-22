@@ -23,7 +23,7 @@ void DialogActions::reject_update_collision(Leg leg) {
     Log::call()->info(
         "[{}] rejecting colliding UPDATE from {} (pjsip will send 488)",
         session_.call_id(),
-        leg == Leg::kCaller ? "caller" : "callee");
+        to_string(leg));
 }
 
 void DialogActions::terminate_call() {
@@ -71,7 +71,7 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
                 "[{}] RFC 4028 session timer expired on {} leg; PJSIP sent BYE because the session refresh was "
                 "missing or unanswered",
                 session_.call_id(),
-                leg == Leg::kCaller ? "caller" : "callee");
+                to_string(leg));
             session_.report_call_terminated(Protocols::CallStatus::kSuccess, "session timer expired");
         }
 

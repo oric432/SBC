@@ -31,6 +31,16 @@ CallSession* CallManager::find_by_call_id(const std::string& call_id) {
 }
 
 CallSession* CallManager::find_by_inv(pjsip_inv_session* inv) {
+    if (inv == nullptr) {
+        return nullptr;
+    }
+    if (module_id_ >= 0) {
+        // Set alongside CallSession::set_inv_caller()/set_inv_callee(), the
+        // only two places a CallSession claims a pjsip_inv_session.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, module_id_ is not a constant
+        // expression
+        return static_cast<CallSession*>(inv->mod_data[module_id_]);
+    }
     for (auto& [call_id, session] : sessions_) {
         (void)call_id;
         if (session->inv_caller() == inv || session->inv_callee() == inv) {
