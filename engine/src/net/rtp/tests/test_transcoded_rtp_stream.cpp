@@ -118,3 +118,48 @@ TEST_CASE(
     // repeats the timestamp of the audio it interrupts (RFC 4733).
     CHECK(packet_timestamp(dtmf_pkt) == packet_timestamp(audio_pkt));
 }
+
+// Regression test for issue #247: the only guard against overflowing
+// send_buffer_ used to be a plain assert(), a no-op in release builds. A
+// payload too large for one RTP packet must now fail the send via the
+// callback's error_code instead of writing past the fixed buffer.
+TEST_CASE(
+    "TranscodedRtpStream fails the send instead of overflowing its fixed buffer on an oversized payload",
+    "[TranscodedRtpStream]") {
+    io_context ioc;
+    auto raw_sender = std::make_shared<RtpCpp::BasicRawRtpSender>(ioc.get_executor());
+    REQUIRE(raw_sender->bind("127.0.0.1", 0).has_value());
+
+    udp::socket recv_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    const auto recv_port = recv_sock.local_endpoint().port();
+    udp::endpoint dst(make_address("127.0.0.1"), recv_port);
+
+    TranscodedRtpStream stream(*raw_sender, /*audio_payload_type=*/9);
+
+    // One byte more than fits in send_buffer_ once the fixed RTP header is added.
+    const std::vector<std::uint8_t> oversized_payload(RtpCpp::kMaxRtpPacketSize, 0xAB);
+    bool callback_fired = false;
+    std::error_code callback_err;
+    stream.send_audio(
+        oversized_payload,
+        /*timestamp_delta=*/160,
+        dst,
+        [&](std::size_t bytes_sent, const std::error_code& err) {
+            callback_fired = true;
+            callback_err = err;
+            CHECK(bytes_sent == 0);
+        });
+
+    CHECK(callback_fired);
+    CHECK(callback_err);
+
+    bool received = false;
+    std::vector<std::uint8_t> recv_buf(64);
+    udp::endpoint from;
+    recv_sock.async_receive_from(
+        buffer(recv_buf),
+        from,
+        [&]([[maybe_unused]] const boost::system::error_code& ec, [[maybe_unused]] std::size_t n) { received = true; });
+    ioc.run_for(kRunWindow);
+    CHECK_FALSE(received);
+}
