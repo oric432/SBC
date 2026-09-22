@@ -23,14 +23,22 @@ constexpr unsigned kEventPollMs = 10;
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 PjsipStack* g_active_stack = nullptr;
 
+// g_active_stack->router(), or nullptr if either isn't set up yet -- every
+// callback below hits this same race window (module registered before
+// set_router() runs, or torn down before pjsip finishes flushing events).
+MessageRouter* active_router() {
+    return g_active_stack != nullptr ? g_active_stack->router() : nullptr;
+}
+
 // Application module: receives out-of-dialog requests (initial INVITE, OPTIONS,
 // and anything without a matching dialog). In-dialog traffic is delivered to the
 // invite-session callbacks instead, so this only forwards to the router.
 pj_bool_t on_rx_request(pjsip_rx_data* rdata) {
-    if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
+    MessageRouter* router = active_router();
+    if (router == nullptr) {
         return PJ_FALSE;
     }
-    g_active_stack->router()->on_rx_request(rdata);
+    router->on_rx_request(rdata);
     return PJ_TRUE;
 }
 
@@ -38,7 +46,8 @@ pj_bool_t on_rx_request(pjsip_rx_data* rdata) {
 // caused it, when there is one) to the router for SM event mapping.
 void on_inv_state_changed(pjsip_inv_session* inv, pjsip_event* event) {
     Log::sip()->trace("pjsip inv state changed: {}", pjsip_inv_state_name(inv->state));
-    if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
+    MessageRouter* router = active_router();
+    if (router == nullptr) {
         return;
     }
 
@@ -48,16 +57,17 @@ void on_inv_state_changed(pjsip_inv_session* inv, pjsip_event* event) {
         rdata = event->body.tsx_state.src.rdata;
     }
     // NOLINTEND(cppcoreguidelines-pro-type-union-access)
-    g_active_stack->router()->on_inv_state_changed(inv, rdata);
+    router->on_inv_state_changed(inv, rdata);
 }
 
 void on_inv_new_session(pjsip_inv_session* /*inv*/, pjsip_event* /*e*/) {}
 
 pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata) {
-    if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
+    MessageRouter* router = active_router();
+    if (router == nullptr) {
         return PJ_ENOTFOUND;
     }
-    return g_active_stack->router()->on_rx_reinvite(inv, offer, rdata);
+    return router->on_rx_reinvite(inv, offer, rdata);
 }
 
 // Fires for every new offer pjsip receives (initial INVITE, re-INVITE, and
@@ -66,22 +76,23 @@ pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* of
 // though pjsip's own on_rx_reinvite takes it non-const; this callback never
 // mutates it, so the cast is safe.
 void on_rx_offer2(pjsip_inv_session* inv, pjsip_inv_on_rx_offer_cb_param* param) {
-    if (g_active_stack == nullptr || g_active_stack->router() == nullptr) {
+    MessageRouter* router = active_router();
+    if (router == nullptr) {
         return;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — PJSIP C API
-    g_active_stack->router()->on_rx_offer(inv, param->offer, const_cast<pjsip_rx_data*>(param->rdata));
+    router->on_rx_offer(inv, param->offer, const_cast<pjsip_rx_data*>(param->rdata));
 }
 
 void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) {
-    if (g_active_stack != nullptr && g_active_stack->router() != nullptr) {
-        g_active_stack->router()->on_create_offer(inv, offer);
+    if (MessageRouter* router = active_router(); router != nullptr) {
+        router->on_create_offer(inv, offer);
     }
 }
 
 void on_inv_media_update(pjsip_inv_session* inv, pj_status_t status) {
-    if (g_active_stack != nullptr && g_active_stack->router() != nullptr) {
-        g_active_stack->router()->on_inv_media_update(inv, status);
+    if (MessageRouter* router = active_router(); router != nullptr) {
+        router->on_inv_media_update(inv, status);
     }
 }
 
