@@ -1,0 +1,273 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include <array>
+#include <cstddef>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <pjlib.h>
+
+#include "protocols/supported_codecs.hpp"
+#include "sip/stack/sdp.hpp"
+
+namespace SbcEngine {
+
+namespace {
+
+constexpr pj_size_t kPoolInitial = 4096;
+constexpr pj_size_t kPoolIncrement = 4096;
+
+// pj_init() is refcounted — safe alongside PjsipStack's own call, or
+// sdp.cpp's own internal ScopedPjInit used by is_valid_sdp().
+class ScopedPjPool {
+public:
+    ScopedPjPool() {
+        pj_init();
+        pj_caching_pool_init(&caching_pool_, &pj_pool_factory_default_policy, 0);
+        // Must run after pj_init()/pj_caching_pool_init() above, which populate
+        // caching_pool_.factory; a member initializer can't express that
+        // ordering since caching_pool_'s own init is a body statement too.
+        // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
+        pool_ = pj_pool_create(&caching_pool_.factory, "test_sdp", kPoolInitial, kPoolIncrement, nullptr);
+    }
+    ~ScopedPjPool() {
+        pj_pool_release(pool_);
+        pj_caching_pool_destroy(&caching_pool_);
+        pj_shutdown();
+    }
+    ScopedPjPool(const ScopedPjPool&) = delete;
+    ScopedPjPool& operator=(const ScopedPjPool&) = delete;
+    ScopedPjPool(ScopedPjPool&&) = delete;
+    ScopedPjPool& operator=(ScopedPjPool&&) = delete;
+
+    [[nodiscard]] pj_pool_t* pool() const { return pool_; }
+
+private:
+    pj_caching_pool caching_pool_{};
+    pj_pool_t* pool_ = nullptr;
+};
+
+// clang-format off
+// Static test fixture data; a bad_alloc here is as unrecoverable as any
+// other static-init failure, and there's nothing meaningful to catch it with
+// this early.
+// NOLINTNEXTLINE(cert-err58-cpp)
+const std::string kMultiCodecOffer =
+    "v=0\r\n"
+    "o=- 123 456 IN IP4 127.0.0.1\r\n"
+    "s=-\r\n"
+    "c=IN IP4 127.0.0.1\r\n"
+    "t=0 0\r\n"
+    "m=audio 10000 RTP/AVP 0 8 9 101\r\n"
+    "a=rtpmap:101 telephone-event/8000\r\n"
+    "a=fmtp:101 0-15\r\n"
+    "a=sendrecv\r\n";
+// clang-format on
+
+} // namespace
+
+TEST_CASE("extract_all_audio_codecs returns every offered format in order", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    const pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), kMultiCodecOffer);
+    REQUIRE(sdp != nullptr);
+
+    auto codecs = Sdp::extract_all_audio_codecs(sdp);
+    REQUIRE(codecs.size() == 4);
+    CHECK(codecs[0].payload_type_ == 0);
+    CHECK(codecs[0].name_ == "PCMU");
+    CHECK(codecs[1].payload_type_ == 8);
+    CHECK(codecs[1].name_ == "PCMA");
+    CHECK(codecs[2].payload_type_ == 9);
+    CHECK(codecs[2].name_ == "G722");
+    CHECK(codecs[3].payload_type_ == 101);
+    CHECK(codecs[3].name_ == "telephone-event");
+}
+
+TEST_CASE("extract_all_audio_codecs returns empty for SDP with no active audio", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    // clang-format off
+    const std::string declined =
+        "v=0\r\n"
+        "o=- 123 456 IN IP4 127.0.0.1\r\n"
+        "s=-\r\n"
+        "c=IN IP4 127.0.0.1\r\n"
+        "t=0 0\r\n"
+        "m=audio 0 RTP/AVP 0\r\n";
+    // clang-format on
+    const pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), declined);
+    REQUIRE(sdp != nullptr);
+
+    auto codecs = Sdp::extract_all_audio_codecs(sdp);
+    CHECK(codecs.empty());
+}
+
+TEST_CASE("extract_telephone_event_pt reads the DTMF payload type, if any", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    const pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), kMultiCodecOffer);
+    REQUIRE(sdp != nullptr);
+    CHECK(Sdp::extract_telephone_event_pt(sdp) == std::optional<uint8_t>{101});
+
+    const std::string no_dtmf = "v=0\r\n"
+                                "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                "s=-\r\n"
+                                "c=IN IP4 127.0.0.1\r\n"
+                                "t=0 0\r\n"
+                                "m=audio 10000 RTP/AVP 0 8\r\n";
+    CHECK_FALSE(Sdp::extract_telephone_event_pt(Sdp::parse(pj_scope.pool(), no_dtmf)).has_value());
+
+    // RFC 4733's encoding name is case-insensitive; a peer may spell it differently.
+    const std::string mixed_case_dtmf = "v=0\r\n"
+                                        "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                        "s=-\r\n"
+                                        "c=IN IP4 127.0.0.1\r\n"
+                                        "t=0 0\r\n"
+                                        "m=audio 10000 RTP/AVP 0 101\r\n"
+                                        "a=rtpmap:101 Telephone-Event/8000\r\n";
+    CHECK(Sdp::extract_telephone_event_pt(Sdp::parse(pj_scope.pool(), mixed_case_dtmf)) == std::optional<uint8_t>{101});
+}
+
+TEST_CASE("has_inactive_direction detects a=inactive/a=sendonly at media or session level", "[sdp]") {
+    const ScopedPjPool pj_scope;
+
+    const std::string media_level_inactive = "v=0\r\n"
+                                             "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                             "s=-\r\n"
+                                             "c=IN IP4 127.0.0.1\r\n"
+                                             "t=0 0\r\n"
+                                             "m=audio 10000 RTP/AVP 0\r\n"
+                                             "a=inactive\r\n";
+    CHECK(Sdp::has_inactive_direction(Sdp::parse(pj_scope.pool(), media_level_inactive)));
+
+    const std::string media_level_sendonly = "v=0\r\n"
+                                             "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                             "s=-\r\n"
+                                             "c=IN IP4 127.0.0.1\r\n"
+                                             "t=0 0\r\n"
+                                             "m=audio 10000 RTP/AVP 0\r\n"
+                                             "a=sendonly\r\n";
+    CHECK(Sdp::has_inactive_direction(Sdp::parse(pj_scope.pool(), media_level_sendonly)));
+
+    // No media-level direction attribute — falls back to the session-level one.
+    const std::string session_level_inactive = "v=0\r\n"
+                                               "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                               "s=-\r\n"
+                                               "c=IN IP4 127.0.0.1\r\n"
+                                               "t=0 0\r\n"
+                                               "a=inactive\r\n"
+                                               "m=audio 10000 RTP/AVP 0\r\n";
+    CHECK(Sdp::has_inactive_direction(Sdp::parse(pj_scope.pool(), session_level_inactive)));
+
+    CHECK_FALSE(Sdp::has_inactive_direction(Sdp::parse(pj_scope.pool(), kMultiCodecOffer)));
+}
+
+TEST_CASE("pick_answer_codec prefers the other leg's codec, then SBC priority, else nothing", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    const auto offered = Sdp::extract_all_audio_codecs(Sdp::parse(pj_scope.pool(), kMultiCodecOffer));
+    REQUIRE(offered.size() == 4);
+
+    const Sdp::AudioCodecInfo pcma{.payload_type_ = 8, .name_ = "PCMA", .clock_rate_ = 8000};
+    auto chosen = Sdp::pick_answer_codec(pcma, offered);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "PCMA");
+
+    // Preferred codec not in the offer: fall back to the SBC's own priority (G722 first).
+    const Sdp::AudioCodecInfo opus{.payload_type_ = 111, .name_ = "opus", .clock_rate_ = 48000};
+    chosen = Sdp::pick_answer_codec(opus, offered);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "G722");
+
+    chosen = Sdp::pick_answer_codec(std::nullopt, offered);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "G722");
+
+    const std::vector<Sdp::AudioCodecInfo> unsupported_only{opus};
+    CHECK_FALSE(Sdp::pick_answer_codec(pcma, unsupported_only).has_value());
+
+    // Codec names are matched case-insensitively, both against `preferred`
+    // and against the offer, since RTP encoding names are (RFC 3551/4855).
+    const Sdp::AudioCodecInfo lowercase_pcma{.payload_type_ = 8, .name_ = "pcma", .clock_rate_ = 8000};
+    const std::vector<Sdp::AudioCodecInfo> mixed_case_offer{
+        Sdp::AudioCodecInfo{.payload_type_ = 9, .name_ = "g722", .clock_rate_ = 16000},
+        Sdp::AudioCodecInfo{.payload_type_ = 8, .name_ = "Pcma", .clock_rate_ = 8000}};
+    chosen = Sdp::pick_answer_codec(lowercase_pcma, mixed_case_offer);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->name_ == "PCMA");
+}
+
+TEST_CASE("restrict_audio_codecs narrows to a single codec for an answer, preserving telephone-event", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), kMultiCodecOffer);
+    REQUIRE(sdp != nullptr);
+
+    const std::array<Protocols::SupportedCodec, 1> chosen{*Protocols::find_supported_codec_by_name("G722")};
+    Sdp::restrict_audio_codecs(pj_scope.pool(), sdp, chosen);
+
+    auto codecs = Sdp::extract_all_audio_codecs(sdp);
+    REQUIRE(codecs.size() == 2);
+    CHECK(codecs[0].payload_type_ == 9);
+    CHECK(codecs[0].name_ == "G722");
+    CHECK(codecs[1].payload_type_ == 101);
+    CHECK(codecs[1].name_ == "telephone-event");
+
+    // telephone-event's own rtpmap/fmtp must survive verbatim, not just the
+    // fmt entry — narrowing the codec set must not silently kill DTMF.
+    const std::string serialized = Sdp::serialize(sdp);
+    CHECK(serialized.find("a=rtpmap:101 telephone-event/8000") != std::string::npos);
+    CHECK(serialized.find("a=fmtp:101 0-15") != std::string::npos);
+    CHECK(serialized.find("a=sendrecv") != std::string::npos);
+}
+
+TEST_CASE("restrict_audio_codecs builds a multi-format offer in priority order, preserving telephone-event", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), kMultiCodecOffer);
+    REQUIRE(sdp != nullptr);
+
+    Sdp::restrict_audio_codecs(pj_scope.pool(), sdp, Protocols::kSupportedCodecs);
+
+    auto codecs = Sdp::extract_all_audio_codecs(sdp);
+    REQUIRE(codecs.size() == Protocols::kSupportedCodecs.size() + 1);
+    for (std::size_t i = 0; i < Protocols::kSupportedCodecs.size(); ++i) {
+        CHECK(codecs[i].payload_type_ == Protocols::kSupportedCodecs.at(i).payload_type_);
+    }
+    CHECK(codecs.back().payload_type_ == 101);
+    CHECK(codecs.back().name_ == "telephone-event");
+}
+
+TEST_CASE("restrict_audio_codecs doesn't invent a telephone-event entry when the original offer had none", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    // clang-format off
+    const std::string no_dtmf =
+        "v=0\r\n"
+        "o=- 123 456 IN IP4 127.0.0.1\r\n"
+        "s=-\r\n"
+        "c=IN IP4 127.0.0.1\r\n"
+        "t=0 0\r\n"
+        "m=audio 10000 RTP/AVP 0 8\r\n"
+        "a=sendrecv\r\n";
+    // clang-format on
+    pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), no_dtmf);
+    REQUIRE(sdp != nullptr);
+
+    Sdp::restrict_audio_codecs(pj_scope.pool(), sdp, Protocols::kSupportedCodecs);
+
+    auto codecs = Sdp::extract_all_audio_codecs(sdp);
+    REQUIRE(codecs.size() == Protocols::kSupportedCodecs.size());
+    CHECK(Sdp::serialize(sdp).find("telephone-event") == std::string::npos);
+}
+
+TEST_CASE("restrict_audio_codecs is a no-op without an active audio line", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    const std::string no_audio = "v=0\r\n"
+                                 "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                                 "s=-\r\n"
+                                 "c=IN IP4 127.0.0.1\r\n"
+                                 "t=0 0\r\n";
+    pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), no_audio);
+    REQUIRE(sdp != nullptr);
+
+    Sdp::restrict_audio_codecs(pj_scope.pool(), sdp, Protocols::kSupportedCodecs);
+    CHECK(sdp->media_count == 0);
+}
+
+} // namespace SbcEngine

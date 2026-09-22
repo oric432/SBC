@@ -1,0 +1,53 @@
+#pragma once
+
+#include <string>
+
+#include <pjsip.h>
+
+namespace SbcEngine {
+
+// Pure, stateless string-extraction helpers shared across the router/call layers.
+//
+// extract_method/extract_sdp/extract_call_id/extract_request_uri pull fields out of
+// a PJSIP rx_data, used by MessageRouter (dispatch) and CallSession (constructing
+// itself from an inbound INVITE). All return {} on a malformed/absent rx_data —
+// pjsip_inv_verify_request already vets transaction-level correctness before any of
+// these run, and an empty result downstream is either already meaningful (empty SDP:
+// SetupSm's own guard handles it) or simply fails the next step normally (empty
+// request-uri: routing lookup finds nothing, RouteFailed).
+std::string extract_method(pjsip_rx_data* rx_data);
+std::string extract_sdp(pjsip_rx_data* rx_data);
+// 0 (not a valid SIP status code) on a malformed/absent rx_data or a request.
+int extract_status_code(pjsip_rx_data* rx_data);
+std::string extract_call_id(pjsip_rx_data* rx_data);
+std::string extract_request_uri(pjsip_rx_data* rx_data);
+std::string extract_from_uri(pjsip_rx_data* rx_data);
+
+// Pulls the display name off the inbound From header, e.g. "Alice" for
+// `From: Alice <sip:alice@example.com>`. PJSIP's header parser always parses
+// From/To as a name-addr (parse_hdr_fromto passes PJSIP_PARSE_URI_AS_NAMEADDR
+// unconditionally), so ->uri is always a pjsip_name_addr even when no display
+// name was present in the message — .display is just empty in that case.
+// Used by OfferAnswerActions::create_outbound_leg() to carry the caller's real
+// identity onto the outbound leg's From header instead of the SBC's own.
+std::string extract_from_display_name(pjsip_rx_data* rx_data);
+
+// Pulls the "user" part out of a SIP URI like "sip:callee@sbc.local", so the
+// outbound Request-URI SetupActions::resolve_route() builds for a route's
+// destination keeps the same user (destinations only carry an IP:port, not an
+// identity of their own).
+std::string extract_uri_user(const std::string& uri);
+
+// Pulls the "host" part out of a SIP URI like "sip:alice@sbc.local:5060",
+// e.g. "sbc.local" -- no port, so it can be compared directly against a SIP
+// user's realm (UsersStore::is_local_domain()).
+std::string extract_uri_host(const std::string& uri);
+
+// Composes the BindingStore key RegistrarActions writes on REGISTER and
+// SetupActions::resolve_route() reads on an inbound INVITE. The two sides
+// derive user/host independently (To-header user + matched realm vs.
+// extract_uri_user()/extract_uri_host() on the request-URI) -- both must
+// agree on this format or routing to a registered user silently breaks.
+std::string make_aor(const std::string& user, const std::string& host);
+
+} // namespace SbcEngine
