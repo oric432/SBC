@@ -16,9 +16,9 @@ void ByeHandler::forward_to_other_leg(Leg leg) {
     Log::call()->info(
         "[{}] received BYE from {} ({}), forwarded to {} ({})",
         session_.call_id(),
-        from_caller ? "caller" : "callee",
+        to_string(leg),
         sender_uri,
-        from_caller ? "callee" : "caller",
+        to_string(other(leg)),
         recipient_uri);
 }
 
