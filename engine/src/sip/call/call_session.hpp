@@ -136,9 +136,19 @@ private:
     void send_call_updated();
     void claim_mod_data(pjsip_inv_session* inv) {
         if (inv != nullptr && ctx_->module_id_ >= 0) {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, module_id_ is not a
-            // constant expression
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
             inv->mod_data[ctx_->module_id_] = this;
+        }
+    }
+    // Mirrors claim_mod_data(): a leg's pjsip_inv_session outlives CallSession
+    // (PJSIP owns it), so without this its mod_data slot would keep pointing at
+    // freed memory for any later PJSIP callback on that leg (e.g. a BYE this
+    // session sent to both legs on teardown, whose other-leg completion arrives
+    // after this session is already destroyed).
+    void release_mod_data(pjsip_inv_session* inv) {
+        if (inv != nullptr && ctx_->module_id_ >= 0) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
+            inv->mod_data[ctx_->module_id_] = nullptr;
         }
     }
 
