@@ -263,4 +263,20 @@ TEST_CASE("DialogSm call error", "[dialog_sm]") {
     REQUIRE(actions.was_called("terminate_call"));
 }
 
+// Test: Unrecoverable error while a re-INVITE/UPDATE is pending (e.g. shutdown,
+// RTP inactivity) must still terminate the call -- not be silently dropped for
+// lack of a matching transition.
+TEST_CASE("DialogSm call error while reinviting", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(ReinviteReceived{kValidSdp});
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+
+    actions.reset();
+    machine.process_event(CallError{});
+    REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("terminate_call"));
+}
+
 // NOLINTEND(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace,cert-err58-cpp)
