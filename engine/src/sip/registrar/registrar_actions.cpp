@@ -421,8 +421,17 @@ void RegistrarActions::send_ok(pjsip_rx_data* rdata, const std::string& aor) {
 
     const auto now = std::chrono::steady_clock::now();
     for (const auto& binding : binding_store_->find_live(aor, now)) {
+        auto* uri = parse_uri(tdata->pool, binding.contact_uri_);
+        // Mirrors process_registration()'s write-time guard against
+        // parse_uri() returning nullptr -- the stored contact_uri_ already
+        // round-tripped through pjsip_uri_print() once, but re-parsing it
+        // here is a second, independent chance to fail.
+        if (uri == nullptr) {
+            Log::sip()->error("send_ok: failed to re-parse stored contact URI, skipping ({})", binding.contact_uri_);
+            continue;
+        }
         auto* contact = pjsip_contact_hdr_create(tdata->pool);
-        contact->uri = parse_uri(tdata->pool, binding.contact_uri_);
+        contact->uri = uri;
         contact->expires = static_cast<pj_uint32_t>(
             std::chrono::duration_cast<std::chrono::seconds>(binding.expires_at_ - now).count());
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
