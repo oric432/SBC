@@ -67,7 +67,10 @@ public:
     // Drive the SIP event loop until stop() is called (blocking).
     void run();
 
-    // Ask run() to return; safe to call from another thread or a signal handler.
+    // Ask run() to return. Only safe to call from the same thread that calls run()
+    // (e.g. a signal handler installed via std::signal on that thread) -- it clears
+    // router_ without synchronization against run()'s and the PJSIP callbacks' reads
+    // of it, so a genuinely cross-thread caller would race those reads.
     void stop();
 
     // Tear the stack down. Called automatically by the destructor.
