@@ -30,6 +30,14 @@ public:
     // once ControlPlaneClient is.
     void set_registration_sink(IRegistrationSink* sink) { registrar_actions_.set_registration_sink(sink); }
 
+    // Pass-throughs: see RegistrarActions::start_binding_sweep_timer's doc comment.
+    void start_binding_sweep_timer(
+        const boost::asio::any_io_executor& executor,
+        std::chrono::steady_clock::duration interval) {
+        registrar_actions_.start_binding_sweep_timer(executor, interval);
+    }
+    void stop_binding_sweep_timer() { registrar_actions_.stop_binding_sweep_timer(); }
+
     void on_rx_request(pjsip_rx_data* request);
     pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata);
     // UPDATE only (#116); re-INVITE and the initial INVITE's offer are fully

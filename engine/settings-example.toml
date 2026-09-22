@@ -23,3 +23,6 @@ retry_interval_s = 5
 min_expires_s = 60
 # Also the expiry granted when a REGISTER specifies none at all.
 max_expires_s = 120
+# How often to drop registrations that expired without an explicit
+# de-register. Set to 0 to disable sweeping.
+binding_sweep_interval_s = 60

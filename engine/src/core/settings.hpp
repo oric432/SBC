@@ -21,6 +21,7 @@ constexpr int kRtpInactivityTimeoutSeconds = 60;
 constexpr int kRetryIntervalSeconds = 5;
 constexpr int kMinExpiresSeconds = 60;
 constexpr int kMaxExpiresSeconds = 120;
+constexpr int kBindingSweepIntervalSeconds = 60;
 } // namespace SettingsDefaults
 
 struct LoggingSettings {
@@ -54,6 +55,11 @@ struct RegistrarSettings {
     int min_expires_s = SettingsDefaults::kMinExpiresSeconds;
     // Also the expiry granted when a REGISTER specifies none at all.
     int max_expires_s = SettingsDefaults::kMaxExpiresSeconds;
+    // How often BindingStore drops registrations that expired without an
+    // explicit de-register (crash, NAT/DHCP churn). find_live()/find_preferred()
+    // already filter expired bindings out on their own -- this is only about
+    // not leaking memory for AORs nobody looks up again. 0 disables sweeping.
+    int binding_sweep_interval_s = SettingsDefaults::kBindingSweepIntervalSeconds;
 };
 
 // Runtime configuration loaded from settings.toml at startup.

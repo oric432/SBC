@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "net/rtp/rtp_inactivity_timer.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 
@@ -468,6 +469,29 @@ void RegistrarActions::mirror_registration(
             .user_agent = user_agent,
             .expires_in_s = expires_in_s,
             .removed = removed});
+}
+
+void RegistrarActions::start_binding_sweep_timer(
+    const boost::asio::any_io_executor& executor,
+    std::chrono::steady_clock::duration interval) {
+    binding_sweep_timer_ = std::make_shared<RtpInactivityTimer>(executor, interval);
+    binding_sweep_timer_->start();
+}
+
+void RegistrarActions::stop_binding_sweep_timer() {
+    if (binding_sweep_timer_) {
+        binding_sweep_timer_->stop();
+        binding_sweep_timer_.reset();
+    }
+}
+
+void RegistrarActions::process_pending_binding_sweep() {
+    if (!binding_sweep_timer_) {
+        return;
+    }
+    binding_sweep_timer_->run_pending_scan([this]([[maybe_unused]] std::chrono::steady_clock::duration interval) {
+        binding_store_->sweep(std::chrono::steady_clock::now());
+    });
 }
 
 } // namespace SbcEngine
