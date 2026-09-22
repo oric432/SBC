@@ -139,7 +139,13 @@ void ControlPlaneClient::on_failure(WsStage stage, boost::system::error_code err
     // remaining budget it would fire and fail startup before the reconnect
     // gets a chance.
     first_snapshot_.disarm();
-    resolve_flush_waiter();
+    // A pending flush() is waiting for the queue to drain, not for this
+    // specific connection -- schedule_reconnect() below may still deliver
+    // what's left before flush()'s own timeout does, so only give up here
+    // if there's nothing left to deliver.
+    if (outbound_queue_.empty()) {
+        resolve_flush_waiter();
+    }
 
     if (stage != WsStage::kSession) {
         handle_setup_failure(stage, err);
@@ -223,10 +229,22 @@ void ControlPlaneClient::do_enqueue(Protocols::WsEnvelope envelope, bool best_ef
         return;
     }
     if (!outbound_queue_.push(std::move(*payload), best_effort)) {
-        Log::app()->warn(
-            "control-plane outbound queue full ({} events); dropping this {} event",
-            kMaxOutboundQueueSize,
-            envelope.type);
+        // Losing a call-lifecycle event here is a real data-integrity gap (a
+        // phantom active call, or a missing history row) -- log it loudly,
+        // unlike a dropped registration mirror, which is already best-effort
+        // and self-heals on the phone's next REGISTER refresh.
+        if (best_effort) {
+            Log::app()->warn(
+                "control-plane outbound queue full ({} events); dropping this {} event",
+                kMaxOutboundQueueSize,
+                envelope.type);
+        }
+        else {
+            Log::app()->error(
+                "control-plane outbound queue full ({} events); dropping this {} event",
+                kMaxOutboundQueueSize,
+                envelope.type);
+        }
         return;
     }
     write_next();
@@ -254,7 +272,7 @@ void ControlPlaneClient::flush(std::chrono::milliseconds timeout) {
     auto done = waiter->get_future();
     Asio::post(executor_, [self = shared_from_this(), waiter = std::move(waiter)]() mutable {
         self->flush_waiter_ = std::move(waiter);
-        if (!self->connected() || self->outbound_queue_.empty()) {
+        if (self->outbound_queue_.empty()) {
             self->resolve_flush_waiter();
         }
     });
