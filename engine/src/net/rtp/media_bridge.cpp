@@ -1,5 +1,6 @@
 #include "media_bridge.hpp"
 
+#include <cassert>
 #include <cstdint>
 #include <optional>
 #include <system_error>
@@ -87,12 +88,26 @@ struct MediaBridge::Impl {
     // matters (issue #208).
     bool closing_ = false;
 
+    // Set unconditionally and directly by start_bridge_loop() itself (not by
+    // its posted task) -- same reasoning as last_packet_time_ above: it must
+    // be readable from set_remote_leg_a/b's assert below without a
+    // cross-thread data race, so it can't wait for the executor to run.
+    std::atomic<bool> loop_start_requested_{false};
+
     // Set by start_bridge_loop()'s posted task the first time it actually
-    // arms the loop. Confined to this executor like closing_, so a second
+    // runs. Confined to this executor like closing_, so a second
     // start_bridge_loop() call (issue #214: arming early on a provisional,
     // then again on the following 200 OK) is a safe no-op instead of a
     // second outstanding async_receive_pkt() tearing the shared rx buffer.
-    bool started_ = false;
+    bool loop_started_ = false;
+
+    // Set once each direction's receive loop is actually armed. A leg's
+    // destination may still be unknown when loop_started_ first flips (e.g.
+    // the caller's offer had no usable c= line) -- these let a later
+    // retarget_remote_leg_a/b arm that direction instead of leaving it
+    // permanently unarmed once its destination finally becomes known.
+    bool leg_a_rx_armed_ = false;
+    bool leg_b_rx_armed_ = false;
 
     // Receive/error-handling/re-arm loop; `process` is a function pointer
     // (never a closure) so re-arming just means calling listen() again.
@@ -223,6 +238,36 @@ struct MediaBridge::Impl {
         out_stream
             .send_audio(transcoded->encoded_, transcoded->timestamp_delta_, dst_ep, std::move(keep_session_alive));
     }
+
+    // Arms whichever direction(s) have a known destination and aren't armed
+    // yet. Called both from start_bridge_loop()'s posted task and from
+    // retarget_remote_leg_a/b()'s, since either one can be the first to learn
+    // a leg's destination.
+    static void arm_pending_legs(const std::shared_ptr<MediaBridge>& self) {
+        if (!self->impl_->loop_started_ || self->impl_->closing_) {
+            return;
+        }
+        if (!self->impl_->leg_a_rx_armed_ && self->impl_->dest_b_) {
+            self->impl_->leg_a_rx_armed_ = true;
+            listen(
+                self,
+                RelayLeg::kLegA,
+                self->impl_->session_a_,
+                self->impl_->session_b_,
+                *self->impl_->dest_b_,
+                &Impl::process_packet);
+        }
+        if (!self->impl_->leg_b_rx_armed_ && self->impl_->dest_a_) {
+            self->impl_->leg_b_rx_armed_ = true;
+            listen(
+                self,
+                RelayLeg::kLegB,
+                self->impl_->session_b_,
+                self->impl_->session_a_,
+                *self->impl_->dest_a_,
+                &Impl::process_packet);
+        }
+    }
 };
 
 MediaBridge::MediaBridge(const boost::asio::any_io_executor& executor)
@@ -271,22 +316,30 @@ std::expected<unsigned short, std::error_code> MediaBridge::leg_b_port() const {
 }
 
 void MediaBridge::set_remote_leg_a(const std::string& addr, unsigned short port) {
+    assert(
+        !impl_->loop_start_requested_.load(std::memory_order_relaxed) &&
+        "set_remote_leg_a called after start_bridge_loop(); use retarget_remote_leg_a instead");
     impl_->dest_a_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
 }
 
 void MediaBridge::set_remote_leg_b(const std::string& addr, unsigned short port) {
+    assert(
+        !impl_->loop_start_requested_.load(std::memory_order_relaxed) &&
+        "set_remote_leg_b called after start_bridge_loop(); use retarget_remote_leg_b instead");
     impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
 }
 
 void MediaBridge::retarget_remote_leg_a(std::string addr, unsigned short port) {
     boost::asio::post(impl_->executor_, [self = shared_from_this(), addr = std::move(addr), port] {
         self->impl_->dest_a_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
+        Impl::arm_pending_legs(self);
     });
 }
 
 void MediaBridge::retarget_remote_leg_b(std::string addr, unsigned short port) {
     boost::asio::post(impl_->executor_, [self = shared_from_this(), addr = std::move(addr), port] {
         self->impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
+        Impl::arm_pending_legs(self);
     });
 }
 
@@ -343,31 +396,14 @@ void MediaBridge::start_bridge_loop() {
     // is even armed (see last_packet_time()'s doc comment), and a repeat
     // call re-marking "just armed" on an already-running relay is harmless.
     impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
+    impl_->loop_start_requested_.store(true, std::memory_order_relaxed);
 
     boost::asio::post(impl_->executor_, [self = shared_from_this()] {
-        if (self->impl_->started_ || self->impl_->closing_) {
+        if (self->impl_->loop_started_ || self->impl_->closing_) {
             return;
         }
-        self->impl_->started_ = true;
-
-        if (self->impl_->dest_b_) {
-            Impl::listen(
-                self,
-                RelayLeg::kLegA,
-                self->impl_->session_a_,
-                self->impl_->session_b_,
-                *self->impl_->dest_b_,
-                &Impl::process_packet);
-        }
-        if (self->impl_->dest_a_) {
-            Impl::listen(
-                self,
-                RelayLeg::kLegB,
-                self->impl_->session_b_,
-                self->impl_->session_a_,
-                *self->impl_->dest_a_,
-                &Impl::process_packet);
-        }
+        self->impl_->loop_started_ = true;
+        Impl::arm_pending_legs(self);
     });
 }
 

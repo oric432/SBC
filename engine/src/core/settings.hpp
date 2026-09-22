@@ -21,6 +21,7 @@ constexpr int kRtpInactivityTimeoutSeconds = 60;
 constexpr int kRetryIntervalSeconds = 5;
 constexpr int kMinExpiresSeconds = 60;
 constexpr int kMaxExpiresSeconds = 120;
+constexpr int kBindingSweepIntervalSeconds = 60;
 } // namespace SettingsDefaults
 
 struct LoggingSettings {
@@ -30,6 +31,11 @@ struct LoggingSettings {
 
 struct SipSettings {
     std::string address = "127.0.0.1";
+    // Address advertised in rewritten SDP and Contact headers. Empty (the
+    // default) means "same as address" -- the single-homed case. Set this
+    // separately from address for NAT/reverse-proxy/multi-homed deployments,
+    // where the interface bound to isn't the address peers should reach.
+    std::string advertised_address;
     uint16_t port = SettingsDefaults::kLocalSipPort;
     std::string identity_user = "sbc"; // user part of our own Contact/From URI
     // How long to wait for a final response to an outbound INVITE before
@@ -54,6 +60,11 @@ struct RegistrarSettings {
     int min_expires_s = SettingsDefaults::kMinExpiresSeconds;
     // Also the expiry granted when a REGISTER specifies none at all.
     int max_expires_s = SettingsDefaults::kMaxExpiresSeconds;
+    // How often BindingStore drops registrations that expired without an
+    // explicit de-register (crash, NAT/DHCP churn). find_live()/find_preferred()
+    // already filter expired bindings out on their own -- this is only about
+    // not leaking memory for AORs nobody looks up again. 0 disables sweeping.
+    int binding_sweep_interval_s = SettingsDefaults::kBindingSweepIntervalSeconds;
 };
 
 // Runtime configuration loaded from settings.toml at startup.

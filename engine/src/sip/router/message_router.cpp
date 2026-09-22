@@ -152,5 +152,6 @@ void MessageRouter::process_register(pjsip_rx_data* request) {
 void MessageRouter::process_pending_media_events() {
     call_manager_->process_pending_rtp_inactivity();
     call_manager_->purge_scheduled();
+    registrar_actions_.process_pending_binding_sweep();
 }
 } // namespace SbcEngine

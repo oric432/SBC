@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <boost/asio/io_context.hpp>
+
 #include "sip/registrar/registrar_actions.hpp"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers,bugprone-unchecked-optional-access)
@@ -74,6 +76,57 @@ TEST_CASE(
         make_binding(now - std::chrono::seconds(1900), std::chrono::seconds(3600), now - std::chrono::seconds(1900));
     const auto incoming = make_binding(now, std::chrono::seconds(3600), kEpoch);
     CHECK(RegistrarActions::should_mirror(previous, incoming, /*removed=*/false, now));
+}
+
+// Regression test for issue #247: BindingStore::sweep() was implemented but
+// never wired up to run periodically anywhere in production. find_live()
+// filters expired contacts out at read time regardless of whether sweep()
+// ever ran, so this can't just check find_live() -- instead it relies on
+// apply_contacts()'s own Call-ID/CSeq conflict check, which only fires while
+// the swept-out AOR's old binding is still in the store.
+TEST_CASE("RegistrarActions binding-sweep timer drops an expired binding once it fires", "[registrar_actions]") {
+    boost::asio::io_context ioc;
+    BindingStore store;
+    RegistrarConfig config{.min_expires_s_ = 60, .max_expires_s_ = 120, .binding_sweep_interval_s_ = 0};
+    RegistrarActions actions(nullptr, nullptr, &store, &config);
+
+    const std::string aor = "sip:alice@example.com";
+    const auto now = std::chrono::steady_clock::now();
+    store.apply_contacts(
+        aor,
+        {Binding{
+            .contact_uri_ = "sip:alice@10.0.0.1:5060",
+            .source_address_ = "10.0.0.1",
+            .source_port_ = 5060,
+            .transport_ = "udp",
+            .call_id_ = "call-1",
+            .cseq_ = 5,
+            .expires_at_ = now + std::chrono::milliseconds(10),
+            .refreshed_at_ = now,
+            .mirrored_at_ = {}}});
+
+    actions.start_binding_sweep_timer(ioc.get_executor(), std::chrono::milliseconds(20));
+    ioc.run_for(std::chrono::milliseconds(150));
+    actions.process_pending_binding_sweep();
+
+    // Same Call-ID, a lower CSeq than the swept binding's -- apply_contacts()
+    // would reject this as a conflict (RFC 3261 10.3 step 7) if the old
+    // binding were still in the store, since existing_contacts would be
+    // non-null and conflicts() would trip on the non-increasing CSeq.
+    const auto later = std::chrono::steady_clock::now();
+    const auto result = store.apply_contacts(
+        aor,
+        {Binding{
+            .contact_uri_ = "sip:alice@10.0.0.1:5060",
+            .source_address_ = "10.0.0.1",
+            .source_port_ = 5060,
+            .transport_ = "udp",
+            .call_id_ = "call-1",
+            .cseq_ = 1,
+            .expires_at_ = later + std::chrono::seconds(60),
+            .refreshed_at_ = later,
+            .mirrored_at_ = {}}});
+    CHECK(result == BindingStore::ApplyResult::kApplied);
 }
 
 } // namespace SbcEngine

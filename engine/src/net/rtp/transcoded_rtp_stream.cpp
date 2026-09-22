@@ -1,7 +1,6 @@
 #include "transcoded_rtp_stream.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <utility>
 
 namespace SbcEngine {
@@ -35,9 +34,17 @@ void TranscodedRtpStream::send_as(
     const boost::asio::ip::udp::endpoint& dst,
     RtpCpp::OnRawRtpSend callback) {
     const std::size_t packet_size = payload.size() + RtpCpp::kFixedRtpHeaderSize;
-    // AudioTranscoder/relay_dtmf_pt never hand back more than one RTP
-    // packet's worth of payload, so send_buffer_ always fits it.
-    assert(packet_size <= send_buffer_.size());
+    // AudioTranscoder/relay_dtmf_pt are trusted to never hand back more than
+    // one RTP packet's worth of payload, but that trust is a release-mode
+    // no-op if this is left as an assert -- checked for real so a future
+    // violation fails the send instead of writing past send_buffer_.
+    if (packet_size > send_buffer_.size()) {
+        RtpCpp::Detail::invoke_callback(
+            std::move(callback),
+            0,
+            RtpCpp::make_error_code(RtpCpp::Result::kFixedBufferTooSmall));
+        return;
+    }
 
     RtpCpp::RtpPacketView pkt(std::span<std::uint8_t>(send_buffer_.data(), packet_size));
     pkt.set_timestamp(timestamp_);

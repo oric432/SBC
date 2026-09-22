@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "net/rtp/rtp_inactivity_timer.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
 
@@ -187,7 +188,10 @@ void RegistrarActions::send_challenge(pjsip_rx_data* rdata, const std::string& r
     }
 
     pjsip_tx_data* tdata = nullptr;
-    if (pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_UNAUTHORIZED, nullptr, &tdata) != PJ_SUCCESS) {
+    const pj_status_t create_status =
+        pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_UNAUTHORIZED, nullptr, &tdata);
+    if (create_status != PJ_SUCCESS) {
+        Log::sip()->error("send_challenge: pjsip_endpt_create_response failed ({})", create_status);
         return;
     }
 
@@ -202,11 +206,18 @@ void RegistrarActions::send_challenge(pjsip_rx_data* rdata, const std::string& r
     // No qop: unqualified digest is valid per RFC 2617 and every target
     // client here (Cisco desk phones, SIPp) supports it -- one less moving
     // part than negotiating qop=auth.
-    pjsip_auth_srv_init2(tdata->pool, &auth_srv, &init_param);
+    const pj_status_t init_status = pjsip_auth_srv_init2(tdata->pool, &auth_srv, &init_param);
+    if (init_status != PJ_SUCCESS) {
+        Log::sip()->error("send_challenge: pjsip_auth_srv_init2 failed ({})", init_status);
+        pjsip_tx_data_dec_ref(tdata);
+        return;
+    }
     pjsip_auth_srv_challenge(&auth_srv, nullptr, nullptr, nullptr, PJ_FALSE, tdata);
 
     pjsip_response_addr res_addr;
-    if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+    const pj_status_t addr_status = pjsip_get_response_addr(tdata->pool, rdata, &res_addr);
+    if (addr_status != PJ_SUCCESS) {
+        Log::sip()->error("send_challenge: pjsip_get_response_addr failed ({})", addr_status);
         pjsip_tx_data_dec_ref(tdata);
         return;
     }
@@ -369,15 +380,19 @@ bool RegistrarActions::reject_if_too_brief(
             continue;
         }
         pjsip_tx_data* tdata = nullptr;
-        if (pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_INTERVAL_TOO_BRIEF, nullptr, &tdata) !=
-            PJ_SUCCESS) {
+        const pj_status_t create_status =
+            pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_INTERVAL_TOO_BRIEF, nullptr, &tdata);
+        if (create_status != PJ_SUCCESS) {
+            Log::sip()->error("reject_if_too_brief: pjsip_endpt_create_response failed ({})", create_status);
             return true;
         }
         auto* min_expires = pjsip_min_expires_hdr_create(tdata->pool, static_cast<unsigned>(config_->min_expires_s_));
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
         pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(min_expires));
         pjsip_response_addr res_addr;
-        if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+        const pj_status_t addr_status = pjsip_get_response_addr(tdata->pool, rdata, &res_addr);
+        if (addr_status != PJ_SUCCESS) {
+            Log::sip()->error("reject_if_too_brief: pjsip_get_response_addr failed ({})", addr_status);
             pjsip_tx_data_dec_ref(tdata);
             return true;
         }
@@ -393,11 +408,15 @@ void RegistrarActions::respond(pjsip_rx_data* rdata, int status_code) {
         return;
     }
     pjsip_tx_data* tdata = nullptr;
-    if (pjsip_endpt_create_response(ctx_->endpt_, rdata, status_code, nullptr, &tdata) != PJ_SUCCESS) {
+    const pj_status_t create_status = pjsip_endpt_create_response(ctx_->endpt_, rdata, status_code, nullptr, &tdata);
+    if (create_status != PJ_SUCCESS) {
+        Log::sip()->error("respond: pjsip_endpt_create_response failed ({})", create_status);
         return;
     }
     pjsip_response_addr res_addr;
-    if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+    const pj_status_t addr_status = pjsip_get_response_addr(tdata->pool, rdata, &res_addr);
+    if (addr_status != PJ_SUCCESS) {
+        Log::sip()->error("respond: pjsip_get_response_addr failed ({})", addr_status);
         pjsip_tx_data_dec_ref(tdata);
         return;
     }
@@ -410,14 +429,25 @@ void RegistrarActions::send_ok(pjsip_rx_data* rdata, const std::string& aor) {
         return;
     }
     pjsip_tx_data* tdata = nullptr;
-    if (pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_OK, nullptr, &tdata) != PJ_SUCCESS) {
+    const pj_status_t create_status = pjsip_endpt_create_response(ctx_->endpt_, rdata, PJSIP_SC_OK, nullptr, &tdata);
+    if (create_status != PJ_SUCCESS) {
+        Log::sip()->error("send_ok: pjsip_endpt_create_response failed ({})", create_status);
         return;
     }
 
     const auto now = std::chrono::steady_clock::now();
     for (const auto& binding : binding_store_->find_live(aor, now)) {
+        auto* uri = parse_uri(tdata->pool, binding.contact_uri_);
+        // Mirrors process_registration()'s write-time guard against
+        // parse_uri() returning nullptr -- the stored contact_uri_ already
+        // round-tripped through pjsip_uri_print() once, but re-parsing it
+        // here is a second, independent chance to fail.
+        if (uri == nullptr) {
+            Log::sip()->error("send_ok: failed to re-parse stored contact URI, skipping ({})", binding.contact_uri_);
+            continue;
+        }
         auto* contact = pjsip_contact_hdr_create(tdata->pool);
-        contact->uri = parse_uri(tdata->pool, binding.contact_uri_);
+        contact->uri = uri;
         contact->expires = static_cast<pj_uint32_t>(
             std::chrono::duration_cast<std::chrono::seconds>(binding.expires_at_ - now).count());
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
@@ -425,7 +455,9 @@ void RegistrarActions::send_ok(pjsip_rx_data* rdata, const std::string& aor) {
     }
 
     pjsip_response_addr res_addr;
-    if (pjsip_get_response_addr(tdata->pool, rdata, &res_addr) != PJ_SUCCESS) {
+    const pj_status_t addr_status = pjsip_get_response_addr(tdata->pool, rdata, &res_addr);
+    if (addr_status != PJ_SUCCESS) {
+        Log::sip()->error("send_ok: pjsip_get_response_addr failed ({})", addr_status);
         pjsip_tx_data_dec_ref(tdata);
         return;
     }
@@ -454,6 +486,29 @@ void RegistrarActions::mirror_registration(
             .user_agent = user_agent,
             .expires_in_s = expires_in_s,
             .removed = removed});
+}
+
+void RegistrarActions::start_binding_sweep_timer(
+    const boost::asio::any_io_executor& executor,
+    std::chrono::steady_clock::duration interval) {
+    binding_sweep_timer_ = std::make_shared<RtpInactivityTimer>(executor, interval);
+    binding_sweep_timer_->start();
+}
+
+void RegistrarActions::stop_binding_sweep_timer() {
+    if (binding_sweep_timer_) {
+        binding_sweep_timer_->stop();
+        binding_sweep_timer_.reset();
+    }
+}
+
+void RegistrarActions::process_pending_binding_sweep() {
+    if (!binding_sweep_timer_) {
+        return;
+    }
+    binding_sweep_timer_->run_pending_scan([this]([[maybe_unused]] std::chrono::steady_clock::duration interval) {
+        binding_store_->sweep(std::chrono::steady_clock::now());
+    });
 }
 
 } // namespace SbcEngine

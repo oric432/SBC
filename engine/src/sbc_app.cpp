@@ -36,6 +36,7 @@ void SbcApp::init() {
     const Settings settings = init_settings();
     registrar_config_.min_expires_s_ = settings.registrar.min_expires_s;
     registrar_config_.max_expires_s_ = settings.registrar.max_expires_s;
+    registrar_config_.binding_sweep_interval_s_ = settings.registrar.binding_sweep_interval_s;
     const PjsipConfig config = init_pjsip(settings);
     init_pjmedia();
     start_asio_thread();
@@ -80,9 +81,11 @@ void SbcApp::init_control_plane(const Settings& settings) {
 PjsipConfig SbcApp::init_pjsip(const Settings& settings) {
     PjsipConfig config;
     config.bind_ip_ = settings.sip.address;
-    // Single-homed deployment: the address we bind to is also the address we
-    // advertise (Contact/SDP). Breaks if sip.address is ever "0.0.0.0".
-    config.local_ip_ = settings.sip.address;
+    // sip.advertised_address defaults to empty -- "same as sip.address", the
+    // single-homed case. Set separately for NAT/reverse-proxy/multi-homed
+    // deployments (bind on 0.0.0.0 or a private interface, advertise a
+    // public/floating IP).
+    config.local_ip_ = settings.sip.advertised_address.empty() ? settings.sip.address : settings.sip.advertised_address;
     config.sip_port_ = settings.sip.port;
     config.identity_user_ = settings.sip.identity_user;
     config.invite_timeout_ms_ = settings.sip.invite_timeout_ms;
@@ -151,6 +154,11 @@ void SbcApp::run() {
             ioc_.get_executor(),
             std::chrono::seconds{ctx_.config_.rtp_inactivity_timeout_s_});
     }
+    if (registrar_config_.binding_sweep_interval_s_ > 0) {
+        router_.start_binding_sweep_timer(
+            ioc_.get_executor(),
+            std::chrono::seconds{registrar_config_.binding_sweep_interval_s_});
+    }
 
     Log::app()->info("SBC running: SIP on {}:{}", ctx_.config_.bind_ip_, ctx_.config_.sip_port_);
 
@@ -159,6 +167,7 @@ void SbcApp::run() {
     // Explicit call, not ~CallManager(): a destructor silently sending SIP
     // messages is a surprising side effect, not just a resource cleanup.
     call_manager_.terminate_established_calls();
+    router_.stop_binding_sweep_timer();
 
     // Lets the call_terminated events that terminate_established_calls() just
     // queued reach the control plane instead of being cut off by stop().

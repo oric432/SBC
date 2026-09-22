@@ -206,6 +206,63 @@ TEST_CASE("MediaBridge retarget_remote_leg_a/b update the live relay target", "[
     REQUIRE(bridge->remote_leg_b()->port() == callee_ep.port());
 }
 
+// Regression test for issue #247: if leg A's destination is still unknown
+// (e.g. the caller's offer had no usable c= line) when start_bridge_loop()
+// first runs, leg B's receive direction (callee -> caller, which needs
+// dest_a_) must not be permanently skipped -- a later retarget_remote_leg_a
+// has to arm it.
+TEST_CASE(
+    "MediaBridge arms a leg's receive direction once its destination is retargeted in, even after start_bridge_loop",
+    "[MediaBridge]") {
+    io_context ioc;
+
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+
+    auto leg_a_port = bridge->bind_leg_a();
+    REQUIRE(leg_a_port.has_value());
+    auto leg_b_port = bridge->bind_leg_b();
+    REQUIRE(leg_b_port.has_value());
+
+    udp::socket caller_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    udp::socket callee_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    auto caller_ep = caller_sock.local_endpoint();
+    auto callee_ep = callee_sock.local_endpoint();
+
+    // Only leg B's destination is known when the loop starts -- leg A's
+    // destination (the caller) is still unset.
+    bridge->set_remote_leg_b("127.0.0.1", callee_ep.port());
+    bridge->start_bridge_loop();
+
+    // The caller's destination arrives later, e.g. once a re-INVITE supplies
+    // a usable address.
+    bridge->retarget_remote_leg_a("127.0.0.1", caller_ep.port());
+
+    const std::vector<uint8_t> dummy_packet =
+        {kRtpVersion2FirstByte, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 'H', 'i'};
+    const udp::endpoint bridge_leg_b_ep(make_address("127.0.0.1"), leg_b_port.value());
+    callee_sock.send_to(buffer(dummy_packet), bridge_leg_b_ep);
+
+    bool received = false;
+    boost::system::error_code recv_errc;
+    std::size_t recv_bytes = 0;
+    std::vector<uint8_t> recv_buf(kReceiveBufferSize);
+    udp::endpoint recv_ep;
+    caller_sock.async_receive_from(
+        buffer(recv_buf),
+        recv_ep,
+        [&](const boost::system::error_code& errc, std::size_t bytes_recvd) {
+            recv_errc = errc;
+            recv_bytes = bytes_recvd;
+            received = true;
+        });
+
+    ioc.run_for(kRelayRunWindow);
+
+    REQUIRE(received == true);
+    REQUIRE(!recv_errc);
+    REQUIRE(recv_bytes == dummy_packet.size());
+}
+
 // Regression test for issue #214: early media arms the bridge on the
 // callee's 183, and the following 200 OK arms it again through the same
 // call site -- start_bridge_loop() must treat the repeat as a no-op rather
