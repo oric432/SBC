@@ -29,6 +29,7 @@ void finish_exchange(CallSession& session, ExchangeOutcome outcome) {
 } // namespace
 
 void SetupActions::begin_setup() {
+    session_.report_call_started();
     if (!Inv::answer_request(session_.inv_caller(), session_.current_rdata(), PJSIP_SC_TRYING)) {
         Log::sip()->warn("[{}] initial 100 Trying failed", session_.call_id());
     }
@@ -126,13 +127,25 @@ RouteResolution SetupActions::resolve_route() {
     return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest, .required_codec_ = required_codec};
 }
 
+void SetupActions::note_failure(std::string_view status, std::string reason) {
+    if (failure_reason_.empty()) {
+        failure_status_ = status;
+        failure_reason_ = std::move(reason);
+    }
+}
+
 void SetupActions::route_failed() {
+    note_failure(
+        Protocols::CallStatus::kNoRouteAvailable,
+        std::format("no route available for {}", session_.request_uri()));
     Inv::answer(session_.inv_caller(), PJSIP_SC_TEMPORARILY_UNAVAILABLE);
 }
 void SetupActions::routing_loop_detected() {
+    note_failure(Protocols::CallStatus::kFailed, "routing loop detected");
     Inv::answer(session_.inv_caller(), PJSIP_SC_LOOP_DETECTED);
 }
 void SetupActions::codec_mismatch_detected() {
+    note_failure(Protocols::CallStatus::kFailed, "no codec in common with the route");
     Inv::answer(session_.inv_caller(), PJSIP_SC_NOT_ACCEPTABLE_HERE);
 }
 ExchangeOutcome SetupActions::start_exchange(
@@ -181,6 +194,7 @@ bool SetupActions::is_new_progress(int status_code, bool has_early_answer) const
 }
 
 bool SetupActions::cancel_call() {
+    note_failure(Protocols::CallStatus::kFailed, "caller cancelled the call");
     if (session_.exchange() != nullptr) {
         session_.exchange()->stop();
         session_.release_exchange();
@@ -205,9 +219,11 @@ void SetupActions::establish_call() {
         caller_relay_port.value_or(0),
         callee_rtp ? std::format("{}:{}", callee_rtp->address().to_string(), callee_rtp->port()) : "unknown",
         callee_relay_port.value_or(0));
+    session_.report_call_answered();
 }
 
 void SetupActions::terminate_call() {
+    note_failure(Protocols::CallStatus::kFailed, "call setup failed");
     if (session_.exchange() != nullptr) {
         session_.exchange()->stop();
         session_.release_exchange();
@@ -217,6 +233,9 @@ void SetupActions::terminate_call() {
 }
 
 void SetupActions::cleanup() {
+    session_.report_call_terminated(
+        failure_status_,
+        failure_reason_.empty() ? std::nullopt : std::optional<std::string>{failure_reason_});
     session_.media_bridge()->close();
 
     session_.call_manager()->schedule_remove(session_.call_id());
@@ -310,6 +329,7 @@ void SetupActions::handle_disconnect(pjsip_inv_session* inv) {
     }
     if ((session_.exchange() != nullptr) && session_.exchange()->awaiting_confirmation()) {
         if (leg == Leg::kCaller && cause == PJSIP_SC_REQUEST_TIMEOUT) {
+            note_failure(Protocols::CallStatus::kFailed, "caller never acknowledged the answer");
             finish_exchange(session_, session_.exchange()->confirmation_timeout());
         }
         else {
@@ -319,11 +339,13 @@ void SetupActions::handle_disconnect(pjsip_inv_session* inv) {
     }
     if (leg == Leg::kCallee) {
         if (cause == PJSIP_SC_REQUEST_TIMEOUT) {
+            note_failure(Protocols::CallStatus::kFailed, "callee did not answer in time");
             if (session_.exchange() != nullptr) {
                 finish_exchange(session_, session_.exchange()->answer_timeout());
             }
         }
         else if (cause >= kMinFinalErrorCode) {
+            note_failure(Protocols::CallStatus::kFailed, std::format("callee rejected the call with {}", cause));
             if (session_.exchange() != nullptr) {
                 finish_exchange(session_, session_.exchange()->reject(cause));
             }

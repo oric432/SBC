@@ -1,5 +1,9 @@
 add_library(control_plane STATIC
     control_plane_client.cpp
+    first_snapshot_latch.cpp
+    outbound_queue.cpp
+    ws_connection.cpp
+    ws_utils.cpp
 )
 target_include_directories(control_plane PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(control_plane PUBLIC
@@ -16,7 +20,10 @@ target_precompile_headers(control_plane PRIVATE ${CMAKE_SOURCE_DIR}/src/core/pch
 
 if(BUILD_TESTS)
     add_executable(control_plane_tests
-        tests/test_control_plane_client.cpp
+        tests/test_first_snapshot_latch.cpp
+        tests/test_outbound_queue.cpp
+        tests/test_ws_connection.cpp
+        tests/test_ws_utils.cpp
     )
 
     target_include_directories(control_plane_tests PRIVATE

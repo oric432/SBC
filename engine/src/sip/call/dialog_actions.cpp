@@ -27,12 +27,20 @@ void DialogActions::reject_update_collision(Leg leg) {
 }
 
 void DialogActions::terminate_call() {
+    // Reported here, not just in cleanup(): at shutdown the SIP loop is
+    // already stopped, so the BYE responses that would drive cleanup() never
+    // get processed. A call that was never answered (shutdown mid-setup, or
+    // an early-dialog UPDATE failing) isn't a success.
+    session_.report_call_terminated(
+        session_.setup_sm().is_established() ? Protocols::CallStatus::kSuccess : Protocols::CallStatus::kFailed,
+        "call ended by the engine");
     reinvite_.reset();
     Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
     Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);
 }
 
 void DialogActions::cleanup() {
+    session_.report_call_terminated(Protocols::CallStatus::kSuccess, std::nullopt);
     session_.media_bridge()->close();
 
     session_.call_manager()->schedule_remove(session_.call_id());
@@ -64,6 +72,7 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
                 "missing or unanswered",
                 session_.call_id(),
                 leg == Leg::kCaller ? "caller" : "callee");
+            session_.report_call_terminated(Protocols::CallStatus::kSuccess, "session timer expired");
         }
 
         // A leg dropping mid-exchange (re-INVITE or UPDATE) can't be answered anymore; tear the call down.

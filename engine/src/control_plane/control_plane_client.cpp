@@ -1,369 +1,167 @@
 #include "control_plane_client.hpp"
 
-#include <deque>
-#include <future>
 #include <utility>
-#include <boost/asio/buffer.hpp>
-#include <boost/asio/connect.hpp>
-#include <boost/asio/dispatch.hpp>
 #include <boost/asio/error.hpp>
 #include <boost/asio/post.hpp>
-#include <boost/asio/steady_timer.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/websocket.hpp>
-#include <glaze/glaze.hpp>
 
 #include "core/utils/log.hpp"
+#include "ws_connection.hpp"
 
 namespace SbcEngine {
 
 namespace {
-namespace Beast = boost::beast;
-namespace Websocket = Beast::websocket;
 namespace Asio = boost::asio;
-using Tcp = Asio::ip::tcp;
 
-// The mirror is already best-effort (see send_registration()); this just
-// bounds how much memory a control plane that's connected but slow (or
-// stalled) can make outbound_queue_ consume under sustained REGISTER
-// refreshes.
-constexpr std::size_t kMaxOutboundQueueSize = 64;
+// Bounds how much memory the outbound queue can consume while the control
+// plane is down or stalled. Sized for a real outage's worth of call events (a
+// few per call, each a few hundred bytes), not just a burst.
+constexpr std::size_t kMaxOutboundQueueSize = 1024;
 
 // How long a handshake that succeeded is given to actually deliver the first
 // snapshot before wait_for_first_snapshot() gives up. Guards against a
-// protocol mismatch on the very first message (on_read()'s parse-failure and
-// unrecognized-type branches both just re-read forever) hanging startup
+// protocol mismatch on the very first message (on_message()'s parse-failure
+// and unrecognized-type branches both just keep reading) hanging startup
 // indefinitely. Not a settings key -- nobody has a reason to tune it.
 constexpr std::chrono::seconds kFirstSnapshotTimeout{10};
 } // namespace
-
-Result<WsUrlParts> parse_ws_url(std::string_view url) {
-    constexpr std::string_view kScheme = "ws://";
-    if (!url.starts_with(kScheme)) {
-        return std::unexpected(Error("control-plane ws_url must start with \"ws://\": {}", std::string(url)));
-    }
-
-    const std::string_view rest = url.substr(kScheme.size());
-    const auto slash_pos = rest.find('/');
-    const std::string_view authority = slash_pos == std::string_view::npos ? rest : rest.substr(0, slash_pos);
-    std::string target = slash_pos == std::string_view::npos ? "/" : std::string(rest.substr(slash_pos));
-
-    const auto colon_pos = authority.find(':');
-    if (colon_pos == std::string_view::npos) {
-        return std::unexpected(Error("control-plane ws_url is missing a port: {}", std::string(url)));
-    }
-
-    return WsUrlParts{
-        .host_ = std::string(authority.substr(0, colon_pos)),
-        .port_ = std::string(authority.substr(colon_pos + 1)),
-        .target_ = std::move(target)};
-}
-
-struct ControlPlaneClient::Impl {
-    Impl(
-        Asio::any_io_executor executor,
-        ControlPlaneClientConfig config,
-        RoutesStore* routes_store,
-        UsersStore* users_store)
-        : executor_(std::move(executor))
-        , config_(std::move(config))
-        , routes_store_(routes_store)
-        , users_store_(users_store)
-        , resolver_(executor_)
-        , retry_timer_(executor_)
-        , first_snapshot_timer_(executor_)
-        , first_snapshot_future_(first_snapshot_promise_.get_future()) {}
-
-    Asio::any_io_executor executor_;
-    ControlPlaneClientConfig config_;
-    RoutesStore* routes_store_;
-    UsersStore* users_store_;
-    Tcp::resolver resolver_;
-    Asio::steady_timer retry_timer_;
-    // Armed on a successful handshake, while the first snapshot is still
-    // outstanding; cancelled the moment it arrives (or the object is torn
-    // down). See kFirstSnapshotTimeout.
-    Asio::steady_timer first_snapshot_timer_;
-    // unique_ptr rather than optional: torn down and rebuilt fresh on every
-    // connect attempt, and a raw pointer sidesteps
-    // bugprone-unchecked-optional-access on every dereference below, which
-    // can't see that do_connect() always emplaces it first.
-    std::unique_ptr<Websocket::stream<Beast::tcp_stream>> ws_;
-    Beast::flat_buffer buffer_;
-    std::atomic<bool> stopped_{false};
-    // Touched only on executor_ -- everything driving this object's state
-    // machine runs there, start()/stop() are the only cross-thread entry
-    // points and they only ever post() or read stopped_.
-    bool first_snapshot_resolved_{false};
-    std::promise<VoidResult> first_snapshot_promise_;
-    std::future<VoidResult> first_snapshot_future_;
-    // True only once on_handshake() has actually succeeded -- ws_ itself is
-    // non-null for the whole resolve/connect/handshake sequence, so it can't
-    // stand in for "the handshake finished and it's safe to write."
-    bool connected_{false};
-    // Beast allows one outstanding read and one outstanding write
-    // concurrently, but not two writes -- outgoing registration events queue
-    // up behind whichever write is already in flight.
-    std::deque<std::string> outbound_queue_;
-    bool writing_{false};
-    // Highest WsEnvelope::seq applied so far this connection. Reset on every
-    // (re)connect -- a backend restart resets its own counter too, so
-    // without this the engine would reject every message forever after.
-    std::int64_t last_seq_{0};
-};
 
 ControlPlaneClient::ControlPlaneClient(
     boost::asio::any_io_executor executor,
     ControlPlaneClientConfig config,
     RoutesStore* routes_store,
     UsersStore* users_store)
-    : impl_(std::make_unique<Impl>(std::move(executor), std::move(config), routes_store, users_store)) {}
-
-ControlPlaneClient::~ControlPlaneClient() = default;
+    : executor_(std::move(executor))
+    , config_(std::move(config))
+    , routes_store_(routes_store)
+    , users_store_(users_store)
+    , retry_timer_(executor_)
+    , first_snapshot_(executor_, kFirstSnapshotTimeout)
+    , outbound_queue_(kMaxOutboundQueueSize) {}
 
 void ControlPlaneClient::start() {
-    Asio::post(impl_->executor_, [self = shared_from_this()] { self->do_connect(); });
+    Asio::post(executor_, [self = shared_from_this()] { self->do_connect(); });
+}
+
+bool ControlPlaneClient::connected() const {
+    return connection_ != nullptr && connection_->is_open();
 }
 
 void ControlPlaneClient::do_connect() {
-    if (impl_->stopped_) {
+    if (stopped_) {
         return;
     }
     // A registration event queued against the previous connection may
     // already describe stale binding state by the time we reconnect (the
     // phone could have refreshed, re-registered or expired meanwhile) --
     // consistent with the mirror being best-effort throughout, drop it
-    // rather than replay it into a fresh connection.
-    impl_->outbound_queue_.clear();
-    impl_->writing_ = false;
-    impl_->connected_ = false;
-    impl_->last_seq_ = 0;
-    // A prior attempt's countdown (started on its own handshake, now
-    // abandoned) must not fire during this fresh one -- on_handshake()
-    // re-arms it once this attempt's handshake actually succeeds.
-    impl_->first_snapshot_timer_.cancel();
-    impl_->ws_ = std::make_unique<Websocket::stream<Beast::tcp_stream>>(impl_->executor_);
-    impl_->resolver_.async_resolve(
-        impl_->config_.endpoint_.host_,
-        impl_->config_.endpoint_.port_,
-        [self = shared_from_this()](boost::system::error_code err, const Tcp::resolver::results_type& results) {
-            self->on_resolve(err, results);
-        });
-}
+    // rather than replay it into a fresh connection. Call events are kept
+    // and flushed by on_open().
+    outbound_queue_.purge_best_effort();
+    last_seq_ = 0;
 
-void ControlPlaneClient::on_resolve(boost::system::error_code err, const Tcp::resolver::results_type& results) {
-    if (err) {
-        handle_pre_read_failure(err, "resolve");
-        return;
-    }
-
-    auto& lowest_layer = Beast::get_lowest_layer(*impl_->ws_);
-    lowest_layer.expires_after(impl_->config_.connect_timeout_);
-    lowest_layer.async_connect(
-        results,
-        [self = shared_from_this()](boost::system::error_code err2, const Tcp::endpoint&) { self->on_connect(err2); });
-}
-
-void ControlPlaneClient::on_connect(boost::system::error_code err) {
-    if (err) {
-        handle_pre_read_failure(err, "connect");
-        return;
-    }
-
-    // The websocket handshake and every read/write after it manage their own
-    // timeouts (set below); the connect deadline set in on_resolve() no
-    // longer applies past this point.
-    Beast::get_lowest_layer(*impl_->ws_).expires_never();
-    impl_->ws_->set_option(Websocket::stream_base::timeout::suggested(Beast::role_type::client));
-
-    impl_->ws_->async_handshake(
-        impl_->config_.endpoint_.host_,
-        impl_->config_.endpoint_.target_,
-        [self = shared_from_this()](boost::system::error_code err2) { self->on_handshake(err2); });
-}
-
-void ControlPlaneClient::on_handshake(boost::system::error_code err) {
-    if (err) {
-        handle_pre_read_failure(err, "handshake");
-        return;
-    }
-    impl_->connected_ = true;
-    Log::app()->info(
-        "connected to control plane at ws://{}:{}",
-        impl_->config_.endpoint_.host_,
-        impl_->config_.endpoint_.port_);
-
-    if (!impl_->first_snapshot_resolved_) {
-        impl_->first_snapshot_timer_.expires_after(kFirstSnapshotTimeout);
-        impl_->first_snapshot_timer_.async_wait([self = shared_from_this()](boost::system::error_code err) {
-            // err is only set when resolve_first_snapshot() (a snapshot
-            // arrived) or do_connect() (this attempt was abandoned) cancelled
-            // this timer -- either way, not a timeout.
-            if (err) {
-                return;
+    // Weak, not shared: the connection owns these handlers, so a shared
+    // capture would make this client and its connection keep each other alive.
+    const auto bind = [weak = weak_from_this()](auto method) {
+        return [weak, method](auto&&... args) {
+            if (const auto self = weak.lock()) {
+                ((*self).*method)(std::forward<decltype(args)>(args)...);
             }
-            self->resolve_first_snapshot(
-                std::unexpected(Error(
-                    "control plane never sent a valid snapshot within {}s of connecting",
-                    kFirstSnapshotTimeout.count())));
-        });
-    }
-
-    do_read();
+        };
+    };
+    connection_ = std::make_shared<WsConnection>(
+        executor_,
+        config_.endpoint_,
+        config_.connect_timeout_,
+        WsHandlers{
+            .on_open = bind(&ControlPlaneClient::on_open),
+            .on_message = bind(&ControlPlaneClient::on_message),
+            .on_write_complete = bind(&ControlPlaneClient::on_write_complete),
+            .on_failure = bind(&ControlPlaneClient::on_failure)});
+    connection_->start();
 }
 
-// Each read schedules the next once it completes, so a static call-graph
-// walk sees this as recursive -- it isn't, since the io_context dispatches
-// every completion as a fresh callback rather than a nested stack frame.
-// NOLINTBEGIN(misc-no-recursion)
-void ControlPlaneClient::do_read() {
-    impl_->buffer_.consume(impl_->buffer_.size());
-    impl_->ws_->async_read(
-        impl_->buffer_,
-        [self = shared_from_this()](boost::system::error_code err, std::size_t bytes) { self->on_read(err, bytes); });
+void ControlPlaneClient::on_open() {
+    Log::app()->info("connected to control plane at ws://{}:{}", config_.endpoint_.host_, config_.endpoint_.port_);
+    first_snapshot_.arm();
+    write_next(); // call events queued while disconnected
 }
 
-void ControlPlaneClient::on_read(boost::system::error_code err, std::size_t /*bytes*/) {
-    if (err) {
-        impl_->connected_ = false;
-        if (impl_->stopped_) {
-            return;
-        }
-        // A first_snapshot_timer_ armed by this connection's own on_handshake()
-        // must not be left running against the reconnect below -- if
-        // retry_interval_ is configured longer than the timer's remaining
-        // budget, it would fire and fail startup before do_connect() ever
-        // gets a chance to cancel it itself.
-        impl_->first_snapshot_timer_.cancel();
-        Log::app()->warn(
-            "control-plane websocket disconnected ({}); reconnecting in {}s",
-            err.message(),
-            impl_->config_.retry_interval_.count());
-        schedule_reconnect();
-        return;
-    }
-
-    const auto raw = Beast::buffers_to_string(impl_->buffer_.data());
+void ControlPlaneClient::on_message(const std::string& raw) {
     auto envelope_result = parse_envelope(raw);
     if (!envelope_result) {
         Log::app()->error("control-plane websocket: {}", envelope_result.error());
-        do_read();
         return;
     }
 
     const auto& envelope = *envelope_result;
-    // Absent seq (the engine -> control-plane registration direction never
-    // sets it) means unsequenced -- accept unconditionally. Otherwise drop
-    // anything at or below the last applied seq: two snapshot fetches
-    // triggered by successive mutations can resolve out of order, and
-    // applying the older one after the newer one would roll live state
-    // backward until the next change or reconnect papered over it.
-    if (envelope.seq && *envelope.seq <= impl_->last_seq_) {
+    // Absent seq (the engine -> control-plane direction never sets it) means
+    // unsequenced -- accept unconditionally. Otherwise drop anything at or
+    // below the last applied seq: two snapshot fetches triggered by
+    // successive mutations can resolve out of order, and applying the older
+    // one after the newer one would roll live state backward until the next
+    // change or reconnect papered over it.
+    if (envelope.seq && *envelope.seq <= last_seq_) {
         Log::app()->warn(
             "control-plane websocket: dropping out-of-order message (seq {} <= last applied {})",
             *envelope.seq,
-            impl_->last_seq_);
-        do_read();
+            last_seq_);
         return;
     }
     if (envelope.seq) {
-        impl_->last_seq_ = *envelope.seq;
+        last_seq_ = *envelope.seq;
     }
 
-    if (envelope.type == Protocols::WsMessageType::kSnapshot) {
-        if (envelope.routes_snapshot) {
-            const auto& snapshot = *envelope.routes_snapshot;
-            Log::app()->info(
-                "applied routing table '{}' version {} with {} routes",
-                snapshot.table_id,
-                snapshot.version,
-                snapshot.routes.size());
-            impl_->routes_store_->set_snapshot(snapshot);
-        }
-        if (envelope.users_snapshot) {
-            Log::app()->info("applied {} SIP user(s)", envelope.users_snapshot->users.size());
-            impl_->users_store_->set_snapshot(*envelope.users_snapshot);
-        }
-        resolve_first_snapshot({});
-    }
-    else {
+    if (envelope.type != Protocols::WsMessageType::kSnapshot) {
         Log::app()->error("control-plane websocket sent an unrecognized message (type=\"{}\")", envelope.type);
-    }
-
-    do_read();
-}
-// NOLINTEND(misc-no-recursion)
-
-void ControlPlaneClient::send_registration(Protocols::RegistrationEvent event) {
-    Asio::post(impl_->executor_, [self = shared_from_this(), event = std::move(event)]() mutable {
-        self->do_send_registration(std::move(event));
-    });
-}
-
-void ControlPlaneClient::do_send_registration(Protocols::RegistrationEvent event) {
-    if (!impl_->connected_ || impl_->stopped_) {
-        return; // best-effort: dropped rather than queued for a future connection
-    }
-
-    Protocols::WsEnvelope envelope;
-    envelope.type = std::string(Protocols::WsMessageType::kRegistration);
-    envelope.registration = std::move(event);
-
-    const auto payload = glz::write_json(envelope);
-    if (!payload) {
-        Log::app()->error("failed to serialize registration event: {}", glz::format_error(payload.error()));
         return;
     }
-
-    // Drop the incoming event rather than an already-queued one: the front
-    // of outbound_queue_ may be in flight under async_write() right now, and
-    // popping it out from under that write would leave the operation's
-    // buffer dangling.
-    if (impl_->outbound_queue_.size() >= kMaxOutboundQueueSize) {
-        Log::app()->warn(
-            "control-plane outbound queue full ({} events); dropping this registration event",
-            kMaxOutboundQueueSize);
-        return;
+    if (envelope.routes_snapshot) {
+        const auto& snapshot = *envelope.routes_snapshot;
+        Log::app()->info(
+            "applied routing table '{}' version {} with {} routes",
+            snapshot.table_id,
+            snapshot.version,
+            snapshot.routes.size());
+        routes_store_->set_snapshot(snapshot);
     }
-
-    impl_->outbound_queue_.push_back(payload.value());
-    if (!impl_->writing_) {
-        do_write();
+    if (envelope.users_snapshot) {
+        Log::app()->info("applied {} SIP user(s)", envelope.users_snapshot->users.size());
+        users_store_->set_snapshot(*envelope.users_snapshot);
     }
+    first_snapshot_.resolve({});
 }
 
-// on_write() calls back into do_write() to drain the rest of the queue, for
-// the same not-actually-recursive reason as do_read()/on_read() above.
-// NOLINTBEGIN(misc-no-recursion)
-void ControlPlaneClient::do_write() {
-    if (impl_->outbound_queue_.empty()) {
+void ControlPlaneClient::on_failure(WsStage stage, boost::system::error_code err) {
+    connection_.reset();
+    outbound_queue_.abort();
+    // A countdown armed by this connection's own on_open() must not be left
+    // running against the reconnect -- if retry_interval_ is longer than its
+    // remaining budget it would fire and fail startup before the reconnect
+    // gets a chance.
+    first_snapshot_.disarm();
+    // A pending flush() is waiting for the queue to drain, not for this
+    // specific connection -- schedule_reconnect() below may still deliver
+    // what's left before flush()'s own timeout does, so only give up here
+    // if there's nothing left to deliver.
+    if (outbound_queue_.empty()) {
+        resolve_flush_waiter();
+    }
+
+    if (stage != WsStage::kSession) {
+        handle_setup_failure(stage, err);
         return;
     }
-    impl_->writing_ = true;
-    impl_->ws_->async_write(
-        Asio::buffer(impl_->outbound_queue_.front()),
-        [self = shared_from_this()](boost::system::error_code err, std::size_t /*bytes*/) { self->on_write(err); });
-}
-
-void ControlPlaneClient::on_write(boost::system::error_code err) {
-    impl_->writing_ = false;
-    impl_->outbound_queue_.pop_front();
-    if (err) {
-        // A write failure means the connection is already on its way down --
-        // on_read()'s own error path (a concurrent pending read) drives the
-        // actual reconnect. Whatever's left in the queue would fail the same
-        // way, and do_connect() clears it on the next attempt regardless.
-        Log::app()->warn(
-            "control-plane websocket write failed ({}); dropping queued registration events",
-            err.message());
-        impl_->outbound_queue_.clear();
+    if (stopped_) {
         return;
     }
-    do_write();
+    Log::app()->warn(
+        "control-plane websocket disconnected ({}); reconnecting in {}s",
+        err.message(),
+        config_.retry_interval_.count());
+    schedule_reconnect();
 }
-// NOLINTEND(misc-no-recursion)
 
-void ControlPlaneClient::handle_pre_read_failure(boost::system::error_code err, std::string_view stage) {
+void ControlPlaneClient::handle_setup_failure(WsStage stage, boost::system::error_code err) {
     // Once the engine has applied a snapshot at least once, it keeps routing
     // calls on that last-known state -- connection trouble past that point
     // is never fatal, only ever retried. Before the first snapshot, a
@@ -371,67 +169,136 @@ void ControlPlaneClient::handle_pre_read_failure(boost::system::error_code err, 
     // during startup ordering and also just retries; anything else this
     // early (unresolvable host, etc.) is almost certainly a config mistake
     // and fails fast instead of retrying it forever.
-    if (impl_->first_snapshot_resolved_ || err == Asio::error::connection_refused) {
+    if (first_snapshot_.resolved() || err == Asio::error::connection_refused) {
         Log::app()->warn(
             "control-plane websocket {} failed ({}); retrying in {}s",
-            stage,
+            to_string(stage),
             err.message(),
-            impl_->config_.retry_interval_.count());
+            config_.retry_interval_.count());
         schedule_reconnect();
         return;
     }
-    resolve_first_snapshot(std::unexpected(Error(err, "control-plane websocket {} failed", std::string(stage))));
+    first_snapshot_.resolve(
+        std::unexpected(Error(err, "control-plane websocket {} failed", std::string(to_string(stage)))));
 }
 
 void ControlPlaneClient::schedule_reconnect() {
-    if (impl_->stopped_) {
+    if (stopped_) {
         return;
     }
-    impl_->retry_timer_.expires_after(impl_->config_.retry_interval_);
-    impl_->retry_timer_.async_wait([self = shared_from_this()](boost::system::error_code err) {
+    retry_timer_.expires_after(config_.retry_interval_);
+    retry_timer_.async_wait([self = shared_from_this()](boost::system::error_code err) {
         // err is only set when stop() cancelled this timer.
-        if (err || self->impl_->stopped_) {
+        if (err) {
             return;
         }
         self->do_connect();
     });
 }
 
-void ControlPlaneClient::resolve_first_snapshot(VoidResult result) {
-    if (impl_->first_snapshot_resolved_) {
-        return;
-    }
-    impl_->first_snapshot_resolved_ = true;
-    impl_->first_snapshot_timer_.cancel();
-    impl_->first_snapshot_promise_.set_value(result);
+void ControlPlaneClient::send_registration(Protocols::RegistrationEvent event) {
+    enqueue(make_envelope(std::move(event)), /*best_effort=*/true);
 }
 
-VoidResult ControlPlaneClient::wait_for_first_snapshot() {
-    return impl_->first_snapshot_future_.get();
+void ControlPlaneClient::send_call_started(Protocols::CallStarted event) {
+    enqueue(make_envelope(std::move(event)), /*best_effort=*/false);
 }
 
-void ControlPlaneClient::stop() {
-    if (impl_->stopped_.exchange(true)) {
-        return;
-    }
-    Asio::post(impl_->executor_, [self = shared_from_this()] {
-        self->impl_->connected_ = false;
-        self->impl_->retry_timer_.cancel();
-        self->impl_->first_snapshot_timer_.cancel();
-        if (self->impl_->ws_) {
-            boost::system::error_code err;
-            (void)Beast::get_lowest_layer(*self->impl_->ws_).socket().close(err); // NOLINT
-        }
+void ControlPlaneClient::send_call_updated(Protocols::CallUpdated event) {
+    enqueue(make_envelope(std::move(event)), /*best_effort=*/false);
+}
+
+void ControlPlaneClient::send_call_terminated(Protocols::CallTerminated event) {
+    enqueue(make_envelope(std::move(event)), /*best_effort=*/false);
+}
+
+void ControlPlaneClient::enqueue(Protocols::WsEnvelope envelope, bool best_effort) {
+    Asio::post(executor_, [self = shared_from_this(), envelope = std::move(envelope), best_effort]() mutable {
+        self->do_enqueue(std::move(envelope), best_effort);
     });
 }
 
-Result<Protocols::WsEnvelope> ControlPlaneClient::parse_envelope(std::string_view raw) {
-    Protocols::WsEnvelope envelope;
-    const auto errc = glz::read_json(envelope, raw);
-    if (errc) {
-        return std::unexpected(Error("failed to parse websocket message: {}", glz::format_error(errc, raw)));
+void ControlPlaneClient::do_enqueue(Protocols::WsEnvelope envelope, bool best_effort) {
+    if (best_effort && !connected()) {
+        return; // best-effort: dropped rather than queued for a future connection
     }
-    return envelope;
+
+    auto payload = serialize_envelope(envelope);
+    if (!payload) {
+        Log::app()->error("control-plane websocket: {}", payload.error());
+        return;
+    }
+    if (!outbound_queue_.push(std::move(*payload), best_effort)) {
+        // Losing a call-lifecycle event here is a real data-integrity gap (a
+        // phantom active call, or a missing history row) -- log it loudly,
+        // unlike a dropped registration mirror, which is already best-effort
+        // and self-heals on the phone's next REGISTER refresh.
+        if (best_effort) {
+            Log::app()->warn(
+                "control-plane outbound queue full ({} events); dropping this {} event",
+                kMaxOutboundQueueSize,
+                envelope.type);
+        }
+        else {
+            Log::app()->error(
+                "control-plane outbound queue full ({} events); dropping this {} event",
+                kMaxOutboundQueueSize,
+                envelope.type);
+        }
+        return;
+    }
+    write_next();
+}
+
+void ControlPlaneClient::write_next() {
+    if (!connected()) {
+        return;
+    }
+    if (const std::string* next = outbound_queue_.start_next()) {
+        connection_->write(*next);
+    }
+}
+
+void ControlPlaneClient::on_write_complete() {
+    outbound_queue_.complete();
+    if (outbound_queue_.empty()) {
+        resolve_flush_waiter();
+    }
+    write_next();
+}
+
+void ControlPlaneClient::flush(std::chrono::milliseconds timeout) {
+    auto waiter = std::make_shared<std::promise<void>>();
+    auto done = waiter->get_future();
+    Asio::post(executor_, [self = shared_from_this(), waiter = std::move(waiter)]() mutable {
+        self->flush_waiter_ = std::move(waiter);
+        if (self->outbound_queue_.empty()) {
+            self->resolve_flush_waiter();
+        }
+    });
+    if (done.wait_for(timeout) == std::future_status::timeout) {
+        Log::app()->warn("control-plane outbound queue not fully flushed within {}ms", timeout.count());
+    }
+}
+
+void ControlPlaneClient::resolve_flush_waiter() {
+    if (flush_waiter_) {
+        flush_waiter_->set_value();
+        flush_waiter_.reset();
+    }
+}
+
+void ControlPlaneClient::stop() {
+    if (stopped_.exchange(true)) {
+        return;
+    }
+    Asio::post(executor_, [self = shared_from_this()] {
+        self->retry_timer_.cancel();
+        self->first_snapshot_.disarm();
+        if (self->connection_) {
+            self->connection_->cancel();
+        }
+    });
 }
 
 } // namespace SbcEngine

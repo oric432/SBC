@@ -48,6 +48,29 @@ bool media_changed(
     return !current || current->name_ != chosen || current_dtmf_pt != dtmf_pt;
 }
 
+bool caller_codec_changed(
+    Leg leg,
+    const std::optional<Sdp::AudioCodecInfo>& before,
+    const std::optional<Sdp::AudioCodecInfo>& after) {
+    if (leg != Leg::kCaller) {
+        return false;
+    }
+    if (!before || !after) {
+        return before.has_value() != after.has_value();
+    }
+    return before->name_ != after->name_;
+}
+
+void commit_negotiated_media(CallSession& session, Leg leg, const NegotiatedOffer& negotiated) {
+    CallSession::CallLeg& current = session.leg(leg);
+    const bool codec_changed = caller_codec_changed(leg, current.codec_, negotiated.codec_);
+    current.codec_ = negotiated.codec_;
+    current.dtmf_pt_ = negotiated.dtmf_pt_;
+    if (codec_changed) {
+        session.report_call_updated();
+    }
+}
+
 std::expected<NegotiatedOffer, ExchangeOutcome>
 negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg leg) {
     pjsip_inv_session* inv = session.leg(leg).inv_;

@@ -2,6 +2,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
 import type { Server } from 'http';
 
+import { applyCallStarted, applyCallTerminated, applyCallUpdated } from '../controllers/callsController';
 import { applyRegistrationEvent } from '../controllers/registrationsController';
 import { getRouteSnapshot } from '../controllers/routesController';
 import { getUsersSnapshot } from '../controllers/sipUsersController';
@@ -12,7 +13,8 @@ import { logger } from '../utils/logger';
 // it gets a full snapshot (routes + SIP users), and broadcastSnapshot()
 // pushes another one on any mutation to either table so a running engine
 // picks up changes without a restart. The engine pushes "registration"
-// messages the other way, applied to the sip_registrations mirror table.
+// messages the other way, applied to the sip_registrations mirror table, and
+// "call_started"/"call_updated"/"call_terminated" messages, applied to calls.
 export const ENGINE_WS_PATH = '/ws/engine';
 
 let wss: WebSocketServer | undefined;
@@ -60,6 +62,22 @@ const sendSnapshotTo = async (sockets: WebSocket[]): Promise<void> => {
   }
 };
 
+const inboundTaskFor = (envelope: WsEnvelope): (() => Promise<void>) | undefined => {
+  const { registration, call_started, call_updated, call_terminated } = envelope;
+  switch (envelope.type) {
+    case 'registration':
+      return registration && (() => applyRegistrationEvent(registration));
+    case 'call_started':
+      return call_started && (() => applyCallStarted(call_started));
+    case 'call_updated':
+      return call_updated && (() => applyCallUpdated(call_updated));
+    case 'call_terminated':
+      return call_terminated && (() => applyCallTerminated(call_terminated));
+    default:
+      return undefined;
+  }
+};
+
 const handleEngineMessage = (raw: RawData): void => {
   let envelope: WsEnvelope;
   try {
@@ -69,15 +87,17 @@ const handleEngineMessage = (raw: RawData): void => {
     return;
   }
 
-  if (envelope.type !== 'registration' || !envelope.registration) {
-    logger.error(`engine websocket sent an unrecognized message (type="${envelope.type}")`);
+  const task = inboundTaskFor(envelope);
+  if (!task) {
+    logger.error(`engine websocket sent an unrecognized or empty message (type="${envelope.type}")`);
     return;
   }
 
-  const event = envelope.registration;
+  // Through the same chain for every type, so a call_terminated can never
+  // apply before its own call_started.
   enqueueInbound(() =>
-    applyRegistrationEvent(event).catch((err: unknown) => {
-      logger.error(`failed to apply registration event: ${(err as Error).message}`);
+    task().catch((err: unknown) => {
+      logger.error(`failed to apply ${envelope.type} message: ${(err as Error).message}`);
     }),
   );
 };

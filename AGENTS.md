@@ -10,7 +10,7 @@ routing table. Three components:
 | Component | Path | What it does |
 | --- | --- | --- |
 | Engine | `engine/` | C++26 B2BUA core (PJSIP + Boost.SML). Owns both SIP legs of every call, rewrites SDP, anchors RTP, and acts as a SIP registrar (RFC 3261) for phones on domains the control plane provisions. See `engine/README.md` and `engine/AGENTS.md`. |
-| Control-plane backend | `control-plane/backend/` | Express/TypeScript API, owns the SIP route table, SIP user credentials and the registrations mirror in Postgres. Pushes all three to the engine over a websocket channel (`ws/engineChannel.ts`); the engine pushes registration events back the other way. See its own `AGENTS.md`. |
+| Control-plane backend | `control-plane/backend/` | Express/TypeScript API, owns the SIP route table, SIP user credentials and the registrations mirror in Postgres. Pushes all three to the engine over a websocket channel (`ws/engineChannel.ts`); the engine pushes registration and call-lifecycle events back the other way. See its own `AGENTS.md`. |
 | Control-plane frontend | `control-plane/frontend/` | React/Vite SPA for managing routes, SIP users and viewing live registrations through the backend. See its own `AGENTS.md`. |
 
 ## Known Limitations
@@ -31,6 +31,12 @@ anything:
   but is worth revisiting before assuming any client works.
 - Bindings live only in the engine's memory, not persisted: an engine restart means inbound calls
   to phones fail until each one's next REGISTER refresh (bounded by `[registrar] max_expires_s`).
+
+Call history (#230): the engine reports `call_started`/`call_updated`/`call_terminated` over the same
+channel and the backend's `calls` table is written only from them (`ended_at IS NULL` = active).
+Unlike registration mirrors these are buffered across a disconnect and replayed on reconnect, so
+every backend handler must stay idempotent. A clean engine shutdown flushes its final events, but a
+crash can strand a row as active; the API flags any older than 6h as `stale` instead of deleting it.
 
 ## Commit conventions
 

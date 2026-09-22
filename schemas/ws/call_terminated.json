@@ -1,0 +1,49 @@
+{
+   "type": "object",
+   "properties": {
+      "duration_seconds": {
+         "anyOf": [
+            {
+               "$ref": "#/$defs/int32_t"
+            },
+            {
+               "type": "null"
+            }
+         ],
+         "description": "Seconds from answer to end, only for answered calls"
+      },
+      "ended_at": {
+         "type": "string",
+         "description": "ISO-8601 UTC time the call ended, engine clock"
+      },
+      "failure_reason": {
+         "type": [
+            "string",
+            "null"
+         ],
+         "description": "Why setup failed, or why an answered call was ended by the engine"
+      },
+      "sip_call_id": {
+         "type": "string",
+         "description": "SIP Call-ID of the caller-facing leg"
+      },
+      "status": {
+         "type": "string",
+         "description": "One of \"Success\", \"Failed\", \"No Route Available\", \"Blocked\""
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "int32_t": {
+         "type": "integer",
+         "minimum": -2147483648,
+         "maximum": 2147483647
+      }
+   },
+   "required": [
+      "sip_call_id",
+      "status",
+      "ended_at"
+   ],
+   "title": "SbcEngine::Protocols::CallTerminated"
+}

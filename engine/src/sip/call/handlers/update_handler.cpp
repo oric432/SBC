@@ -22,9 +22,7 @@ ExchangeOutcome UpdateHandler::answer(const std::string& offer, Leg leg) {
     if (pjsip_inv_set_sdp_answer(inv, negotiated->answer_sdp_) != PJ_SUCCESS) {
         return ExchangeOutcome::kFailed;
     }
-    CallSession::CallLeg& current = session_.leg(leg);
-    current.codec_ = negotiated->codec_;
-    current.dtmf_pt_ = negotiated->dtmf_pt_;
+    commit_negotiated_media(session_, leg, *negotiated);
     return ExchangeOutcome::kCommitted;
 }
 

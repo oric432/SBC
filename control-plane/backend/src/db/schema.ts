@@ -57,3 +57,23 @@ export const sipRegistrations = pgTable(
   },
   (table) => [unique().on(table.aor, table.contactUri)],
 );
+
+// One row per call, driven entirely by "call_started"/"call_updated"/
+// "call_terminated" websocket events from the engine (ws/engineChannel.ts) --
+// nothing in the HTTP API writes to this table. ended_at IS NULL is what
+// makes a call "active"; every timestamp is the engine's own clock reading,
+// never derived from when the event arrived here.
+export const calls = pgTable('calls', {
+  id: serial('id').primaryKey(),
+  sipCallId: text('sip_call_id').notNull().unique(),
+  caller: text('caller').notNull(),
+  callee: text('callee').notNull(),
+  route: text('route'),
+  codec: text('codec'),
+  status: text('status'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  answeredAt: timestamp('answered_at', { withTimezone: true }),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+  durationSeconds: integer('duration_seconds'),
+  failureReason: text('failure_reason'),
+});
