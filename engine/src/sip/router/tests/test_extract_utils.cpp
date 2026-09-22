@@ -313,4 +313,43 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
     manager.purge_scheduled();
 }
 
+TEST_CASE("CallSession releases a leg's mod_data slot on destruction", "[call_session]") {
+    boost::asio::io_context ioc;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    context.module_id_ = 0;
+    RoutesStore routes;
+    UsersStore users;
+    BindingStore bindings;
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+
+    // Plain zero-initialized PJSIP structs: set_inv_caller()/set_inv_callee()
+    // and the destructor only ever touch mod_data on these, so a real dialog
+    // isn't needed to exercise the claim/release pairing.
+    pjsip_inv_session caller_inv{};
+    pjsip_inv_session callee_inv{};
+
+    auto* session = manager.create_session(
+        "mod-data-release",
+        &context,
+        EngineStores{.routes_ = &routes, .users_ = &users, .bindings_ = &bindings},
+        ioc.get_executor(),
+        &request);
+    session->set_inv_caller(&caller_inv);
+    session->set_inv_callee(&callee_inv);
+    REQUIRE(caller_inv.mod_data[0] == session);
+    REQUIRE(callee_inv.mod_data[0] == session);
+
+    manager.schedule_remove("mod-data-release");
+    manager.purge_scheduled();
+
+    // A stale invite session -- e.g. the other leg's own BYE completing after
+    // this call was already torn down -- must not resolve back to the freed
+    // CallSession via mod_data (see the RTP-inactivity teardown use-after-free).
+    CHECK(caller_inv.mod_data[0] == nullptr);
+    CHECK(callee_inv.mod_data[0] == nullptr);
+}
+
 } // namespace SbcEngine

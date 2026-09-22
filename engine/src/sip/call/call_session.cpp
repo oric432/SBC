@@ -54,6 +54,8 @@ CallSession::CallSession(
 }
 
 CallSession::~CallSession() {
+    release_mod_data(inv_caller());
+    release_mod_data(inv_callee());
     exchange_.reset();
     Log::call()->trace("[{}] CallSession destroyed, releasing pool", call_id_);
     if (pool_ != nullptr) {
