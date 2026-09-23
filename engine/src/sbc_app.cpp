@@ -135,6 +135,7 @@ void SbcApp::init_context(const PjsipConfig& config) {
     ctx_.endpt_ = stack_.endpt();
     ctx_.config_ = config;
     ctx_.module_id_ = stack_.module_id();
+    ctx_.module_ = stack_.module();
     ctx_.pjmedia_endpoint_ = &pjmedia_endpoint_;
     ctx_.call_events_ = control_plane_client_.get();
     call_manager_.set_module_id(ctx_.module_id_);

@@ -37,6 +37,8 @@ public:
     // issue #128: the SBC negotiates each leg independently, so these can differ).
     struct CallLeg {
         pjsip_inv_session* inv_ = nullptr;
+        pjsip_dialog* dialog_ = nullptr;
+        bool disconnected_ = false;
         std::optional<Sdp::AudioCodecInfo> codec_;
         std::optional<std::uint8_t> dtmf_pt_;
     };
@@ -88,18 +90,22 @@ public:
     // can look this session up in O(1) instead of scanning every session.
     void set_inv_caller(pjsip_inv_session* inv) {
         leg(Leg::kCaller).inv_ = inv;
+        leg(Leg::kCaller).dialog_ = inv != nullptr ? inv->dlg : nullptr;
+        leg(Leg::kCaller).disconnected_ = false;
         claim_mod_data(inv);
     }
     void set_inv_callee(pjsip_inv_session* inv) {
         leg(Leg::kCallee).inv_ = inv;
+        leg(Leg::kCallee).dialog_ = inv != nullptr ? inv->dlg : nullptr;
+        leg(Leg::kCallee).disconnected_ = false;
         claim_mod_data(inv);
     }
 
     // Indexed access for call sites that resolve "which leg" generically
     // (as opposed to a call site that always means one specific leg, which
     // should keep using the named accessors above).
-    [[nodiscard]] CallLeg& leg(Leg which) { return legs_[static_cast<std::size_t>(which)]; }
-    [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_[static_cast<std::size_t>(which)]; }
+    [[nodiscard]] CallLeg& leg(Leg which) { return legs_.at(static_cast<std::size_t>(which)); }
+    [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_.at(static_cast<std::size_t>(which)); }
     // Which leg's pjsip_inv_session this is. Matches only against inv_callee();
     // anything else (including nullptr) is reported as the caller leg, same
     // fallback semantics the ad-hoc `inv == inv_callee()` comparisons had.

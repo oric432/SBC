@@ -8,6 +8,9 @@ namespace SbcEngine {
 // State tags
 struct Active {};
 struct Reinviting {};
+struct Referring {};
+struct ReferringEndingCall {};
+struct ReferringCallEnded {};
 struct Terminating {};
 struct Terminated {};
 struct DialogDone {};
@@ -49,6 +52,13 @@ struct DialogSm {
             actions.reject_update_collision(evt.leg_);
         };
 
+        auto handle_refer = [](Actions& actions, const ReferReceived& evt) { actions.refer_started(evt.leg_); };
+
+        auto handle_refer_busy = [](Actions& actions, const ReferReceived& evt) { actions.refer_busy(evt.leg_); };
+
+        auto handle_refer_success = [](Actions& actions) { actions.refer_completed(true); };
+        auto handle_refer_failure = [](Actions& actions) { actions.refer_completed(false); };
+
         auto committed = [](const Dialog::ExchangeFinished& event) {
             return event.outcome_ == ExchangeOutcome::kCommitted;
         };
@@ -63,6 +73,16 @@ struct DialogSm {
 
         auto handle_call_ended = [](DialogSelfFireQueue cleanup_event) { cleanup_event(Cleanup{}); };
 
+        auto handle_refer_success_after_call = [](Actions& actions, DialogSelfFireQueue cleanup_event) {
+            actions.refer_completed(true);
+            cleanup_event(Cleanup{});
+        };
+
+        auto handle_refer_failure_after_call = [](Actions& actions, DialogSelfFireQueue cleanup_event) {
+            actions.refer_completed(false);
+            cleanup_event(Cleanup{});
+        };
+
         auto handle_cleanup = [](Actions& actions) { actions.cleanup(); };
 
         // clang-format off
@@ -71,15 +91,31 @@ struct DialogSm {
             *Sml::state<Active>                + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<Terminating>,
              Sml::state<Active>                + (Sml::event<ReinviteReceived>                                                      / handle_reinvite)            = Sml::state<Reinviting>,
              Sml::state<Active>                + (Sml::event<UpdateReceived>                                                        / handle_update)              = Sml::state<Reinviting>,
+             Sml::state<Active>                + (Sml::event<ReferReceived>                                                         / handle_refer)               = Sml::state<Referring>,
              Sml::state<Active>                + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
              // Reinviting state
              Sml::state<Reinviting>            + (Sml::event<ReinviteReceived>                                                      / handle_reinvite_collision)  = Sml::state<Reinviting>,
              Sml::state<Reinviting>            + (Sml::event<UpdateReceived>                                                        / handle_update_collision)    = Sml::state<Reinviting>,
+             Sml::state<Reinviting>            + (Sml::event<ReferReceived>                                                         / handle_refer_busy)          = Sml::state<Reinviting>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[committed]                                  = Sml::state<Active>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[rolled_back]                                = Sml::state<Active>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[failed] / handle_call_error                 = Sml::state<Terminating>,
              Sml::state<Reinviting>            + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
+
+             // Referring state
+             Sml::state<Referring>             + (Sml::event<ReferReceived>                                                         / handle_refer_busy)          = Sml::state<Referring>,
+             Sml::state<Referring>             + (Sml::event<ReferSucceeded>                                                        / handle_refer_success)       = Sml::state<Active>,
+             Sml::state<Referring>             + (Sml::event<ReferFailed>                                                           / handle_refer_failure)       = Sml::state<Active>,
+             Sml::state<Referring>             + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<ReferringEndingCall>,
+             Sml::state<Referring>             + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
+
+             // The original call is ending; retain the dialog until the REFER result arrives.
+             Sml::state<ReferringEndingCall>   + Sml::event<CallEnded>                                                                                          = Sml::state<ReferringCallEnded>,
+             Sml::state<ReferringEndingCall>   + (Sml::event<ReferSucceeded>                                                        / handle_refer_success)       = Sml::state<Terminating>,
+             Sml::state<ReferringEndingCall>   + (Sml::event<ReferFailed>                                                           / handle_refer_failure)       = Sml::state<Terminating>,
+             Sml::state<ReferringCallEnded>    + (Sml::event<ReferSucceeded>                                                         / handle_refer_success_after_call) = Sml::state<Terminated>,
+             Sml::state<ReferringCallEnded>    + (Sml::event<ReferFailed>                                                            / handle_refer_failure_after_call) = Sml::state<Terminated>,
 
              // Terminating state
              Sml::state<Terminating>           + (Sml::event<CallEnded>                                                              / handle_call_ended)          = Sml::state<Terminated>,

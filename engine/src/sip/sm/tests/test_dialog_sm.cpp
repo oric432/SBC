@@ -247,6 +247,82 @@ TEST_CASE("DialogSm failed reinvite terminates call", "[dialog_sm]") {
     REQUIRE(actions.was_called("terminate_call"));
 }
 
+TEST_CASE("DialogSm refer tracks the pending transfer and its result", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    REQUIRE(machine.process_event(ReferReceived{Leg::kCallee}));
+    REQUIRE(machine.is(Sml::state<Referring>));
+    REQUIRE(actions.was_called("refer_started:callee"));
+    REQUIRE(machine.process_event(ReferReceived{Leg::kCaller}));
+    REQUIRE(machine.is(Sml::state<Referring>));
+    REQUIRE(actions.was_called("refer_busy:caller"));
+
+    REQUIRE(machine.process_event(ReferFailed{}));
+    REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("refer_completed:failure"));
+    REQUIRE(machine.process_event(ReferReceived{Leg::kCaller}));
+    REQUIRE(machine.process_event(ReferSucceeded{}));
+    REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("refer_completed:success"));
+}
+
+TEST_CASE("DialogSm reports refer received during media renegotiation", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(ReinviteReceived{kValidSdp});
+    REQUIRE(machine.process_event(ReferReceived{Leg::kCallee}));
+    REQUIRE(machine.is(Sml::state<Reinviting>));
+    REQUIRE(actions.was_called("refer_busy:callee"));
+}
+
+TEST_CASE("DialogSm retains a pending refer after the original call ends", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(ReferReceived{});
+    REQUIRE(machine.process_event(ByeReceived{Leg::kCallee}));
+    REQUIRE(machine.is(Sml::state<ReferringEndingCall>));
+    REQUIRE(actions.was_called("forward_bye_to_other_leg"));
+
+    actions.reset();
+    REQUIRE(machine.process_event(CallEnded{}));
+    REQUIRE(machine.is(Sml::state<ReferringCallEnded>));
+    REQUIRE_FALSE(actions.was_called("cleanup"));
+
+    REQUIRE(machine.process_event(ReferSucceeded{}));
+    REQUIRE(machine.is(Sml::state<DialogDone>));
+    REQUIRE(actions.was_called("refer_completed:success"));
+    REQUIRE(actions.was_called("cleanup"));
+}
+
+TEST_CASE("DialogSm waits for the original call after an early refer result", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(ReferReceived{});
+    machine.process_event(ByeReceived{Leg::kCaller});
+    REQUIRE(machine.process_event(ReferFailed{}));
+    REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("refer_completed:failure"));
+    REQUIRE_FALSE(actions.was_called("cleanup"));
+
+    REQUIRE(machine.process_event(CallEnded{}));
+    REQUIRE(machine.is(Sml::state<DialogDone>));
+    REQUIRE(actions.was_called("cleanup"));
+}
+
+TEST_CASE("DialogSm call error terminates a pending refer", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    machine.process_event(ReferReceived{});
+    REQUIRE(machine.process_event(CallError{}));
+    REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("terminate_call"));
+}
+
 // Test: Unrecoverable error during active dialog (e.g., RTP failure, media error)
 // Verifies: Dialog SM terminates call on unexpected errors
 TEST_CASE("DialogSm call error", "[dialog_sm]") {

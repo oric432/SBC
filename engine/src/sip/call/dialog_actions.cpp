@@ -26,6 +26,23 @@ void DialogActions::reject_update_collision(Leg leg) {
         to_string(leg));
 }
 
+void DialogActions::refer_started(Leg leg) {
+    Log::call()->info("[{}] REFER started on {} leg", session_.call_id(), leg == Leg::kCaller ? "caller" : "callee");
+    refer_.start(leg);
+}
+
+void DialogActions::refer_completed(bool succeeded) {
+    Log::call()->info("[{}] REFER {}", session_.call_id(), succeeded ? "succeeded" : "failed");
+}
+
+void DialogActions::refer_busy(Leg leg) {
+    Log::call()->info(
+        "[{}] REFER received while dialog is busy on {} leg",
+        session_.call_id(),
+        leg == Leg::kCaller ? "caller" : "callee");
+    refer_.busy();
+}
+
 void DialogActions::terminate_call() {
     // Reported here, not just in cleanup(): at shutdown the SIP loop is
     // already stopped, so the BYE responses that would drive cleanup() never
@@ -65,6 +82,7 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
         break;
 
     case PJSIP_INV_STATE_DISCONNECTED:
+        session_.leg(leg).disconnected_ = true;
         Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
         if (is_session_timer_expiry(inv)) {
             Log::call()->warn(
@@ -79,10 +97,10 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
         if (dialog.is_reinviting()) {
             dialog.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kFailed});
         }
-        else if (dialog.is_active()) {
+        else if (dialog.is_active() || dialog.is_referring()) {
             dialog.process_event(ByeReceived{leg});
         }
-        else if (dialog.is_terminating()) {
+        else if (dialog.is_terminating() || dialog.is_referring_ending_call()) {
             dialog.process_event(CallEnded{});
         }
         break;
