@@ -32,8 +32,9 @@ MessageRouter* active_router() {
     return g_active_stack != nullptr ? g_active_stack->router() : nullptr;
 }
 
-// Application module: receives out-of-dialog requests and REFER on dialogs
-// where it was registered as a usage.
+// Application module: receives out-of-dialog requests (initial INVITE, OPTIONS,
+// and anything without a matching dialog). In-dialog traffic is delivered to the
+// invite-session callbacks instead, so this only forwards to the router.
 pj_bool_t on_rx_request(pjsip_rx_data* rdata) {
     MessageRouter* router = active_router();
     if (router == nullptr) {
