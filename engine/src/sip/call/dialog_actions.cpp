@@ -28,6 +28,7 @@ void DialogActions::reject_update_collision(Leg leg) {
 
 void DialogActions::refer_started(Leg leg) {
     Log::call()->info("[{}] REFER started on {} leg", session_.call_id(), leg == Leg::kCaller ? "caller" : "callee");
+    refer_.start(leg);
 }
 
 void DialogActions::refer_completed(bool succeeded) {
@@ -39,6 +40,7 @@ void DialogActions::refer_busy(Leg leg) {
         "[{}] REFER received while dialog is busy on {} leg",
         session_.call_id(),
         leg == Leg::kCaller ? "caller" : "callee");
+    refer_.busy();
 }
 
 void DialogActions::terminate_call() {
@@ -80,6 +82,7 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
         break;
 
     case PJSIP_INV_STATE_DISCONNECTED:
+        session_.leg(leg).disconnected_ = true;
         Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
         if (is_session_timer_expiry(inv)) {
             Log::call()->warn(

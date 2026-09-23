@@ -5,6 +5,7 @@
 
 #include "sip/call/handlers/bye_handler.hpp"
 #include "sip/call/handlers/reinvite_handler.hpp"
+#include "sip/call/handlers/refer_handler.hpp"
 #include "sip/call/handlers/update_handler.hpp"
 #include "sip/sm/i_dialog_actions.hpp"
 #include "sip/sm/leg.hpp"
@@ -22,12 +23,15 @@ public:
         : session_(session)
         , bye_(session)
         , reinvite_(session)
+        , refer_(session)
         , update_(session) {}
 
     void on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* rdata);
     void on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_session** offer) { reinvite_.on_create_offer(inv, offer); }
     void on_media_update(pjsip_inv_session* inv, pj_status_t status) { reinvite_.on_media_update(inv, status); }
     void set_pending_reinvite(pjsip_rx_data* rdata) { reinvite_.set_pending_request(rdata); }
+    void set_pending_refer(pjsip_rx_data* rdata) { refer_.set_pending_request(rdata); }
+    void finish_refer_dispatch() { refer_.finish_dispatch(); }
 
     void forward_bye_to_other_leg(Leg leg) override { bye_.forward_to_other_leg(leg); }
     ExchangeOutcome answer_reinvite(const std::string& offer, Leg leg) override { return reinvite_.answer(offer, leg); }
@@ -45,6 +49,7 @@ private:
     CallSession& session_;
     ByeHandler bye_;
     ReinviteHandler reinvite_;
+    ReferHandler refer_;
     UpdateHandler update_;
 };
 

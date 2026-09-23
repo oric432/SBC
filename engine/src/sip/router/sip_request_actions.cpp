@@ -70,12 +70,23 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
 
     pjsip_inv_session* inv = nullptr;
     status = pjsip_inv_create_uas(dlg, rx_data, nullptr, options, &inv);
-    pjsip_dlg_dec_lock(dlg);
     if (status != PJ_SUCCESS) {
+        pjsip_dlg_dec_lock(dlg);
         Log::sip()->error("pjsip_inv_create_uas failed ({})", status);
         respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
         return nullptr;
     }
+
+    // Allows it to observe in-dialog REFER transactions
+    status = pjsip_dlg_add_usage(dlg, ctx_->module_, nullptr);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->error("pjsip_dlg_add_usage failed ({})", status);
+        pjsip_inv_terminate(inv, PJSIP_SC_INTERNAL_SERVER_ERROR, PJ_FALSE);
+        pjsip_dlg_dec_lock(dlg);
+        respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
+        return nullptr;
+    }
+    pjsip_dlg_dec_lock(dlg);
 
     // CallSession extracts its own request-URI/offer SDP from rx_data at
     // construction; nothing here needs to parse the message itself.
@@ -104,6 +115,10 @@ void SipRequestActions::handle_unmatched_ack([[maybe_unused]] pjsip_rx_data* rx_
 
 void SipRequestActions::reject_unsupported_method(pjsip_rx_data* rx_data) {
     respond_stateless(rx_data, PJSIP_SC_METHOD_NOT_ALLOWED);
+}
+
+void SipRequestActions::reject_out_of_dialog_refer(pjsip_rx_data* rx_data) {
+    respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
 }
 
 void SipRequestActions::respond_stateless(pjsip_rx_data* rx_data, int code) {

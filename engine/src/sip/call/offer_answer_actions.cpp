@@ -122,6 +122,13 @@ bool OfferAnswerActions::create_outbound_leg(const std::string& destination) {
         return false;
     }
 
+    status = pjsip_dlg_add_usage(dlg, ctx->module_, nullptr);
+    if (status != PJ_SUCCESS) {
+        Log::sip()->error("[{}] pjsip_dlg_add_usage failed ({})", session_.call_id(), status);
+        pjsip_inv_terminate(inv, PJSIP_SC_INTERNAL_SERVER_ERROR, PJ_FALSE);
+        return false;
+    }
+
     session_.set_inv_callee(inv);
     session_.set_outbound_destination(destination);
     Log::call()->info("[{}] outbound leg created towards {}", session_.call_id(), destination);
