@@ -350,3 +350,13 @@ def test_b2bua_register_wrong_aor_rejected(
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during REGISTER:\n{sbc_engine.log_tail()}"
     _log.info("scenario 'register_wrong_aor_rejected' passed")
+
+
+def test_b2bua_refer_rejected_by_peer(sbc_engine, render_scenario, run_sipp_pair):
+    scenario_name = "refer_rejected_by_peer"
+    caller_xml = render_scenario("refer_rejected_caller.xml.j2", scenario_name=scenario_name, holds_ms=[1000])
+    callee_xml = render_scenario("refer_rejected_callee.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"

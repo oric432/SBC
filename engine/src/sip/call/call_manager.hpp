@@ -41,6 +41,7 @@ public:
         pjsip_rx_data* rdata);
     CallSession* find_by_call_id(const std::string& call_id);
     CallSession* find_by_inv(pjsip_inv_session* inv);
+    CallSession* find_by_dialog(pjsip_dialog* dialog);
     void remove_session(const std::string& call_id);
 
     // Set once at startup from PjContext::module_id_ (see sbc_app.cpp), so

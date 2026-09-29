@@ -56,6 +56,13 @@ struct UpdateReceived {
     Leg leg_ = Leg::kCaller;
 };
 
+struct ReferReceived {
+    Leg leg_ = Leg::kCaller;
+};
+
+struct ReferSucceeded {};
+struct ReferFailed {};
+
 struct CallError {};
 
 struct CallEnded {};

@@ -39,6 +39,7 @@ public:
     void stop_binding_sweep_timer() { registrar_actions_.stop_binding_sweep_timer(); }
 
     void on_rx_request(pjsip_rx_data* request);
+    void on_rx_refer(pjsip_rx_data* request);
     pj_status_t on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session* offer, pjsip_rx_data* rdata);
     // UPDATE only (#116); re-INVITE and the initial INVITE's offer are fully
     // handled via on_rx_reinvite before this ever sees them.

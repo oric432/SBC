@@ -215,12 +215,13 @@ class EngineHandle:
     # None under --live-engine, where this suite doesn't own the process.
     process: subprocess.Popen[str] | None
     log_lines: list[str] = field(default_factory=list)
+    log_start: int = 0
 
     def has_error_logs(self) -> bool:
-        return any(_ERROR_LOG_PATTERN.search(line) for line in self.log_lines)
+        return any(_ERROR_LOG_PATTERN.search(line) for line in self.log_lines[self.log_start :])
 
     def log_tail(self, count: int = 40) -> str:
-        return "\n".join(self.log_lines[-count:])
+        return "\n".join(self.log_lines[max(self.log_start, len(self.log_lines) - count) :])
 
 
 def _drain_stdout(process: subprocess.Popen[str], sink: list[str]) -> None:

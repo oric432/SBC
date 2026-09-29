@@ -80,6 +80,7 @@ public:
 
     [[nodiscard]] pjsip_endpoint* endpt() const { return endpt_; }
     [[nodiscard]] int module_id() const { return module_.id; }
+    [[nodiscard]] pjsip_module* module() { return &module_; }
     [[nodiscard]] MessageRouter* router() const { return router_; }
 
 private:

@@ -87,11 +87,16 @@ template class SmRunner<DialogSm<IDialogActions>, IDialogActions>;
 template bool DialogRunner::process_event(const ByeReceived&);
 template bool DialogRunner::process_event(const ReinviteReceived&);
 template bool DialogRunner::process_event(const UpdateReceived&);
+template bool DialogRunner::process_event(const ReferReceived&);
+template bool DialogRunner::process_event(const ReferSucceeded&);
+template bool DialogRunner::process_event(const ReferFailed&);
 template bool DialogRunner::process_event(const Dialog::ExchangeFinished&);
 template bool DialogRunner::process_event(const CallEnded&);
 template bool DialogRunner::process_event(const CallError&);
 template bool DialogRunner::is<Active>() const;
 template bool DialogRunner::is<Reinviting>() const;
+template bool DialogRunner::is<Referring>() const;
+template bool DialogRunner::is<ReferringEndingCall>() const;
 template bool DialogRunner::is<Terminating>() const;
 
 using OfferAnswerRunner = SmRunner<OfferAnswer::OfferAnswerSm<IOfferAnswerActions>, IOfferAnswerActions>;

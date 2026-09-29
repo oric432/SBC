@@ -37,9 +37,34 @@ void MessageRouter::on_rx_request(pjsip_rx_data* request) {
     else if (method == "ACK") {
         request_actions_.handle_unmatched_ack(request);
     }
+    else if (method == "REFER") {
+        request_actions_.reject_out_of_dialog_refer(request);
+    }
     else {
         request_actions_.reject_unsupported_method(request);
     }
+}
+
+void MessageRouter::on_rx_refer(pjsip_rx_data* request) {
+    pjsip_dialog* dialog = pjsip_rdata_get_dlg(request);
+    auto* session = call_manager_->find_by_dialog(dialog);
+    if (session == nullptr) {
+        pjsip_dlg_respond(dialog, request, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST, nullptr, nullptr, nullptr);
+        return;
+    }
+    if (!session->setup_sm().is_established()) {
+        pjsip_dlg_respond(dialog, request, PJSIP_SC_REQUEST_PENDING, nullptr, nullptr, nullptr);
+        return;
+    }
+
+    const Leg leg = session->leg(Leg::kCaller).dialog_ == dialog ? Leg::kCaller : Leg::kCallee;
+    session->dialog_actions().set_pending_refer(request);
+    const bool handled = session->dialog_sm().process_event(ReferReceived{leg});
+    session->dialog_actions().set_pending_refer(nullptr);
+    if (!handled) {
+        pjsip_dlg_respond(dialog, request, PJSIP_SC_REQUEST_PENDING, nullptr, nullptr, nullptr);
+    }
+    session->dialog_actions().finish_refer_dispatch();
 }
 
 void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* request) {

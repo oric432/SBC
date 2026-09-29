@@ -155,6 +155,7 @@ def _stop(process: subprocess.Popen[str]) -> None:
 @pytest.fixture
 def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path, Path], None]:
     def _run(caller_scenario: Path, callee_scenario: Path) -> None:
+        sbc_engine.log_start = len(sbc_engine.log_lines)
         callee = _run_sipp(
             sipp_binary, callee_scenario, None, ports.local_ip, ports.callee_port, ports.callee_media_port
         )
@@ -175,6 +176,8 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
         )
         try:
             caller_output, _ = caller.communicate(timeout=60)
+            if sbc_engine.process.poll() is not None:
+                pytest.fail(f"SbcEngine exited during the call ({sbc_engine.process.returncode}):\n{sbc_engine.log_tail()}")
             callee_output, _ = callee.communicate(timeout=60)
         finally:
             _stop(caller)
