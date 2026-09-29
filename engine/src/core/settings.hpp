@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <string>
 
 #include "core/utils/error.hpp"
@@ -27,6 +28,10 @@ constexpr int kBindingSweepIntervalSeconds = 60;
 struct LoggingSettings {
     std::string level = "info";
     std::string pjsip_level = "disabled";
+    // Per-category overrides of `level` (category names match the spdlog
+    // sub-loggers in core/utils/log.hpp: app/sip/call/sm/rtp/pjsip). A
+    // category not listed here inherits `level`.
+    std::map<std::string, std::string> categories;
 };
 
 struct SipSettings {
