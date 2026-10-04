@@ -51,6 +51,17 @@ CallSession* CallManager::find_by_inv(pjsip_inv_session* inv) {
 }
 
 CallSession* CallManager::find_by_dialog(pjsip_dialog* dialog) {
+    if (dialog == nullptr) {
+        return nullptr;
+    }
+    if (module_id_ >= 0) {
+        // Dialog and invite-session mod_data are separate; assigning a call
+        // leg must claim this slot so in-dialog callbacks can recover it.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, module_id_ is not a constant
+        // expression
+        return static_cast<CallSession*>(dialog->mod_data[module_id_]);
+    }
+
     for (auto& [call_id, session] : sessions_) {
         (void)call_id;
         if (session->leg(Leg::kCaller).dialog_ == dialog || session->leg(Leg::kCallee).dialog_ == dialog) {
