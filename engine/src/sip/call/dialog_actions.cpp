@@ -27,7 +27,7 @@ void DialogActions::reject_update_collision(Leg leg) {
 }
 
 bool DialogActions::refer_started(Leg leg) {
-    Log::call()->info("[{}] REFER started on {} leg", session_.call_id(), leg == Leg::kCaller ? "caller" : "callee");
+    Log::call()->info("[{}] REFER started on {} leg", session_.call_id(), to_string(leg));
     return refer_.start(leg);
 }
 
@@ -36,10 +36,7 @@ void DialogActions::refer_completed(bool succeeded) {
 }
 
 void DialogActions::refer_busy(Leg leg) {
-    Log::call()->info(
-        "[{}] REFER received while dialog is busy on {} leg",
-        session_.call_id(),
-        leg == Leg::kCaller ? "caller" : "callee");
+    Log::call()->info("[{}] REFER received while dialog is busy on {} leg", session_.call_id(), to_string(leg));
     refer_.busy();
 }
 
