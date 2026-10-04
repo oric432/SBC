@@ -53,7 +53,7 @@ void MessageRouter::on_rx_refer(pjsip_rx_data* request) {
         return;
     }
     if (!session->setup_sm().is_established()) {
-        pjsip_dlg_respond(dialog, request, PJSIP_SC_REQUEST_PENDING, nullptr, nullptr, nullptr);
+        pjsip_dlg_respond(dialog, request, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST, nullptr, nullptr, nullptr);
         return;
     }
 
@@ -87,7 +87,7 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
         return PJ_SUCCESS;
     }
     if (!session->setup_sm().is_established()) {
-        reject_reinvite(inv, rdata, PJSIP_SC_REQUEST_PENDING);
+        reject_reinvite(inv, rdata, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
         return PJ_SUCCESS;
     }
 
