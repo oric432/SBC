@@ -1,10 +1,13 @@
 #include "refer_handler.hpp"
 
+#include <array>
 #include <unordered_map>
 
+#include <pjsip-ua/sip_replaces.h>
 #include <pjsip/sip_parser.h>
 
 #include "core/utils/log.hpp"
+#include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/sm/events.hpp"
 
@@ -36,33 +39,110 @@ void ReferHandler::stop_subscriptions() {
     }
 }
 
-std::optional<std::string> ReferHandler::refer_to() const {
+std::expected<std::string, int> ReferHandler::refer_to() const {
     if (pending_request_ == nullptr || pending_request_->msg_info.msg == nullptr) {
-        return std::nullopt;
+        return std::unexpected(PJSIP_SC_BAD_REQUEST);
     }
     pjsip_msg* message = pending_request_->msg_info.msg;
     std::string header_name = "Refer-To";
     const pj_str_t refer_to_name = pj_str(header_name.data());
     auto* header = static_cast<pjsip_hdr*>(pjsip_msg_find_hdr_by_name(message, &refer_to_name, nullptr));
     if (header == nullptr || pjsip_msg_find_hdr_by_name(message, &refer_to_name, header->next) != nullptr) {
-        return std::nullopt;
+        return std::unexpected(PJSIP_SC_BAD_REQUEST);
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) - PJSIP headers share a C struct prefix.
     const auto* refer_to_header = reinterpret_cast<const pjsip_generic_string_hdr*>(header);
     if (refer_to_header->hvalue.slen <= 0) {
-        return std::nullopt;
+        return std::unexpected(PJSIP_SC_BAD_REQUEST);
     }
     std::string value{refer_to_header->hvalue.ptr, static_cast<std::size_t>(refer_to_header->hvalue.slen)};
-    pjsip_uri* uri =
-        pjsip_parse_uri(pending_request_->tp_info.pool, value.data(), value.size(), PJSIP_PARSE_URI_AS_NAMEADDR);
+    std::string parse_buffer = value;
+    pjsip_uri* uri = pjsip_parse_uri(
+        pending_request_->tp_info.pool,
+        parse_buffer.data(),
+        parse_buffer.size(),
+        PJSIP_PARSE_URI_AS_NAMEADDR);
     if (uri == nullptr) {
-        return std::nullopt;
+        return std::unexpected(PJSIP_SC_BAD_REQUEST);
     }
-    uri = static_cast<pjsip_uri*>(pjsip_uri_get_uri(uri));
-    if (!PJSIP_URI_SCHEME_IS_SIP(uri) && !PJSIP_URI_SCHEME_IS_SIPS(uri)) {
-        return std::nullopt;
+    auto* sip_uri = static_cast<pjsip_sip_uri*>(pjsip_uri_get_uri(uri));
+    if (!PJSIP_URI_SCHEME_IS_SIP(sip_uri) && !PJSIP_URI_SCHEME_IS_SIPS(sip_uri)) {
+        return std::unexpected(PJSIP_SC_BAD_REQUEST);
     }
-    return value;
+
+    static std::string replaces_name_string = "Replaces";
+    const pj_str_t replaces_name = pj_str(replaces_name_string.data());
+    pjsip_param* replaces_param = pjsip_param_find(&sip_uri->header_param, &replaces_name);
+    if (replaces_param == nullptr) {
+        return value;
+    }
+    if (replaces_param->value.slen <= 0) {
+        return std::unexpected(PJSIP_SC_BAD_REQUEST);
+    }
+    for (pjsip_param* param = replaces_param->next; param != &sip_uri->header_param; param = param->next) {
+        if (pj_stricmp(&param->name, &replaces_name) == 0) {
+            return std::unexpected(PJSIP_SC_BAD_REQUEST);
+        }
+    }
+
+    std::string replaces_value{replaces_param->value.ptr, static_cast<std::size_t>(replaces_param->value.slen)};
+    auto* replaces = static_cast<pjsip_replaces_hdr*>(pjsip_parse_hdr(
+        pending_request_->tp_info.pool,
+        &replaces_name,
+        replaces_value.data(),
+        replaces_value.size(),
+        nullptr));
+    if (replaces == nullptr || replaces->call_id.slen <= 0 || replaces->to_tag.slen <= 0 ||
+        replaces->from_tag.slen <= 0) {
+        return std::unexpected(PJSIP_SC_BAD_REQUEST);
+    }
+
+    pjsip_dialog* referenced_dialog =
+        pjsip_ua_find_dialog(&replaces->call_id, &replaces->to_tag, &replaces->from_tag, PJ_TRUE);
+    if (referenced_dialog == nullptr) {
+        return std::unexpected(PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+    }
+    CallSession* referenced_session = session_.call_manager()->find_by_dialog(referenced_dialog);
+    const Leg referenced_leg =
+        referenced_session != nullptr && referenced_session->leg(Leg::kCallee).dialog_ == referenced_dialog
+            ? Leg::kCallee
+            : Leg::kCaller;
+    pjsip_dlg_dec_lock(referenced_dialog);
+    if (referenced_session == nullptr) {
+        return std::unexpected(PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+    }
+
+    const auto& translated_leg = referenced_session->leg(other(referenced_leg));
+    pjsip_dialog* translated_dialog = translated_leg.dialog_;
+    if (translated_dialog == nullptr || translated_leg.disconnected_) {
+        return std::unexpected(PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+    }
+    pjsip_dlg_inc_lock(translated_dialog);
+    replaces->call_id = translated_dialog->call_id->id;
+    replaces->to_tag = translated_dialog->remote.info->tag;
+    replaces->from_tag = translated_dialog->local.info->tag;
+    std::array<char, PJSIP_MAX_URL_SIZE> replaces_buffer{};
+    const int replaces_length = pjsip_hdr_print_on(replaces, replaces_buffer.data(), replaces_buffer.size());
+    pjsip_dlg_dec_lock(translated_dialog);
+    constexpr std::string_view kReplacesPrefix = "Replaces: ";
+    if (replaces_length <= 0) {
+        return std::unexpected(PJSIP_SC_INTERNAL_SERVER_ERROR);
+    }
+    const std::string_view printed_replaces{replaces_buffer.data(), static_cast<std::size_t>(replaces_length)};
+    if (!printed_replaces.starts_with(kReplacesPrefix)) {
+        return std::unexpected(PJSIP_SC_INTERNAL_SERVER_ERROR);
+    }
+    std::string translated_replaces{
+        replaces_buffer.data() + kReplacesPrefix.size(),
+        static_cast<std::size_t>(replaces_length) - kReplacesPrefix.size()};
+    replaces_param->value = pj_str(translated_replaces.data());
+
+    std::array<char, PJSIP_MAX_URL_SIZE> target_buffer{};
+    const int target_length = pjsip_uri_print(PJSIP_URI_IN_OTHER, uri, target_buffer.data(), target_buffer.size());
+    if (target_length < 0) {
+        return std::unexpected(PJSIP_SC_INTERNAL_SERVER_ERROR);
+    }
+    return std::string{target_buffer.data(), static_cast<std::size_t>(target_length)};
 }
 
 void ReferHandler::reject(int status_code) {
@@ -90,6 +170,16 @@ bool ReferHandler::start(Leg leg) {
     final_result_ = false;
     const auto target = refer_to();
     if (!target) {
+        reject(target.error());
+        return false;
+    }
+    pjsip_msg* incoming_message = pending_request_->msg_info.msg;
+    static std::string referred_by_name_string = "Referred-By";
+    const pj_str_t referred_by_name = pj_str(referred_by_name_string.data());
+    auto* referred_by =
+        static_cast<pjsip_hdr*>(pjsip_msg_find_hdr_by_name(incoming_message, &referred_by_name, nullptr));
+    if (referred_by != nullptr &&
+        pjsip_msg_find_hdr_by_name(incoming_message, &referred_by_name, referred_by->next) != nullptr) {
         reject(PJSIP_SC_BAD_REQUEST);
         return false;
     }
@@ -141,6 +231,11 @@ bool ReferHandler::start(Leg leg) {
     const pj_str_t uri = pj_str(target_value.data());
     status = pjsip_xfer_initiate(outbound_sub_, &uri, &outbound_request);
     if (status == PJ_SUCCESS) {
+        if (referred_by != nullptr) {
+            pjsip_msg_add_hdr(
+                outbound_request->msg,
+                static_cast<pjsip_hdr*>(pjsip_hdr_clone(outbound_request->pool, referred_by)));
+        }
         auto* max_fwd =
             static_cast<pjsip_max_fwd_hdr*>(pjsip_msg_find_hdr(outbound_request->msg, PJSIP_H_MAX_FORWARDS, nullptr));
         const unsigned incoming_hops = pending_request_->msg_info.max_fwd != nullptr

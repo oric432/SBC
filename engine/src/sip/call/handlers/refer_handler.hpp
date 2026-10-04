@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <optional>
 #include <string>
 
@@ -43,7 +44,7 @@ private:
     void finish(bool succeeded);
     void stop_subscriptions();
     void reject(int status_code);
-    [[nodiscard]] std::optional<std::string> refer_to() const;
+    [[nodiscard]] std::expected<std::string, int> refer_to() const;
 
     CallSession& session_;
     pjsip_rx_data* pending_request_ = nullptr;

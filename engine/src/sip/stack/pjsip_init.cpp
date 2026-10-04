@@ -7,6 +7,7 @@
 #include <pjlib-util.h>
 #include <pjsip-simple/evsub.h>
 #include <pjsip_ua.h>
+#include <pjsip-ua/sip_replaces.h>
 #include <pjsip-ua/sip_xfer.h>
 
 #include "sip/router/message_router.hpp"
@@ -221,6 +222,11 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
     status = pjsip_xfer_init_module(endpt_);
     if (status != PJ_SUCCESS) {
         return std::unexpected(pj_error("pjsip_xfer_init_module failed", status));
+    }
+
+    status = pjsip_replaces_init_module(endpt_);
+    if (status != PJ_SUCCESS) {
+        return std::unexpected(pj_error("pjsip_replaces_init_module failed", status));
     }
 
     static std::string mod_name = "mod-sbc";

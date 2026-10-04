@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="ISO-8859-1" ?>
 <!DOCTYPE scenario SYSTEM "sipp.dtd">
 <scenario name="{{ scenario_name }}">
-  <recv request="INVITE" crlf="true"></recv>
+  <recv request="INVITE" crlf="true">
+    <action>
+      <ereg regexp="tag=([^;[:space:]&gt;]+)" search_in="hdr" header="From:" check_it="true" assign_to="from_tag_match,outgoing_from_tag"/>
+      <ereg regexp="(.+)" search_in="hdr" header="Call-ID:" check_it="true" assign_to="outgoing_call_id"/>
+    </action>
+  </recv>
 
   <send>
     <![CDATA[
@@ -54,6 +59,8 @@
   <recv request="REFER" crlf="true">
     <action>
       <ereg regexp="sip:transfer@" search_in="hdr" header="Refer-To:" check_it="true" assign_to="refer_target"/>
+      <ereg regexp="Replaces=[$outgoing_call_id]%3Bto-tag%3D[pid]SIPpTag01[call_number]%3Bfrom-tag%3D[$outgoing_from_tag]" search_in="hdr" header="Refer-To:" check_it="true" assign_to="translated_replaces"/>
+      <ereg regexp="sip:transferor@example.com" search_in="hdr" header="Referred-By:" check_it="true" assign_to="referred_by"/>
       <log message="REFER target: [$refer_target]"/>
     </action>
   </recv>
