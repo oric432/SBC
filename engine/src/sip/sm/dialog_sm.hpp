@@ -15,7 +15,8 @@ struct Terminating {};
 struct Terminated {};
 struct DialogDone {};
 
-using DialogSelfFireQueue = Sml::back::process<Dialog::ExchangeFinished, Cleanup>;
+// we queue the synchronous ReferFailed becuase handling ReferReceived can fail immediately
+using DialogSelfFireQueue = Sml::back::process<Dialog::ExchangeFinished, ReferFailed, Cleanup>;
 
 template <typename Actions>
 struct DialogSm {
@@ -52,7 +53,11 @@ struct DialogSm {
             actions.reject_update_collision(evt.leg_);
         };
 
-        auto handle_refer = [](Actions& actions, const ReferReceived& evt) { actions.refer_started(evt.leg_); };
+        auto handle_refer = [](Actions& actions, const ReferReceived& evt, DialogSelfFireQueue result) {
+            if (!actions.refer_started(evt.leg_)) {
+                result(ReferFailed{});
+            }
+        };
 
         auto handle_refer_busy = [](Actions& actions, const ReferReceived& evt) { actions.refer_busy(evt.leg_); };
 

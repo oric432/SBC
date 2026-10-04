@@ -77,6 +77,7 @@ class MockDialogActions : public IDialogActions {
 public:
     std::vector<std::string> calls_;
     ExchangeOutcome start_result_ = ExchangeOutcome::kPending;
+    bool refer_start_result_ = true;
 
     void forward_bye_to_other_leg(Leg /*leg*/) override { calls_.emplace_back("forward_bye_to_other_leg"); }
 
@@ -99,8 +100,9 @@ public:
         calls_.push_back(std::string("reject_update_collision:") + (leg == Leg::kCaller ? "caller" : "callee"));
     }
 
-    void refer_started(Leg leg) override {
+    bool refer_started(Leg leg) override {
         calls_.push_back(std::string("refer_started:") + (leg == Leg::kCaller ? "caller" : "callee"));
+        return refer_start_result_;
     }
     void refer_completed(bool succeeded) override {
         calls_.push_back(std::string("refer_completed:") + (succeeded ? "success" : "failure"));

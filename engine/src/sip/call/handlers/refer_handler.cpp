@@ -81,32 +81,27 @@ void ReferHandler::busy() {
     reject(PJSIP_SC_REQUEST_PENDING);
 }
 
-void ReferHandler::start(Leg leg) {
+bool ReferHandler::start(Leg leg) {
     if (inbound_sub_ != nullptr || outbound_sub_ != nullptr) {
         reject(PJSIP_SC_REQUEST_PENDING);
         final_result_ = false;
-        finish(false);
-        return;
+        return false;
     }
     final_result_ = false;
-    pending_result_.reset();
     const auto target = refer_to();
     if (!target) {
         reject(PJSIP_SC_BAD_REQUEST);
-        finish(false);
-        return;
+        return false;
     }
     if (pending_request_->msg_info.max_fwd != nullptr && pending_request_->msg_info.max_fwd->ivalue == 0) {
         reject(PJSIP_SC_TOO_MANY_HOPS);
-        finish(false);
-        return;
+        return false;
     }
     const auto& peer_leg = session_.leg(other(leg));
     pjsip_inv_session* peer = peer_leg.inv_;
     if (peer == nullptr || peer_leg.disconnected_) {
         reject(PJSIP_SC_SERVICE_UNAVAILABLE);
-        finish(false);
-        return;
+        return false;
     }
 
     pjsip_evsub_user callbacks{};
@@ -117,8 +112,7 @@ void ReferHandler::start(Leg leg) {
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] creating outbound REFER subscription failed ({})", session_.call_id(), status);
         reject(PJSIP_SC_SERVICE_UNAVAILABLE);
-        finish(false);
-        return;
+        return false;
     }
     subscriptions()[outbound_sub_] = this;
 
@@ -126,22 +120,20 @@ void ReferHandler::start(Leg leg) {
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] creating inbound REFER subscription failed ({})", session_.call_id(), status);
         reject(PJSIP_SC_INTERNAL_SERVER_ERROR);
-        finish(false);
         stop_subscriptions();
-        return;
+        return false;
     }
     subscriptions()[inbound_sub_] = this;
 
     status = pjsip_xfer_accept(inbound_sub_, pending_request_, PJSIP_SC_ACCEPTED, nullptr);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] accepting REFER failed ({})", session_.call_id(), status);
-        finish(false);
         stop_subscriptions();
-        return;
+        return false;
     }
     if (!notify_inbound(PJSIP_EVSUB_STATE_ACTIVE, PJSIP_SC_TRYING)) {
         fail_after_accept(PJSIP_SC_SERVICE_UNAVAILABLE);
-        return;
+        return false;
     }
 
     pjsip_tx_data* outbound_request = nullptr;
@@ -168,7 +160,9 @@ void ReferHandler::start(Leg leg) {
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] forwarding REFER failed ({})", session_.call_id(), status);
         fail_after_accept(PJSIP_SC_SERVICE_UNAVAILABLE);
+        return false;
     }
+    return true;
 }
 
 bool ReferHandler::notify_inbound(pjsip_evsub_state state, int status_code) {
@@ -188,7 +182,6 @@ bool ReferHandler::notify_inbound(pjsip_evsub_state state, int status_code) {
 
 void ReferHandler::fail_after_accept(int status_code) {
     notify_inbound(PJSIP_EVSUB_STATE_TERMINATED, status_code);
-    finish(false);
     stop_subscriptions();
 }
 
@@ -197,24 +190,6 @@ void ReferHandler::finish(bool succeeded) {
         return;
     }
     final_result_ = true;
-    if (session_.dialog_sm().is_processing()) {
-        pending_result_ = succeeded;
-        return;
-    }
-    if (succeeded) {
-        session_.dialog_sm().process_event(ReferSucceeded{});
-    }
-    else {
-        session_.dialog_sm().process_event(ReferFailed{});
-    }
-}
-
-void ReferHandler::finish_dispatch() {
-    if (!pending_result_) {
-        return;
-    }
-    const bool succeeded = *pending_result_;
-    pending_result_.reset();
     if (succeeded) {
         session_.dialog_sm().process_event(ReferSucceeded{});
     }
@@ -273,6 +248,7 @@ void ReferHandler::subscription_changed(pjsip_evsub* sub, pjsip_event* event) {
     }
     // NOLINTEND(cppcoreguidelines-pro-type-union-access)
     fail_after_accept(status_code);
+    finish(false);
 }
 
 void ReferHandler::notification_received(pjsip_rx_data* request, int* response_code) {
@@ -295,11 +271,13 @@ void ReferHandler::notification_received(pjsip_rx_data* request, int* response_c
     const bool is_final = status_line.code >= 200;
     if (is_final && status_line.code >= PJSIP_SC_MULTIPLE_CHOICES) {
         fail_after_accept(status_line.code);
+        finish(false);
         return;
     }
     if (inbound_sub_ != nullptr &&
         !notify_inbound(is_final ? PJSIP_EVSUB_STATE_TERMINATED : PJSIP_EVSUB_STATE_ACTIVE, status_line.code)) {
         fail_after_accept(PJSIP_SC_SERVICE_UNAVAILABLE);
+        finish(false);
         return;
     }
     if (is_final) {

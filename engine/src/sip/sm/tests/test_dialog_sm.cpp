@@ -267,6 +267,17 @@ TEST_CASE("DialogSm refer tracks the pending transfer and its result", "[dialog_
     REQUIRE(actions.was_called("refer_completed:success"));
 }
 
+TEST_CASE("DialogSm self-fires a synchronous refer failure", "[dialog_sm]") {
+    MockDialogActions actions;
+    actions.refer_start_result_ = false;
+    TestMachine machine{actions};
+
+    REQUIRE(machine.process_event(ReferReceived{Leg::kCallee}));
+    REQUIRE(machine.is(Sml::state<Active>));
+    REQUIRE(actions.was_called("refer_started:callee"));
+    REQUIRE(actions.was_called("refer_completed:failure"));
+}
+
 TEST_CASE("DialogSm reports refer received during media renegotiation", "[dialog_sm]") {
     MockDialogActions actions;
     TestMachine machine{actions};

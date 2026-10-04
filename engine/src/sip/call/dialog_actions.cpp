@@ -26,9 +26,9 @@ void DialogActions::reject_update_collision(Leg leg) {
         to_string(leg));
 }
 
-void DialogActions::refer_started(Leg leg) {
+bool DialogActions::refer_started(Leg leg) {
     Log::call()->info("[{}] REFER started on {} leg", session_.call_id(), leg == Leg::kCaller ? "caller" : "callee");
-    refer_.start(leg);
+    return refer_.start(leg);
 }
 
 void DialogActions::refer_completed(bool succeeded) {

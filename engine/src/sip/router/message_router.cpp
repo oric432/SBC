@@ -64,7 +64,6 @@ void MessageRouter::on_rx_refer(pjsip_rx_data* request) {
     if (!handled) {
         pjsip_dlg_respond(dialog, request, PJSIP_SC_REQUEST_PENDING, nullptr, nullptr, nullptr);
     }
-    session->dialog_actions().finish_refer_dispatch();
 }
 
 void MessageRouter::on_inv_state_changed(pjsip_inv_session* inv, pjsip_rx_data* request) {

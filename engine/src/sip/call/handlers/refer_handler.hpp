@@ -23,9 +23,8 @@ public:
     ReferHandler& operator=(ReferHandler&&) = delete;
 
     void set_pending_request(pjsip_rx_data* request) { pending_request_ = request; }
-    void start(Leg leg);
+    bool start(Leg leg);
     void busy();
-    void finish_dispatch();
 
 private:
     static void on_sub_state(pjsip_evsub* sub, pjsip_event* event);
@@ -51,7 +50,6 @@ private:
     pjsip_evsub* inbound_sub_ = nullptr;
     pjsip_evsub* outbound_sub_ = nullptr;
     bool final_result_ = false;
-    std::optional<bool> pending_result_;
 };
 
 } // namespace SbcEngine

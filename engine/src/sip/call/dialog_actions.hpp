@@ -31,14 +31,13 @@ public:
     void on_media_update(pjsip_inv_session* inv, pj_status_t status) { reinvite_.on_media_update(inv, status); }
     void set_pending_reinvite(pjsip_rx_data* rdata) { reinvite_.set_pending_request(rdata); }
     void set_pending_refer(pjsip_rx_data* rdata) { refer_.set_pending_request(rdata); }
-    void finish_refer_dispatch() { refer_.finish_dispatch(); }
 
     void forward_bye_to_other_leg(Leg leg) override { bye_.forward_to_other_leg(leg); }
     ExchangeOutcome answer_reinvite(const std::string& offer, Leg leg) override { return reinvite_.answer(offer, leg); }
     void reject_reinvite_491_request_pending(Leg leg) override { reinvite_.reject_491(leg); }
     ExchangeOutcome answer_update(const std::string& offer, Leg leg) override { return update_.answer(offer, leg); }
     void reject_update_collision(Leg leg) override;
-    void refer_started(Leg leg) override;
+    bool refer_started(Leg leg) override;
     void refer_completed(bool succeeded) override;
     void refer_busy(Leg leg) override;
 

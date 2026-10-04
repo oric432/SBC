@@ -32,7 +32,9 @@ public:
     // this only logs, PJSIP auto-rejects with 488 when no answer is set.
     virtual void reject_update_collision(Leg leg) = 0;
 
-    virtual void refer_started(Leg leg) = 0;
+    // Returns false when startup failed synchronously; completion after a
+    // successful start arrives later from the REFER subscription callbacks.
+    virtual bool refer_started(Leg leg) = 0;
     virtual void refer_completed(bool succeeded) = 0;
     virtual void refer_busy(Leg leg) = 0;
 
