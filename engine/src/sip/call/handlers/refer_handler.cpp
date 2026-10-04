@@ -1,7 +1,6 @@
 #include "refer_handler.hpp"
 
 #include <array>
-#include <unordered_map>
 
 #include <pjsip-ua/sip_replaces.h>
 #include <pjsip/sip_parser.h>
@@ -15,27 +14,49 @@ namespace SbcEngine {
 
 namespace {
 constexpr int kLastSipStatus = 699;
-
-std::unordered_map<pjsip_evsub*, ReferHandler*>& subscriptions() {
-    static std::unordered_map<pjsip_evsub*, ReferHandler*> registry;
-    return registry;
-}
+// PJSIP callbacks provide only pjsip_evsub*, but retrieving its ReferHandler
+// from mod_data requires the runtime-assigned SBC module ID first. One active
+// PJSIP stack makes this lookup key common to every subscription; the handler
+// pointers themselves remain stored and lifetime-bound to each subscription.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+int g_module_id = -1;
 } // namespace
 
 ReferHandler::~ReferHandler() {
     stop_subscriptions();
 }
 
+ReferHandler* ReferHandler::from_subscription(pjsip_evsub* sub) {
+    if (sub == nullptr || g_module_id < 0) {
+        return nullptr;
+    }
+    return static_cast<ReferHandler*>(pjsip_evsub_get_mod_data(sub, static_cast<unsigned>(g_module_id)));
+}
+
+void ReferHandler::attach(pjsip_evsub* sub) {
+    if (sub != nullptr) {
+        pjsip_evsub_set_mod_data(sub, static_cast<unsigned>(g_module_id), this);
+    }
+}
+
+void ReferHandler::detach(pjsip_evsub* sub) const {
+    if (sub != nullptr && g_module_id >= 0) {
+        pjsip_evsub_set_mod_data(sub, static_cast<unsigned>(g_module_id), nullptr);
+    }
+}
+
 void ReferHandler::stop_subscriptions() {
     if (outbound_sub_ != nullptr) {
-        subscriptions().erase(outbound_sub_);
-        pjsip_evsub_terminate(outbound_sub_, PJ_FALSE);
+        pjsip_evsub* subscription = outbound_sub_;
         outbound_sub_ = nullptr;
+        detach(subscription);
+        pjsip_evsub_terminate(subscription, PJ_FALSE);
     }
     if (inbound_sub_ != nullptr) {
-        subscriptions().erase(inbound_sub_);
-        pjsip_evsub_terminate(inbound_sub_, PJ_FALSE);
+        pjsip_evsub* subscription = inbound_sub_;
         inbound_sub_ = nullptr;
+        detach(subscription);
+        pjsip_evsub_terminate(subscription, PJ_FALSE);
     }
 }
 
@@ -168,6 +189,11 @@ bool ReferHandler::start(Leg leg) {
         return false;
     }
     final_result_ = false;
+    g_module_id = session_.ctx()->module_id_;
+    if (g_module_id < 0) {
+        reject(PJSIP_SC_INTERNAL_SERVER_ERROR);
+        return false;
+    }
     const auto target = refer_to();
     if (!target) {
         reject(target.error());
@@ -204,7 +230,7 @@ bool ReferHandler::start(Leg leg) {
         reject(PJSIP_SC_SERVICE_UNAVAILABLE);
         return false;
     }
-    subscriptions()[outbound_sub_] = this;
+    attach(outbound_sub_);
 
     status = pjsip_xfer_create_uas(pjsip_rdata_get_dlg(pending_request_), &callbacks, pending_request_, &inbound_sub_);
     if (status != PJ_SUCCESS) {
@@ -213,7 +239,7 @@ bool ReferHandler::start(Leg leg) {
         stop_subscriptions();
         return false;
     }
-    subscriptions()[inbound_sub_] = this;
+    attach(inbound_sub_);
 
     status = pjsip_xfer_accept(inbound_sub_, pending_request_, PJSIP_SC_ACCEPTED, nullptr);
     if (status != PJ_SUCCESS) {
@@ -294,9 +320,8 @@ void ReferHandler::finish(bool succeeded) {
 }
 
 void ReferHandler::on_sub_state(pjsip_evsub* sub, pjsip_event* event) {
-    auto iter = subscriptions().find(sub);
-    if (iter != subscriptions().end()) {
-        iter->second->subscription_changed(sub, event);
+    if (ReferHandler* handler = from_subscription(sub); handler != nullptr) {
+        handler->subscription_changed(sub, event);
     }
 }
 
@@ -307,12 +332,11 @@ void ReferHandler::on_rx_notify(
     pj_str_t** response_text,
     pjsip_hdr* response_headers,
     pjsip_msg_body** response_body) {
-    auto iter = subscriptions().find(sub);
     (void)response_text;
     (void)response_headers;
     (void)response_body;
-    if (iter != subscriptions().end()) {
-        iter->second->notification_received(request, response_code);
+    if (ReferHandler* handler = from_subscription(sub); handler != nullptr) {
+        handler->notification_received(request, response_code);
     }
     else {
         *response_code = PJSIP_SC_CALL_TSX_DOES_NOT_EXIST;
@@ -323,7 +347,7 @@ void ReferHandler::subscription_changed(pjsip_evsub* sub, pjsip_event* event) {
     if (pjsip_evsub_get_state(sub) != PJSIP_EVSUB_STATE_TERMINATED) {
         return;
     }
-    subscriptions().erase(sub);
+    detach(sub);
     if (sub == inbound_sub_) {
         inbound_sub_ = nullptr;
         return;

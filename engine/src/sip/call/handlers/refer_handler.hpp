@@ -1,7 +1,6 @@
 #pragma once
 
 #include <expected>
-#include <optional>
 #include <string>
 
 #include <pjsip-ua/sip_xfer.h>
@@ -28,6 +27,7 @@ public:
     void busy();
 
 private:
+    static ReferHandler* from_subscription(pjsip_evsub* sub);
     static void on_sub_state(pjsip_evsub* sub, pjsip_event* event);
     static void on_rx_notify(
         pjsip_evsub* sub,
@@ -42,6 +42,8 @@ private:
     bool notify_inbound(pjsip_evsub_state state, int status_code);
     void fail_after_accept(int status_code);
     void finish(bool succeeded);
+    void attach(pjsip_evsub* sub);
+    void detach(pjsip_evsub* sub) const;
     void stop_subscriptions();
     void reject(int status_code);
     [[nodiscard]] std::expected<std::string, int> refer_to() const;
