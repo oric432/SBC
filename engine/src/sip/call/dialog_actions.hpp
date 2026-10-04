@@ -4,8 +4,8 @@
 #include <pjsip_ua.h>
 
 #include "sip/call/handlers/bye_handler.hpp"
-#include "sip/call/handlers/reinvite_handler.hpp"
 #include "sip/call/handlers/refer_handler.hpp"
+#include "sip/call/handlers/reinvite_handler.hpp"
 #include "sip/call/handlers/update_handler.hpp"
 #include "sip/sm/i_dialog_actions.hpp"
 #include "sip/sm/leg.hpp"
