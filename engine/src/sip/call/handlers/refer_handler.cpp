@@ -140,8 +140,7 @@ void ReferHandler::start(Leg leg) {
         return;
     }
     if (!notify_inbound(PJSIP_EVSUB_STATE_ACTIVE, PJSIP_SC_TRYING)) {
-        finish(false);
-        stop_subscriptions();
+        fail_after_accept(PJSIP_SC_SERVICE_UNAVAILABLE);
         return;
     }
 
@@ -168,9 +167,7 @@ void ReferHandler::start(Leg leg) {
     }
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] forwarding REFER failed ({})", session_.call_id(), status);
-        notify_inbound(PJSIP_EVSUB_STATE_TERMINATED, PJSIP_SC_SERVICE_UNAVAILABLE);
-        finish(false);
-        stop_subscriptions();
+        fail_after_accept(PJSIP_SC_SERVICE_UNAVAILABLE);
     }
 }
 
@@ -187,6 +184,12 @@ bool ReferHandler::notify_inbound(pjsip_evsub_state state, int status_code) {
         Log::sip()->error("[{}] sending REFER NOTIFY failed ({})", session_.call_id(), status);
     }
     return status == PJ_SUCCESS;
+}
+
+void ReferHandler::fail_after_accept(int status_code) {
+    notify_inbound(PJSIP_EVSUB_STATE_TERMINATED, status_code);
+    finish(false);
+    stop_subscriptions();
 }
 
 void ReferHandler::finish(bool succeeded) {
@@ -269,8 +272,7 @@ void ReferHandler::subscription_changed(pjsip_evsub* sub, pjsip_event* event) {
         }
     }
     // NOLINTEND(cppcoreguidelines-pro-type-union-access)
-    notify_inbound(PJSIP_EVSUB_STATE_TERMINATED, status_code);
-    finish(false);
+    fail_after_accept(status_code);
 }
 
 void ReferHandler::notification_received(pjsip_rx_data* request, int* response_code) {
@@ -291,13 +293,17 @@ void ReferHandler::notification_received(pjsip_rx_data* request, int* response_c
         return;
     }
     const bool is_final = status_line.code >= 200;
+    if (is_final && status_line.code >= PJSIP_SC_MULTIPLE_CHOICES) {
+        fail_after_accept(status_line.code);
+        return;
+    }
     if (inbound_sub_ != nullptr &&
         !notify_inbound(is_final ? PJSIP_EVSUB_STATE_TERMINATED : PJSIP_EVSUB_STATE_ACTIVE, status_line.code)) {
-        finish(false);
+        fail_after_accept(PJSIP_SC_SERVICE_UNAVAILABLE);
         return;
     }
     if (is_final) {
-        finish(status_line.code < PJSIP_SC_MULTIPLE_CHOICES);
+        finish(true);
     }
 }
 

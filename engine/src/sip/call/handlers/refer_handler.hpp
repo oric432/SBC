@@ -40,6 +40,7 @@ private:
     void subscription_changed(pjsip_evsub* sub, pjsip_event* event);
     void notification_received(pjsip_rx_data* request, int* response_code);
     bool notify_inbound(pjsip_evsub_state state, int status_code);
+    void fail_after_accept(int status_code);
     void finish(bool succeeded);
     void stop_subscriptions();
     void reject(int status_code);
