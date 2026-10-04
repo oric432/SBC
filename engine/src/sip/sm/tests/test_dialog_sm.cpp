@@ -258,11 +258,11 @@ TEST_CASE("DialogSm refer tracks the pending transfer and its result", "[dialog_
     REQUIRE(machine.is(Sml::state<Referring>));
     REQUIRE(actions.was_called("refer_busy:caller"));
 
-    REQUIRE(machine.process_event(ReferFailed{}));
+    REQUIRE(machine.process_event(ReferCompleted{ReferOutcome::kFailed}));
     REQUIRE(machine.is(Sml::state<Active>));
     REQUIRE(actions.was_called("refer_completed:failure"));
     REQUIRE(machine.process_event(ReferReceived{Leg::kCaller}));
-    REQUIRE(machine.process_event(ReferSucceeded{}));
+    REQUIRE(machine.process_event(ReferCompleted{ReferOutcome::kSucceeded}));
     REQUIRE(machine.is(Sml::state<Active>));
     REQUIRE(actions.was_called("refer_completed:success"));
 }
@@ -302,7 +302,7 @@ TEST_CASE("DialogSm retains a pending refer after the original call ends", "[dia
     REQUIRE(machine.is(Sml::state<ReferringCallEnded>));
     REQUIRE_FALSE(actions.was_called("cleanup"));
 
-    REQUIRE(machine.process_event(ReferSucceeded{}));
+    REQUIRE(machine.process_event(ReferCompleted{ReferOutcome::kSucceeded}));
     REQUIRE(machine.is(Sml::state<DialogDone>));
     REQUIRE(actions.was_called("refer_completed:success"));
     REQUIRE(actions.was_called("cleanup"));
@@ -314,7 +314,7 @@ TEST_CASE("DialogSm waits for the original call after an early refer result", "[
 
     machine.process_event(ReferReceived{});
     machine.process_event(ByeReceived{Leg::kCaller});
-    REQUIRE(machine.process_event(ReferFailed{}));
+    REQUIRE(machine.process_event(ReferCompleted{ReferOutcome::kFailed}));
     REQUIRE(machine.is(Sml::state<Terminating>));
     REQUIRE(actions.was_called("refer_completed:failure"));
     REQUIRE_FALSE(actions.was_called("cleanup"));

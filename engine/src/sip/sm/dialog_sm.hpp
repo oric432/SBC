@@ -15,8 +15,8 @@ struct Terminating {};
 struct Terminated {};
 struct DialogDone {};
 
-// we queue the synchronous ReferFailed becuase handling ReferReceived can fail immediately
-using DialogSelfFireQueue = Sml::back::process<Dialog::ExchangeFinished, ReferFailed, Cleanup>;
+// REFER startup can fail while ReferReceived is still being processed.
+using DialogSelfFireQueue = Sml::back::process<Dialog::ExchangeFinished, ReferCompleted, Cleanup>;
 
 template <typename Actions>
 struct DialogSm {
@@ -55,14 +55,15 @@ struct DialogSm {
 
         auto handle_refer = [](Actions& actions, const ReferReceived& evt, DialogSelfFireQueue result) {
             if (!actions.refer_started(evt.leg_)) {
-                result(ReferFailed{});
+                result(ReferCompleted{ReferOutcome::kFailed});
             }
         };
 
         auto handle_refer_busy = [](Actions& actions, const ReferReceived& evt) { actions.refer_busy(evt.leg_); };
 
-        auto handle_refer_success = [](Actions& actions) { actions.refer_completed(true); };
-        auto handle_refer_failure = [](Actions& actions) { actions.refer_completed(false); };
+        auto handle_refer_completed = [](Actions& actions, const ReferCompleted& evt) {
+            actions.refer_completed(evt.outcome_);
+        };
 
         auto committed = [](const Dialog::ExchangeFinished& event) {
             return event.outcome_ == ExchangeOutcome::kCommitted;
@@ -78,15 +79,11 @@ struct DialogSm {
 
         auto handle_call_ended = [](DialogSelfFireQueue cleanup_event) { cleanup_event(Cleanup{}); };
 
-        auto handle_refer_success_after_call = [](Actions& actions, DialogSelfFireQueue cleanup_event) {
-            actions.refer_completed(true);
-            cleanup_event(Cleanup{});
-        };
-
-        auto handle_refer_failure_after_call = [](Actions& actions, DialogSelfFireQueue cleanup_event) {
-            actions.refer_completed(false);
-            cleanup_event(Cleanup{});
-        };
+        auto handle_refer_completed_after_call =
+            [](Actions& actions, const ReferCompleted& evt, DialogSelfFireQueue cleanup_event) {
+                actions.refer_completed(evt.outcome_);
+                cleanup_event(Cleanup{});
+            };
 
         auto handle_cleanup = [](Actions& actions) { actions.cleanup(); };
 
@@ -110,17 +107,14 @@ struct DialogSm {
 
              // Referring state
              Sml::state<Referring>             + (Sml::event<ReferReceived>                                                         / handle_refer_busy)          = Sml::state<Referring>,
-             Sml::state<Referring>             + (Sml::event<ReferSucceeded>                                                        / handle_refer_success)       = Sml::state<Active>,
-             Sml::state<Referring>             + (Sml::event<ReferFailed>                                                           / handle_refer_failure)       = Sml::state<Active>,
+             Sml::state<Referring>             + (Sml::event<ReferCompleted>                                                        / handle_refer_completed)     = Sml::state<Active>,
              Sml::state<Referring>             + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<ReferringEndingCall>,
              Sml::state<Referring>             + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
              // The original call is ending; retain the dialog until the REFER result arrives.
              Sml::state<ReferringEndingCall>   + Sml::event<CallEnded>                                                                                          = Sml::state<ReferringCallEnded>,
-             Sml::state<ReferringEndingCall>   + (Sml::event<ReferSucceeded>                                                        / handle_refer_success)       = Sml::state<Terminating>,
-             Sml::state<ReferringEndingCall>   + (Sml::event<ReferFailed>                                                           / handle_refer_failure)       = Sml::state<Terminating>,
-             Sml::state<ReferringCallEnded>    + (Sml::event<ReferSucceeded>                                                         / handle_refer_success_after_call) = Sml::state<Terminated>,
-             Sml::state<ReferringCallEnded>    + (Sml::event<ReferFailed>                                                            / handle_refer_failure_after_call) = Sml::state<Terminated>,
+             Sml::state<ReferringEndingCall>   + (Sml::event<ReferCompleted>                                                        / handle_refer_completed)     = Sml::state<Terminating>,
+             Sml::state<ReferringCallEnded>    + (Sml::event<ReferCompleted>                                                        / handle_refer_completed_after_call) = Sml::state<Terminated>,
 
              // Terminating state
              Sml::state<Terminating>           + (Sml::event<CallEnded>                                                              / handle_call_ended)          = Sml::state<Terminated>,

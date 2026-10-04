@@ -38,7 +38,7 @@ public:
     ExchangeOutcome answer_update(const std::string& offer, Leg leg) override { return update_.answer(offer, leg); }
     void reject_update_collision(Leg leg) override;
     bool refer_started(Leg leg) override;
-    void refer_completed(bool succeeded) override;
+    void refer_completed(ReferOutcome outcome) override;
     void refer_busy(Leg leg) override;
 
     void terminate_call() override;

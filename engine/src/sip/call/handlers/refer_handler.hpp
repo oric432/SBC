@@ -5,6 +5,7 @@
 
 #include <pjsip-ua/sip_xfer.h>
 
+#include "sip/sm/events.hpp"
 #include "sip/sm/leg.hpp"
 
 namespace SbcEngine {
@@ -41,7 +42,7 @@ private:
     void notification_received(pjsip_rx_data* request, int* response_code);
     bool notify_inbound(pjsip_evsub_state state, int status_code);
     void fail_after_accept(int status_code);
-    void finish(bool succeeded);
+    void finish(ReferOutcome outcome);
     void attach(pjsip_evsub* sub);
     void detach(pjsip_evsub* sub) const;
     void stop_subscriptions();

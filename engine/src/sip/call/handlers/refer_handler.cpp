@@ -306,17 +306,12 @@ void ReferHandler::fail_after_accept(int status_code) {
     stop_subscriptions();
 }
 
-void ReferHandler::finish(bool succeeded) {
+void ReferHandler::finish(ReferOutcome outcome) {
     if (final_result_) {
         return;
     }
     final_result_ = true;
-    if (succeeded) {
-        session_.dialog_sm().process_event(ReferSucceeded{});
-    }
-    else {
-        session_.dialog_sm().process_event(ReferFailed{});
-    }
+    session_.dialog_sm().process_event(ReferCompleted{outcome});
 }
 
 void ReferHandler::on_sub_state(pjsip_evsub* sub, pjsip_event* event) {
@@ -367,7 +362,7 @@ void ReferHandler::subscription_changed(pjsip_evsub* sub, pjsip_event* event) {
     }
     // NOLINTEND(cppcoreguidelines-pro-type-union-access)
     fail_after_accept(status_code);
-    finish(false);
+    finish(ReferOutcome::kFailed);
 }
 
 void ReferHandler::notification_received(pjsip_rx_data* request, int* response_code) {
@@ -390,17 +385,17 @@ void ReferHandler::notification_received(pjsip_rx_data* request, int* response_c
     const bool is_final = status_line.code >= 200;
     if (is_final && status_line.code >= PJSIP_SC_MULTIPLE_CHOICES) {
         fail_after_accept(status_line.code);
-        finish(false);
+        finish(ReferOutcome::kFailed);
         return;
     }
     if (inbound_sub_ != nullptr &&
         !notify_inbound(is_final ? PJSIP_EVSUB_STATE_TERMINATED : PJSIP_EVSUB_STATE_ACTIVE, status_line.code)) {
         fail_after_accept(PJSIP_SC_SERVICE_UNAVAILABLE);
-        finish(false);
+        finish(ReferOutcome::kFailed);
         return;
     }
     if (is_final) {
-        finish(true);
+        finish(ReferOutcome::kSucceeded);
     }
 }
 

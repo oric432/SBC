@@ -60,8 +60,11 @@ struct ReferReceived {
     Leg leg_ = Leg::kCaller;
 };
 
-struct ReferSucceeded {};
-struct ReferFailed {};
+enum class ReferOutcome : std::uint8_t { kSucceeded, kFailed };
+
+struct ReferCompleted {
+    ReferOutcome outcome_;
+};
 
 struct CallError {};
 

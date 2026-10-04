@@ -104,8 +104,9 @@ public:
         calls_.push_back(std::string("refer_started:") + (leg == Leg::kCaller ? "caller" : "callee"));
         return refer_start_result_;
     }
-    void refer_completed(bool succeeded) override {
-        calls_.push_back(std::string("refer_completed:") + (succeeded ? "success" : "failure"));
+    void refer_completed(ReferOutcome outcome) override {
+        calls_.push_back(
+            std::string("refer_completed:") + (outcome == ReferOutcome::kSucceeded ? "success" : "failure"));
     }
     void refer_busy(Leg leg) override {
         calls_.push_back(std::string("refer_busy:") + (leg == Leg::kCaller ? "caller" : "callee"));

@@ -31,8 +31,11 @@ bool DialogActions::refer_started(Leg leg) {
     return refer_.start(leg);
 }
 
-void DialogActions::refer_completed(bool succeeded) {
-    Log::call()->info("[{}] REFER {}", session_.call_id(), succeeded ? "succeeded" : "failed");
+void DialogActions::refer_completed(ReferOutcome outcome) {
+    Log::call()->info(
+        "[{}] REFER {}",
+        session_.call_id(),
+        outcome == ReferOutcome::kSucceeded ? "succeeded" : "failed");
 }
 
 void DialogActions::refer_busy(Leg leg) {
