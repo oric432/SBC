@@ -277,22 +277,81 @@ bool is_dtmf_fmtp(const pjmedia_sdp_attr* attr, const pj_str_t& dtmf_pt) {
 
 } // namespace
 
-bool has_inactive_direction(const pjmedia_sdp_session* sdp) {
+namespace {
+
+Sdp::MediaDirection media_direction(std::span<pjmedia_sdp_attr* const> attrs) {
+    if (pjmedia_sdp_attr_find2(static_cast<unsigned>(attrs.size()), attrs.data(), "inactive", nullptr) != nullptr) {
+        return Sdp::MediaDirection::kInactive;
+    }
+
+    if (pjmedia_sdp_attr_find2(static_cast<unsigned>(attrs.size()), attrs.data(), "sendonly", nullptr) != nullptr) {
+        return Sdp::MediaDirection::kSendOnly;
+    }
+
+    if (pjmedia_sdp_attr_find2(static_cast<unsigned>(attrs.size()), attrs.data(), "recvonly", nullptr) != nullptr) {
+        return Sdp::MediaDirection::kRecvOnly;
+    }
+
+    return Sdp::MediaDirection::kSendRecv;
+}
+
+const char* direction_name(Sdp::MediaDirection direction) {
+    switch (direction) {
+    case Sdp::MediaDirection::kSendRecv: return "sendrecv";
+    case Sdp::MediaDirection::kSendOnly: return "sendonly";
+    case Sdp::MediaDirection::kRecvOnly: return "recvonly";
+    case Sdp::MediaDirection::kInactive: return "inactive";
+    }
+    return "inactive";
+}
+
+} // namespace
+
+MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp) {
+    if (sdp == nullptr) {
+        return MediaDirection::kSendRecv;
+    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
     const pjmedia_sdp_media* media = find_active_audio_media(const_cast<pjmedia_sdp_session*>(sdp));
     if (media == nullptr) {
+        return MediaDirection::kSendRecv;
+    }
+    const bool has_media_direction = pjmedia_sdp_media_find_attr2(media, "inactive", nullptr) != nullptr ||
+                                     pjmedia_sdp_media_find_attr2(media, "sendonly", nullptr) != nullptr ||
+                                     pjmedia_sdp_media_find_attr2(media, "recvonly", nullptr) != nullptr ||
+                                     pjmedia_sdp_media_find_attr2(media, "sendrecv", nullptr) != nullptr;
+
+    return has_media_direction ? media_direction(std::span<pjmedia_sdp_attr* const>{&media->attr[0], media->attr_count})
+                               : media_direction(std::span<pjmedia_sdp_attr* const>{&sdp->attr[0], sdp->attr_count});
+}
+
+MediaDirection answer_direction(MediaDirection offer_direction) {
+    switch (offer_direction) {
+    case MediaDirection::kSendRecv: return MediaDirection::kSendRecv;
+    case MediaDirection::kSendOnly: return MediaDirection::kRecvOnly;
+    case MediaDirection::kRecvOnly: return MediaDirection::kSendOnly;
+    case MediaDirection::kInactive: return MediaDirection::kInactive;
+    }
+
+    return MediaDirection::kInactive;
+}
+
+bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction) {
+    if (pool == nullptr || sdp == nullptr) {
         return false;
     }
-    if (pjmedia_sdp_media_find_attr2(media, "inactive", nullptr) != nullptr ||
-        pjmedia_sdp_media_find_attr2(media, "sendonly", nullptr) != nullptr) {
-        return true;
+
+    pjmedia_sdp_media* media = find_active_audio_media(sdp);
+    if (media == nullptr) {
+        return false;
     }
-    // Media line declares no direction attribute of its own — RFC 3264 S5.1
-    // has it inherit the session-level one, if any.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
-    return pjmedia_sdp_attr_find2(sdp->attr_count, sdp->attr, "inactive", nullptr) != nullptr ||
-           // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
-           pjmedia_sdp_attr_find2(sdp->attr_count, sdp->attr, "sendonly", nullptr) != nullptr;
+
+    for (const char* name : {"sendrecv", "sendonly", "recvonly", "inactive"}) {
+        (void)pjmedia_sdp_media_remove_all_attr(media, name);
+    }
+
+    return pjmedia_sdp_media_add_attr(media, pjmedia_sdp_attr_create(pool, direction_name(direction), nullptr)) ==
+           PJ_SUCCESS;
 }
 
 std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp) {

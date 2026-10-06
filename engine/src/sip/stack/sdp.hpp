@@ -19,6 +19,8 @@ struct RtpEndpoint {
     uint16_t port_ = 0;
 };
 
+enum class MediaDirection : std::uint8_t { kSendRecv, kSendOnly, kRecvOnly, kInactive };
+
 // A negotiated audio codec, identified by its RTP payload type. clock_rate_ is
 // 0 when the payload type is one of RFC 3551's static types carried without an
 // explicit a=rtpmap line (its rate is implied by the static type, not restated
@@ -60,14 +62,16 @@ void rewrite_connection_and_port(
 // structurally validated/rewritten but never bridged.
 RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 
-// Whether the first non-declined audio media line signals hold via a
-// direction attribute (RFC 3264 S5.1's "a=inactive"/"a=sendonly"), checked at
-// the media level, falling back to the session level if the media line
-// declares no direction attribute of its own. False if there is no active
-// audio line at all. A "0.0.0.0" connection address is the other historical
-// hold signal, but that's already visible on extract_rtp_endpoint()'s ip_ —
-// no separate helper needed for it.
-bool has_inactive_direction(const pjmedia_sdp_session* sdp);
+// RFC 3264 direction of the first non-declined audio line. Media-level
+// attributes override session-level attributes; the default is sendrecv.
+MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp);
+
+// RFC 3264 answer direction corresponding to an offer direction.
+MediaDirection answer_direction(MediaDirection offer_direction);
+
+// Overrides the first non-declined audio line's direction, creating a
+// media-level attribute so it overrides any inherited session-level direction.
+bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction);
 
 // The audio codec carried on an SDP: the first payload type of its first
 // non-declined audio media line. Returns nullopt if there is no active audio

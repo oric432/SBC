@@ -62,6 +62,10 @@ struct MediaBridge::Impl {
 
     std::optional<boost::asio::ip::udp::endpoint> dest_a_;
     std::optional<boost::asio::ip::udp::endpoint> dest_b_;
+    bool leg_a_can_send_ = true;
+    bool leg_a_can_receive_ = true;
+    bool leg_b_can_send_ = true;
+    bool leg_b_can_receive_ = true;
 
     MediaBridgeErrorHandler error_handler_;
     std::atomic<std::chrono::steady_clock::time_point> last_packet_time_;
@@ -187,6 +191,12 @@ struct MediaBridge::Impl {
         const RtpPacketView& pkt) {
         const Impl& impl = *self->impl_;
         const bool from_a = (src_leg == RelayLeg::kLegA);
+        const bool flow_allowed =
+            from_a ? impl.leg_a_can_send_ && impl.leg_b_can_receive_ : impl.leg_b_can_send_ && impl.leg_a_can_receive_;
+        if (!flow_allowed) {
+            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::process_packet);
+            return;
+        }
         const auto dtmf = relay_dtmf_pt(
             pkt,
             from_a ? impl.leg_a_dtmf_pt_ : impl.leg_b_dtmf_pt_,
@@ -340,6 +350,19 @@ void MediaBridge::retarget_remote_leg_b(std::string addr, unsigned short port) {
     boost::asio::post(impl_->executor_, [self = shared_from_this(), addr = std::move(addr), port] {
         self->impl_->dest_b_ = boost::asio::ip::udp::endpoint(boost::asio::ip::make_address(addr), port);
         Impl::arm_pending_legs(self);
+    });
+}
+
+void MediaBridge::set_leg_media_flow(RelayLeg leg, bool can_send, bool can_receive) {
+    boost::asio::post(impl_->executor_, [self = shared_from_this(), leg, can_send, can_receive] {
+        if (leg == RelayLeg::kLegA) {
+            self->impl_->leg_a_can_send_ = can_send;
+            self->impl_->leg_a_can_receive_ = can_receive;
+        }
+        else {
+            self->impl_->leg_b_can_send_ = can_send;
+            self->impl_->leg_b_can_receive_ = can_receive;
+        }
     });
 }
 

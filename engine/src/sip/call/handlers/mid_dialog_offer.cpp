@@ -1,13 +1,27 @@
 #include "mid_dialog_offer.hpp"
 
 #include <array>
+#include <expected>
+#include <string_view>
 
 #include "core/utils/log.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/sm/events.hpp"
+#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
 namespace {
+
+std::string_view direction_name(Sdp::MediaDirection direction) {
+    switch (direction) {
+    case Sdp::MediaDirection::kSendRecv: return "sendrecv";
+    case Sdp::MediaDirection::kSendOnly: return "sendonly";
+    case Sdp::MediaDirection::kRecvOnly: return "recvonly";
+    case Sdp::MediaDirection::kInactive: return "inactive";
+    }
+    return "unknown";
+}
 
 bool reconfigure_media_bridge(
     CallSession& session,
@@ -66,6 +80,16 @@ void commit_negotiated_media(CallSession& session, Leg leg, const NegotiatedOffe
     const bool codec_changed = caller_codec_changed(leg, current.codec_, negotiated.codec_);
     current.codec_ = negotiated.codec_;
     current.dtmf_pt_ = negotiated.dtmf_pt_;
+    const bool remote_can_send = negotiated.offer_direction_ == Sdp::MediaDirection::kSendRecv ||
+                                 negotiated.offer_direction_ == Sdp::MediaDirection::kSendOnly;
+    const bool remote_can_receive = negotiated.offer_direction_ == Sdp::MediaDirection::kSendRecv ||
+                                    negotiated.offer_direction_ == Sdp::MediaDirection::kRecvOnly;
+
+    session.media_bridge()->set_leg_media_flow(
+        leg == Leg::kCaller ? RelayLeg::kLegA : RelayLeg::kLegB,
+        remote_can_send,
+        remote_can_receive);
+
     if (codec_changed) {
         session.report_call_updated();
     }
@@ -82,17 +106,21 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
 
     pjmedia_sdp_session* offer_sdp = Sdp::parse(session.pool(), offer);
     const auto offer_endpoint = Sdp::extract_rtp_endpoint(offer_sdp);
-    if (offer_endpoint.ip_.empty() || offer_endpoint.ip_ == "0.0.0.0" || Sdp::has_inactive_direction(offer_sdp)) {
-        Log::call()->debug("[{}] mid-dialog offer signaling hold is not implemented", session.call_id());
+    if (offer_endpoint.ip_.empty()) {
         return std::unexpected(ExchangeOutcome::kRolledBack);
     }
+    const auto offer_direction =
+        offer_endpoint.ip_ == "0.0.0.0" ? Sdp::MediaDirection::kInactive : Sdp::extract_audio_direction(offer_sdp);
+    const auto answer_direction = Sdp::answer_direction(offer_direction);
 
     const auto chosen =
         Sdp::pick_answer_codec(session.leg(other(leg)).codec_, Sdp::extract_all_audio_codecs(offer_sdp));
+
     if (!chosen) {
         Log::call()->warn("[{}] mid-dialog offer from {} offers no supported codec", session.call_id(), leg_name);
         return std::unexpected(ExchangeOutcome::kRolledBack);
     }
+
     const auto dtmf_pt = Sdp::extract_telephone_event_pt(offer_sdp);
 
     const CallSession::CallLeg& current = session.leg(leg);
@@ -103,8 +131,13 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
 
     const std::array<Protocols::SupportedCodec, 1> allowed{*chosen};
     Sdp::restrict_audio_codecs(session.pool(), offer_sdp, allowed);
+    if (!Sdp::set_audio_direction(session.pool(), offer_sdp, answer_direction)) {
+        return std::unexpected(ExchangeOutcome::kFailed);
+    }
+
     const auto relay_port =
         leg == Leg::kCaller ? session.media_bridge()->leg_a_port() : session.media_bridge()->leg_b_port();
+
     if (!relay_port) {
         Log::call()->error(
             "[{}] mid-dialog offer leg has no relay port: {}",
@@ -112,13 +145,16 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
             relay_port.error().message());
         return std::unexpected(ExchangeOutcome::kFailed);
     }
+
     Sdp::rewrite_connection_and_port(session.pool(), offer_sdp, session.ctx()->config_.local_ip_, *relay_port);
 
-    if (leg == Leg::kCaller) {
-        session.media_bridge()->retarget_remote_leg_a(offer_endpoint.ip_, offer_endpoint.port_);
-    }
-    else {
-        session.media_bridge()->retarget_remote_leg_b(offer_endpoint.ip_, offer_endpoint.port_);
+    if (offer_endpoint.ip_ != "0.0.0.0") {
+        if (leg == Leg::kCaller) {
+            session.media_bridge()->retarget_remote_leg_a(offer_endpoint.ip_, offer_endpoint.port_);
+        }
+        else {
+            session.media_bridge()->retarget_remote_leg_b(offer_endpoint.ip_, offer_endpoint.port_);
+        }
     }
 
     if (codec_or_dtmf_changed) {
@@ -131,12 +167,19 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
             leg_name,
             chosen->name_);
     }
-    Log::call()->debug("[{}] relay retargeted to {}:{}", session.call_id(), offer_endpoint.ip_, offer_endpoint.port_);
+
+    Log::call()->debug(
+        "[{}] mid-dialog media from {}: offer direction {}, answer direction {}",
+        session.call_id(),
+        leg_name,
+        direction_name(offer_direction),
+        direction_name(answer_direction));
 
     return NegotiatedOffer{
         .answer_sdp_ = offer_sdp,
         .codec_ = Sdp::extract_active_audio_codec(offer_sdp),
         .dtmf_pt_ = dtmf_pt,
+        .offer_direction_ = offer_direction,
     };
 }
 

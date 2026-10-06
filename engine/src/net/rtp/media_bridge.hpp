@@ -78,6 +78,9 @@ public:
     void retarget_remote_leg_a(std::string addr, unsigned short port);
     void retarget_remote_leg_b(std::string addr, unsigned short port);
 
+    // Applies a committed remote SDP direction to one relay leg.
+    void set_leg_media_flow(RelayLeg leg, bool can_send, bool can_receive);
+
     // Empty until the corresponding set_remote_leg_* call — i.e. before the
     // peer's SDP has been parsed.
     [[nodiscard]] std::optional<boost::asio::ip::udp::endpoint> remote_leg_a() const;

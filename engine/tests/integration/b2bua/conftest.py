@@ -134,10 +134,13 @@ def render_scenario(_jinja_env: Environment, tmp_path: Path) -> Callable[..., Pa
 
 
 def _run_sipp(sipp_binary: Path, scenario: Path, target: str | None, local_ip: str, local_port: int, media_port: int):
+    message_log = scenario.with_suffix(".messages.log")
+    error_log = scenario.with_suffix(".errors.log")
     args = [str(sipp_binary), "-sf", str(scenario)]
     if target is not None:
         args.append(target)
     args += ["-i", local_ip, "-p", str(local_port), "-mp", str(media_port), "-m", "1", "-nostdin"]
+    args += ["-trace_msg", "-message_file", str(message_log), "-trace_err", "-error_file", str(error_log)]
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
@@ -175,7 +178,29 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
         )
         try:
             caller_output, _ = caller.communicate(timeout=60)
-            callee_output, _ = callee.communicate(timeout=60)
+            if caller.returncode != 0:
+                caller_errors = caller_scenario.with_suffix(".errors.log")
+                caller_messages = caller_scenario.with_suffix(".messages.log")
+                pytest.fail(
+                    f"caller sipp failed ({caller.returncode}):\n{caller_output}"
+                    f"\ncaller errors: {caller_errors.read_text() if caller_errors.exists() else '(missing)'}"
+                    f"\ncaller messages: {caller_messages.read_text() if caller_messages.exists() else '(missing)'}"
+                )
+            try:
+                callee_output, _ = callee.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                _stop(callee)
+                callee_output, _ = callee.communicate()
+                callee_messages = callee_scenario.with_suffix(".messages.log")
+                callee_errors = callee_scenario.with_suffix(".errors.log")
+                pytest.fail(
+                    "callee sipp timed out waiting for the scenario to finish;"
+                    f"\nengine log tail:\n{sbc_engine.log_tail()}"
+                    f"\ncaller output:\n{caller_output}"
+                    f"\ncallee output:\n{callee_output}"
+                    f"\ncallee messages: {callee_messages.read_text() if callee_messages.exists() else '(missing)'}"
+                    f"\ncallee errors: {callee_errors.read_text() if callee_errors.exists() else '(missing)'}"
+                )
         finally:
             _stop(caller)
             _stop(callee)

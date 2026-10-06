@@ -142,6 +142,85 @@ TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
     REQUIRE(recv_ep.port() == leg_b_port.value());
 }
 
+TEST_CASE("MediaBridge applies sendonly hold and resumes sendrecv media", "[MediaBridge][hold]") {
+    io_context ioc;
+    auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+    const auto leg_a_port = bridge->bind_leg_a();
+    const auto leg_b_port = bridge->bind_leg_b();
+    REQUIRE(leg_a_port.has_value());
+    REQUIRE(leg_b_port.has_value());
+
+    udp::socket caller_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    udp::socket callee_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+    const auto caller_ep = caller_sock.local_endpoint();
+    const auto callee_ep = callee_sock.local_endpoint();
+    bridge->set_remote_leg_a("127.0.0.1", caller_ep.port());
+    bridge->set_remote_leg_b("127.0.0.1", callee_ep.port());
+    bridge->set_leg_media_flow(RelayLeg::kLegA, true, false);
+    bridge->start_bridge_loop();
+
+    const std::vector<std::uint8_t>
+        caller_packet{kRtpVersion2FirstByte, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 'h', 'o', 'l', 'd'};
+    const std::vector<std::uint8_t>
+        callee_packet{kRtpVersion2FirstByte, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 'r', 't', 'p'};
+
+    std::vector<std::uint8_t> callee_rx(kReceiveBufferSize);
+    std::vector<std::uint8_t> caller_rx(kReceiveBufferSize);
+    udp::endpoint source;
+    bool caller_to_callee_received = false;
+    bool held_phone_received = false;
+    callee_sock.async_receive_from(
+        buffer(callee_rx),
+        source,
+        [&](const boost::system::error_code& err, std::size_t size) {
+            REQUIRE_FALSE(err);
+            callee_rx.resize(size);
+            caller_to_callee_received = true;
+        });
+    caller_sock.async_receive_from(
+        buffer(caller_rx),
+        source,
+        [&](const boost::system::error_code& err, std::size_t size) {
+            if (!err) {
+                caller_rx.resize(size);
+                held_phone_received = true;
+            }
+        });
+
+    caller_sock.send_to(buffer(caller_packet), udp::endpoint(make_address("127.0.0.1"), leg_a_port.value()));
+    callee_sock.send_to(buffer(callee_packet), udp::endpoint(make_address("127.0.0.1"), leg_b_port.value()));
+    ioc.run_for(kRelayRunWindow);
+
+    CHECK(caller_to_callee_received);
+    CHECK_FALSE(held_phone_received);
+    CHECK(callee_rx == caller_packet);
+
+    CHECK_NOTHROW(caller_sock.cancel());
+    ioc.restart();
+    ioc.poll();
+
+    bridge->set_leg_media_flow(RelayLeg::kLegA, true, true);
+    ioc.restart();
+
+    bool resumed_packet_received = false;
+    caller_sock.async_receive_from(
+        buffer(caller_rx),
+        source,
+        [&](const boost::system::error_code& err, std::size_t size) {
+            REQUIRE_FALSE(err);
+            caller_rx.resize(size);
+            resumed_packet_received = true;
+        });
+    callee_sock.send_to(buffer(callee_packet), udp::endpoint(make_address("127.0.0.1"), leg_b_port.value()));
+    ioc.run_for(kRelayRunWindow);
+
+    CHECK(resumed_packet_received);
+    CHECK(caller_rx == callee_packet);
+    bridge->close();
+    ioc.restart();
+    ioc.run_for(kRelayRunWindow);
+}
+
 TEST_CASE("MediaBridge retarget_remote_leg_a/b update the live relay target", "[MediaBridge]") {
     io_context ioc;
 
