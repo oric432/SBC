@@ -145,15 +145,19 @@ TEST_CASE("MediaBridge loopback relay", "[MediaBridge]") {
 TEST_CASE("MediaBridge applies sendonly hold and resumes sendrecv media", "[MediaBridge][hold]") {
     io_context ioc;
     auto bridge = std::make_shared<MediaBridge>(ioc.get_executor());
+
     const auto leg_a_port = bridge->bind_leg_a();
     const auto leg_b_port = bridge->bind_leg_b();
+
     REQUIRE(leg_a_port.has_value());
     REQUIRE(leg_b_port.has_value());
 
     udp::socket caller_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
     udp::socket callee_sock(ioc, udp::endpoint(make_address("127.0.0.1"), 0));
+
     const auto caller_ep = caller_sock.local_endpoint();
     const auto callee_ep = callee_sock.local_endpoint();
+
     bridge->set_remote_leg_a("127.0.0.1", caller_ep.port());
     bridge->set_remote_leg_b("127.0.0.1", callee_ep.port());
     bridge->set_leg_media_flow(RelayLeg::kLegA, true, false);
@@ -166,21 +170,29 @@ TEST_CASE("MediaBridge applies sendonly hold and resumes sendrecv media", "[Medi
 
     std::vector<std::uint8_t> callee_rx(kReceiveBufferSize);
     std::vector<std::uint8_t> caller_rx(kReceiveBufferSize);
-    udp::endpoint source;
+
+    udp::endpoint caller_source;
+    udp::endpoint callee_source;
+
     bool caller_to_callee_received = false;
     bool held_phone_received = false;
+
+    // Means the caller send packets to calle
     callee_sock.async_receive_from(
         buffer(callee_rx),
-        source,
+        callee_source,
         [&](const boost::system::error_code& err, std::size_t size) {
             REQUIRE_FALSE(err);
             callee_rx.resize(size);
             caller_to_callee_received = true;
         });
+
+    // Expected behavior is that held_phone_received = false
     caller_sock.async_receive_from(
         buffer(caller_rx),
-        source,
+        caller_source,
         [&](const boost::system::error_code& err, std::size_t size) {
+            // Why no REQUIRE_FALSE(err) here?
             if (!err) {
                 caller_rx.resize(size);
                 held_phone_received = true;
@@ -203,14 +215,16 @@ TEST_CASE("MediaBridge applies sendonly hold and resumes sendrecv media", "[Medi
     ioc.restart();
 
     bool resumed_packet_received = false;
+
     caller_sock.async_receive_from(
         buffer(caller_rx),
-        source,
+        caller_source,
         [&](const boost::system::error_code& err, std::size_t size) {
             REQUIRE_FALSE(err);
             caller_rx.resize(size);
             resumed_packet_received = true;
         });
+
     callee_sock.send_to(buffer(callee_packet), udp::endpoint(make_address("127.0.0.1"), leg_b_port.value()));
     ioc.run_for(kRelayRunWindow);
 
