@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "core/utils/log.hpp"
+#include "net/rtp/media_bridge.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/sm/events.hpp"
 #include "sip/stack/sdp.hpp"
@@ -78,17 +79,18 @@ bool caller_codec_changed(
 void commit_negotiated_media(CallSession& session, Leg leg, const NegotiatedOffer& negotiated) {
     CallSession::CallLeg& current = session.leg(leg);
     const bool codec_changed = caller_codec_changed(leg, current.codec_, negotiated.codec_);
+
     current.codec_ = negotiated.codec_;
     current.dtmf_pt_ = negotiated.dtmf_pt_;
-    const bool remote_can_send = negotiated.offer_direction_ == Sdp::MediaDirection::kSendRecv ||
-                                 negotiated.offer_direction_ == Sdp::MediaDirection::kSendOnly;
-    const bool remote_can_receive = negotiated.offer_direction_ == Sdp::MediaDirection::kSendRecv ||
-                                    negotiated.offer_direction_ == Sdp::MediaDirection::kRecvOnly;
 
-    session.media_bridge()->set_leg_media_flow(
-        leg == Leg::kCaller ? RelayLeg::kLegA : RelayLeg::kLegB,
-        remote_can_send,
-        remote_can_receive);
+    const LegFlow leg_flow{
+        .can_send_ = negotiated.offer_direction_ == Sdp::MediaDirection::kSendRecv ||
+                     negotiated.offer_direction_ == Sdp::MediaDirection::kSendOnly,
+        .can_receive_ = negotiated.offer_direction_ == Sdp::MediaDirection::kSendRecv ||
+                        negotiated.offer_direction_ == Sdp::MediaDirection::kRecvOnly};
+
+    session.media_bridge()->set_leg_media_flow(leg == Leg::kCaller ? RelayLeg::kLegA : RelayLeg::kLegB, leg_flow);
+    session.record_media_direction(leg, negotiated.offer_direction_);
 
     if (codec_changed) {
         session.report_call_updated();
@@ -109,6 +111,7 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
     if (offer_endpoint.ip_.empty()) {
         return std::unexpected(ExchangeOutcome::kRolledBack);
     }
+
     const auto offer_direction =
         offer_endpoint.ip_ == "0.0.0.0" ? Sdp::MediaDirection::kInactive : Sdp::extract_audio_direction(offer_sdp);
     const auto answer_direction = Sdp::answer_direction(offer_direction);

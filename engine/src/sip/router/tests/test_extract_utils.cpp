@@ -352,4 +352,49 @@ TEST_CASE("CallSession releases a leg's mod_data slot on destruction", "[call_se
     CHECK(callee_inv.mod_data[0] == nullptr);
 }
 
+TEST_CASE("CallSession pauses RTP inactivity during hold and restarts it on resume", "[call_session][hold]") {
+    boost::asio::io_context ioc;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    RoutesStore routes;
+    UsersStore users;
+    BindingStore bindings;
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+
+    auto* session = manager.create_session(
+        "hold-inactivity",
+        &context,
+        EngineStores{.routes_ = &routes, .users_ = &users, .bindings_ = &bindings},
+        ioc.get_executor(),
+        &request);
+
+    using namespace std::chrono_literals;
+    constexpr auto timeout = 60s;
+    const auto stale_time = session->media_bridge()->last_packet_time() + 61s;
+
+    CHECK_FALSE(session->media_is_held());
+    CHECK(session->rtp_inactivity_expired(stale_time, timeout));
+    session->record_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
+    CHECK(session->media_is_held());
+    CHECK_FALSE(session->rtp_inactivity_expired(stale_time, timeout));
+    session->record_media_direction(Leg::kCallee, Sdp::MediaDirection::kInactive);
+    CHECK(session->media_is_held());
+    CHECK_FALSE(session->rtp_inactivity_expired(stale_time, timeout));
+
+    session->record_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
+    CHECK(session->media_is_held());
+    const auto before_resume = session->media_bridge()->last_packet_time();
+    session->record_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendRecv);
+    CHECK_FALSE(session->media_is_held());
+    CHECK(session->media_bridge()->last_packet_time() >= before_resume);
+    const auto resume_time = session->media_bridge()->last_packet_time();
+    CHECK_FALSE(session->rtp_inactivity_expired(resume_time + 59s, timeout));
+    CHECK(session->rtp_inactivity_expired(resume_time + timeout, timeout));
+
+    manager.schedule_remove("hold-inactivity");
+    manager.purge_scheduled();
+}
+
 } // namespace SbcEngine

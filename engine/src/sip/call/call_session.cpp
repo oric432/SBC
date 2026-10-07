@@ -151,4 +151,26 @@ Leg CallSession::leg_for(const pjsip_inv_session* inv) const {
     return inv == leg(Leg::kCallee).inv_ ? Leg::kCallee : Leg::kCaller;
 }
 
+void CallSession::record_media_direction(Leg which, Sdp::MediaDirection direction) {
+    const bool was_held = media_is_held();
+    leg(which).media_direction_ = direction;
+    if (was_held && !media_is_held()) {
+        media_bridge_->reset_inactivity_baseline();
+    }
+}
+
+bool CallSession::media_is_held() const {
+    const auto is_hold_direction = [](Sdp::MediaDirection direction) {
+        return direction == Sdp::MediaDirection::kSendOnly || direction == Sdp::MediaDirection::kInactive;
+    };
+    return is_hold_direction(leg(Leg::kCaller).media_direction_) ||
+           is_hold_direction(leg(Leg::kCallee).media_direction_);
+}
+
+bool CallSession::rtp_inactivity_expired(
+    std::chrono::steady_clock::time_point now,
+    std::chrono::steady_clock::duration timeout) const {
+    return !media_is_held() && now - media_bridge_->last_packet_time() >= timeout;
+}
+
 } // namespace SbcEngine

@@ -43,6 +43,11 @@ struct LegCodec {
     std::optional<std::uint8_t> dtmf_pt_;
 };
 
+struct LegFlow {
+    bool can_send_ = true;
+    bool can_receive_ = true;
+};
+
 class MediaBridge : public std::enable_shared_from_this<MediaBridge> {
 public:
     explicit MediaBridge(const boost::asio::any_io_executor& executor);
@@ -79,7 +84,7 @@ public:
     void retarget_remote_leg_b(std::string addr, unsigned short port);
 
     // Applies a committed remote SDP direction to one relay leg.
-    void set_leg_media_flow(RelayLeg leg, bool can_send, bool can_receive);
+    void set_leg_media_flow(RelayLeg leg, LegFlow flow);
 
     // Empty until the corresponding set_remote_leg_* call — i.e. before the
     // peer's SDP has been parsed.
@@ -94,6 +99,9 @@ public:
     // The timestamp is written by the RTP executor and may safely be read by
     // the SIP thread. It is the default time point until the relay is started.
     [[nodiscard]] std::chrono::steady_clock::time_point last_packet_time() const;
+
+    // Restarts the inactivity interval, e.g. when media resumes after hold.
+    void reset_inactivity_baseline();
 
     // Opens codec/resampler resources synchronously (only when the codec names
     // differ, so a failure precedes any SIP response), then posts the swap onto

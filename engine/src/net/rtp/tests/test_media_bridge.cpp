@@ -160,7 +160,7 @@ TEST_CASE("MediaBridge applies sendonly hold and resumes sendrecv media", "[Medi
 
     bridge->set_remote_leg_a("127.0.0.1", caller_ep.port());
     bridge->set_remote_leg_b("127.0.0.1", callee_ep.port());
-    bridge->set_leg_media_flow(RelayLeg::kLegA, true, false);
+    bridge->set_leg_media_flow(RelayLeg::kLegA, LegFlow{.can_send_ = true, .can_receive_ = false});
     bridge->start_bridge_loop();
 
     const std::vector<std::uint8_t>
@@ -177,7 +177,6 @@ TEST_CASE("MediaBridge applies sendonly hold and resumes sendrecv media", "[Medi
     bool caller_to_callee_received = false;
     bool held_phone_received = false;
 
-    // Means the caller send packets to calle
     callee_sock.async_receive_from(
         buffer(callee_rx),
         callee_source,
@@ -192,7 +191,6 @@ TEST_CASE("MediaBridge applies sendonly hold and resumes sendrecv media", "[Medi
         buffer(caller_rx),
         caller_source,
         [&](const boost::system::error_code& err, std::size_t size) {
-            // Why no REQUIRE_FALSE(err) here?
             if (!err) {
                 caller_rx.resize(size);
                 held_phone_received = true;
@@ -211,7 +209,13 @@ TEST_CASE("MediaBridge applies sendonly hold and resumes sendrecv media", "[Medi
     ioc.restart();
     ioc.poll();
 
-    bridge->set_leg_media_flow(RelayLeg::kLegA, true, true);
+    const auto last_relayed_packet_time = bridge->last_packet_time();
+    ioc.restart();
+    callee_sock.send_to(buffer(callee_packet), udp::endpoint(make_address("127.0.0.1"), leg_b_port.value()));
+    ioc.run_for(kRelayRunWindow);
+    CHECK(bridge->last_packet_time() == last_relayed_packet_time);
+
+    bridge->set_leg_media_flow(RelayLeg::kLegA, LegFlow{});
     ioc.restart();
 
     bool resumed_packet_received = false;
