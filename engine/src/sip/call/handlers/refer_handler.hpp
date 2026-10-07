@@ -12,6 +12,10 @@ namespace SbcEngine {
 
 class CallSession;
 
+// In-dialog REFER handling for one call: accepts the request on the originating
+// leg, translates any Replaces dialog identity, forwards a new REFER on the
+// opposite leg, and relays message/sipfrag NOTIFY status back to the originator.
+// PJSIP owns both subscriptions; this handler manages their callbacks and termination.
 class ReferHandler {
 public:
     explicit ReferHandler(CallSession& session)
@@ -51,7 +55,9 @@ private:
 
     CallSession& session_;
     pjsip_rx_data* pending_request_ = nullptr;
+    // UAS subscription on the REFER-originating leg; sends relayed transfer status back to that peer.
     pjsip_evsub* inbound_sub_ = nullptr;
+    // UAC subscription on the opposite leg; receives the transfer status relayed through inbound_sub_.
     pjsip_evsub* outbound_sub_ = nullptr;
     bool final_result_ = false;
 };
