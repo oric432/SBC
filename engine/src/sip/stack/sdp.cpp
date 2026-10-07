@@ -347,7 +347,7 @@ bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirecti
     }
 
     for (const char* name : {"sendrecv", "sendonly", "recvonly", "inactive"}) {
-        (void) pjmedia_sdp_media_remove_all_attr(media, name);
+        (void)pjmedia_sdp_media_remove_all_attr(media, name);
     }
 
     return pjmedia_sdp_media_add_attr(media, pjmedia_sdp_attr_create(pool, direction_name(direction), nullptr)) ==
