@@ -77,7 +77,7 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
         return nullptr;
     }
 
-    // Allows it to observe in-dialog REFER transactions
+    // Dialog usage routes in-dialog REFER transaction events to our on_tsx_state callback.
     status = pjsip_dlg_add_usage(dlg, ctx_->module_, nullptr);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("pjsip_dlg_add_usage failed ({})", status);
