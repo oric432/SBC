@@ -160,11 +160,17 @@ void CallSession::record_media_direction(Leg which, Sdp::MediaDirection directio
 }
 
 bool CallSession::media_is_held() const {
-    const auto is_hold_direction = [](Sdp::MediaDirection direction) {
-        return direction == Sdp::MediaDirection::kSendOnly || direction == Sdp::MediaDirection::kInactive;
-    };
-    return is_hold_direction(leg(Leg::kCaller).media_direction_) ||
-           is_hold_direction(leg(Leg::kCallee).media_direction_);
+    const auto caller_direction = leg(Leg::kCaller).media_direction_;
+    const auto callee_direction = leg(Leg::kCallee).media_direction_;
+
+    const bool caller_requests_hold =
+        caller_direction == Sdp::MediaDirection::kSendOnly || caller_direction == Sdp::MediaDirection::kInactive;
+    const bool callee_requests_hold =
+        callee_direction == Sdp::MediaDirection::kSendOnly || callee_direction == Sdp::MediaDirection::kInactive;
+    const bool neither_leg_sends =
+        caller_direction == Sdp::MediaDirection::kRecvOnly && callee_direction == Sdp::MediaDirection::kRecvOnly;
+
+    return caller_requests_hold || callee_requests_hold || neither_leg_sends;
 }
 
 bool CallSession::rtp_inactivity_expired(
