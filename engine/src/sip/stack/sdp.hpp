@@ -4,6 +4,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <pjlib.h>
@@ -20,6 +21,8 @@ struct RtpEndpoint {
 };
 
 enum class MediaDirection : std::uint8_t { kSendRecv, kSendOnly, kRecvOnly, kInactive };
+
+const char* direction_name(MediaDirection direction);
 
 // A negotiated audio codec, identified by its RTP payload type. clock_rate_ is
 // 0 when the payload type is one of RFC 3551's static types carried without an

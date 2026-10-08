@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <cstring>
+#include <string>
 #include <string_view>
 
 #include "core/utils/log.hpp"
@@ -292,16 +293,6 @@ std::optional<Sdp::MediaDirection> find_media_direction(std::span<pjmedia_sdp_at
     return std::nullopt;
 }
 
-const char* direction_name(Sdp::MediaDirection direction) {
-    switch (direction) {
-    case Sdp::MediaDirection::kSendRecv: return "sendrecv";
-    case Sdp::MediaDirection::kSendOnly: return "sendonly";
-    case Sdp::MediaDirection::kRecvOnly: return "recvonly";
-    case Sdp::MediaDirection::kInactive: return "inactive";
-    }
-    return "inactive";
-}
-
 } // namespace
 
 MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp) {
@@ -319,7 +310,7 @@ MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp) {
     if (media_direction) {
         return *media_direction;
     }
-    
+
     return find_media_direction({sdp->attr, sdp->attr_count}).value_or(MediaDirection::kSendRecv);
 }
 
@@ -332,6 +323,16 @@ MediaDirection answer_direction(MediaDirection offer_direction) {
     }
 
     return MediaDirection::kInactive;
+}
+
+const char* direction_name(MediaDirection direction) {
+    switch (direction) {
+    case MediaDirection::kSendRecv: return "sendrecv";
+    case MediaDirection::kSendOnly: return "sendonly";
+    case MediaDirection::kRecvOnly: return "recvonly";
+    case MediaDirection::kInactive: return "inactive";
+    }
+    return "unknown";
 }
 
 bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction) {

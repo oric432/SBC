@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <pjlib.h>
@@ -184,6 +185,14 @@ TEST_CASE("answer direction follows RFC 3264", "[sdp]") {
     CHECK(Sdp::answer_direction(Sdp::MediaDirection::kSendOnly) == Sdp::MediaDirection::kRecvOnly);
     CHECK(Sdp::answer_direction(Sdp::MediaDirection::kRecvOnly) == Sdp::MediaDirection::kSendOnly);
     CHECK(Sdp::answer_direction(Sdp::MediaDirection::kInactive) == Sdp::MediaDirection::kInactive);
+}
+
+TEST_CASE("direction_name returns the SDP token or unknown for an invalid value", "[sdp]") {
+    CHECK(std::string_view{Sdp::direction_name(Sdp::MediaDirection::kSendRecv)} == "sendrecv");
+    CHECK(std::string_view{Sdp::direction_name(Sdp::MediaDirection::kSendOnly)} == "sendonly");
+    CHECK(std::string_view{Sdp::direction_name(Sdp::MediaDirection::kRecvOnly)} == "recvonly");
+    CHECK(std::string_view{Sdp::direction_name(Sdp::MediaDirection::kInactive)} == "inactive");
+    CHECK(std::string_view{Sdp::direction_name(static_cast<Sdp::MediaDirection>(255))} == "unknown");
 }
 
 TEST_CASE("set_audio_direction writes a media-level answer override", "[sdp]") {

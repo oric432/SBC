@@ -14,16 +14,6 @@ namespace SbcEngine {
 
 namespace {
 
-std::string_view direction_name(Sdp::MediaDirection direction) {
-    switch (direction) {
-    case Sdp::MediaDirection::kSendRecv: return "sendrecv";
-    case Sdp::MediaDirection::kSendOnly: return "sendonly";
-    case Sdp::MediaDirection::kRecvOnly: return "recvonly";
-    case Sdp::MediaDirection::kInactive: return "inactive";
-    }
-    return "unknown";
-}
-
 bool reconfigure_media_bridge(
     CallSession& session,
     Leg leg,
