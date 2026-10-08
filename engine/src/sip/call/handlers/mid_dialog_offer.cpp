@@ -74,10 +74,8 @@ void commit_negotiated_media(CallSession& session, Leg leg, const NegotiatedOffe
     current.dtmf_pt_ = negotiated.dtmf_pt_;
 
     const LegFlow leg_flow{
-        .can_send_ = negotiated.offer_direction_ == Sdp::MediaDirection::kSendRecv ||
-                     negotiated.offer_direction_ == Sdp::MediaDirection::kSendOnly,
-        .can_receive_ = negotiated.offer_direction_ == Sdp::MediaDirection::kSendRecv ||
-                        negotiated.offer_direction_ == Sdp::MediaDirection::kRecvOnly};
+        .can_send_ = Sdp::can_send(negotiated.offer_direction_),
+        .can_receive_ = Sdp::can_receive(negotiated.offer_direction_)};
 
     session.media_bridge()->set_leg_media_flow(leg == Leg::kCaller ? RelayLeg::kLegA : RelayLeg::kLegB, leg_flow);
     session.record_media_direction(leg, negotiated.offer_direction_);

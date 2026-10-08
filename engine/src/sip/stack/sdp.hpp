@@ -23,6 +23,8 @@ struct RtpEndpoint {
 enum class MediaDirection : std::uint8_t { kSendRecv, kSendOnly, kRecvOnly, kInactive };
 
 const char* direction_name(MediaDirection direction);
+bool can_send(MediaDirection direction);
+bool can_receive(MediaDirection direction);
 
 // A negotiated audio codec, identified by its RTP payload type. clock_rate_ is
 // 0 when the payload type is one of RFC 3551's static types carried without an

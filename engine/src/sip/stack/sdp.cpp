@@ -335,6 +335,14 @@ const char* direction_name(MediaDirection direction) {
     return "unknown";
 }
 
+bool can_send(MediaDirection direction) {
+    return direction == MediaDirection::kSendRecv || direction == MediaDirection::kSendOnly;
+}
+
+bool can_receive(MediaDirection direction) {
+    return direction == MediaDirection::kSendRecv || direction == MediaDirection::kRecvOnly;
+}
+
 bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction) {
     if (pool == nullptr || sdp == nullptr) {
         return false;

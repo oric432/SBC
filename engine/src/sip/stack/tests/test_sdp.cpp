@@ -195,6 +195,20 @@ TEST_CASE("direction_name returns the SDP token or unknown for an invalid value"
     CHECK(std::string_view{Sdp::direction_name(static_cast<Sdp::MediaDirection>(255))} == "unknown");
 }
 
+TEST_CASE("media direction reports send and receive capabilities", "[sdp]") {
+    CHECK(Sdp::can_send(Sdp::MediaDirection::kSendRecv));
+    CHECK(Sdp::can_receive(Sdp::MediaDirection::kSendRecv));
+
+    CHECK(Sdp::can_send(Sdp::MediaDirection::kSendOnly));
+    CHECK_FALSE(Sdp::can_receive(Sdp::MediaDirection::kSendOnly));
+
+    CHECK_FALSE(Sdp::can_send(Sdp::MediaDirection::kRecvOnly));
+    CHECK(Sdp::can_receive(Sdp::MediaDirection::kRecvOnly));
+
+    CHECK_FALSE(Sdp::can_send(Sdp::MediaDirection::kInactive));
+    CHECK_FALSE(Sdp::can_receive(Sdp::MediaDirection::kInactive));
+}
+
 TEST_CASE("set_audio_direction writes a media-level answer override", "[sdp]") {
     const ScopedPjPool pj_scope;
     const std::string inherited_sendonly = "v=0\r\n"
