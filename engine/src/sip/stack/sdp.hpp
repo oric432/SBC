@@ -20,7 +20,7 @@ struct RtpEndpoint {
     uint16_t port_ = 0;
 };
 
-enum class MediaDirection : std::uint8_t { kSendRecv, kSendOnly, kRecvOnly, kInactive, kUnknown };
+enum class MediaDirection : std::uint8_t { kSendRecv, kSendOnly, kRecvOnly, kInactive };
 
 const char* direction_name(MediaDirection direction);
 
