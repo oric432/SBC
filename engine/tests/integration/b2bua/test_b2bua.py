@@ -83,6 +83,35 @@ def test_b2bua_reinvite_new_codec(sbc_engine, render_scenario, run_sipp_pair):
     _log.info("scenario '%s' passed", scenario_name)
 
 
+@pytest.mark.parametrize(
+    ("legacy_zero_address", "hold_direction", "hold_answer_direction"),
+    [
+        pytest.param(False, "sendonly", "recvonly", id="cisco-sendonly-hold-resume"),
+        pytest.param(True, "sendonly", "inactive", id="cisco-legacy-zero-address-hold-resume"),
+    ],
+)
+def test_b2bua_reinvite_hold_directions(
+    sbc_engine, render_scenario, run_sipp_pair, legacy_zero_address, hold_direction, hold_answer_direction
+):
+    """Cisco-style sendonly/legacy zero-address hold and RFC 3264 direction
+    inversion are answered locally; recvonly, inactive, and sendrecv resume
+    are also checked against their required answer directions."""
+    scenario_name = "reinvite_hold_directions"
+    caller_xml = render_scenario(
+        "reinvite_hold_directions_caller.xml.j2",
+        scenario_name=scenario_name,
+        legacy_zero_address=legacy_zero_address,
+        hold_direction=hold_direction,
+        hold_answer_direction=hold_answer_direction,
+    )
+    callee_xml = render_scenario("callee_signaling_only.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
 def test_b2bua_caller_prack(sbc_engine, render_scenario, run_sipp_pair):
     """Issue #123: an INVITE that requires 100rel gets reliable provisional
     responses on the caller-facing leg -- the SBC's 180 carries RSeq and

@@ -151,4 +151,32 @@ Leg CallSession::leg_for(const pjsip_inv_session* inv) const {
     return inv == leg(Leg::kCallee).inv_ ? Leg::kCallee : Leg::kCaller;
 }
 
+void CallSession::record_media_direction(Leg which, Sdp::MediaDirection direction) {
+    const bool was_held = media_is_held();
+    leg(which).media_direction_ = direction;
+    if (was_held && !media_is_held()) {
+        media_bridge_->reset_inactivity_baseline();
+    }
+}
+
+bool CallSession::media_is_held() const {
+    const auto caller_direction = leg(Leg::kCaller).media_direction_;
+    const auto callee_direction = leg(Leg::kCallee).media_direction_;
+
+    const bool caller_requests_hold =
+        caller_direction == Sdp::MediaDirection::kSendOnly || caller_direction == Sdp::MediaDirection::kInactive;
+    const bool callee_requests_hold =
+        callee_direction == Sdp::MediaDirection::kSendOnly || callee_direction == Sdp::MediaDirection::kInactive;
+    const bool neither_leg_sends =
+        caller_direction == Sdp::MediaDirection::kRecvOnly && callee_direction == Sdp::MediaDirection::kRecvOnly;
+
+    return caller_requests_hold || callee_requests_hold || neither_leg_sends;
+}
+
+bool CallSession::rtp_inactivity_expired(
+    std::chrono::steady_clock::time_point now,
+    std::chrono::steady_clock::duration timeout) const {
+    return !media_is_held() && now - media_bridge_->last_packet_time() >= timeout;
+}
+
 } // namespace SbcEngine
