@@ -275,24 +275,21 @@ bool is_dtmf_fmtp(const pjmedia_sdp_attr* attr, const pj_str_t& dtmf_pt) {
     return pjmedia_sdp_attr_get_fmtp(attr, &fmtp) == PJ_SUCCESS && pj_strcmp(&fmtp.fmt, &dtmf_pt) == 0;
 }
 
-} // namespace
+std::optional<Sdp::MediaDirection> find_media_direction(std::span<pjmedia_sdp_attr* const> attrs) {
+    constexpr std::array directions{
+        std::pair{"inactive", Sdp::MediaDirection::kInactive},
+        std::pair{"sendonly", Sdp::MediaDirection::kSendOnly},
+        std::pair{"recvonly", Sdp::MediaDirection::kRecvOnly},
+        std::pair{"sendrecv", Sdp::MediaDirection::kSendRecv},
+    };
 
-namespace {
-
-Sdp::MediaDirection media_direction(std::span<pjmedia_sdp_attr* const> attrs) {
-    if (pjmedia_sdp_attr_find2(static_cast<unsigned>(attrs.size()), attrs.data(), "inactive", nullptr) != nullptr) {
-        return Sdp::MediaDirection::kInactive;
+    for (const auto& [name, direction] : directions) {
+        if (pjmedia_sdp_attr_find2(static_cast<unsigned>(attrs.size()), attrs.data(), name, nullptr) != nullptr) {
+            return direction;
+        }
     }
 
-    if (pjmedia_sdp_attr_find2(static_cast<unsigned>(attrs.size()), attrs.data(), "sendonly", nullptr) != nullptr) {
-        return Sdp::MediaDirection::kSendOnly;
-    }
-
-    if (pjmedia_sdp_attr_find2(static_cast<unsigned>(attrs.size()), attrs.data(), "recvonly", nullptr) != nullptr) {
-        return Sdp::MediaDirection::kRecvOnly;
-    }
-
-    return Sdp::MediaDirection::kSendRecv;
+    return std::nullopt;
 }
 
 const char* direction_name(Sdp::MediaDirection direction) {
@@ -311,18 +308,19 @@ MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp) {
     if (sdp == nullptr) {
         return MediaDirection::kSendRecv;
     }
+
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
     const pjmedia_sdp_media* media = find_active_audio_media(const_cast<pjmedia_sdp_session*>(sdp));
     if (media == nullptr) {
         return MediaDirection::kSendRecv;
     }
-    const bool has_media_direction = pjmedia_sdp_media_find_attr2(media, "inactive", nullptr) != nullptr ||
-                                     pjmedia_sdp_media_find_attr2(media, "sendonly", nullptr) != nullptr ||
-                                     pjmedia_sdp_media_find_attr2(media, "recvonly", nullptr) != nullptr ||
-                                     pjmedia_sdp_media_find_attr2(media, "sendrecv", nullptr) != nullptr;
 
-    return has_media_direction ? media_direction(std::span<pjmedia_sdp_attr* const>{&media->attr[0], media->attr_count})
-                               : media_direction(std::span<pjmedia_sdp_attr* const>{&sdp->attr[0], sdp->attr_count});
+    const auto media_direction = find_media_direction({media->attr, media->attr_count});
+    if (media_direction) {
+        return *media_direction;
+    }
+    
+    return find_media_direction({sdp->attr, sdp->attr_count}).value_or(MediaDirection::kSendRecv);
 }
 
 MediaDirection answer_direction(MediaDirection offer_direction) {
