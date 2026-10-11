@@ -184,7 +184,9 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
             _stop(callee)
 
         if caller.returncode != 0:
-            pytest.fail(f"caller sipp failed ({caller.returncode}):\n{caller_output}")
+            pytest.fail(
+                f"caller sipp failed ({caller.returncode}):\n{caller_output}\nSbcEngine log:\n{sbc_engine.log_tail()}"
+            )
         if callee.returncode != 0:
             pytest.fail(f"callee sipp failed ({callee.returncode}):\n{callee_output}")
 

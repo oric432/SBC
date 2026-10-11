@@ -31,6 +31,7 @@
   <recv response="200" rtd="true">
     <action>
       <ereg regexp="tag=([^;[:space:]&gt;]+)" search_in="hdr" header="To:" check_it="true" assign_to="to_tag_match,incoming_to_tag"/>
+      <log message="Peer tag: [$to_tag_match]"/>
     </action>
   </recv>
 
@@ -59,7 +60,7 @@
       CSeq: 2 REFER
       Contact: sip:sipp@[local_ip]:[local_port]
       Max-Forwards: 70
-      Refer-To: <sip:transfer@[remote_ip]:[remote_port]?Replaces=[call_id]%3Bto-tag%3D[$incoming_to_tag]%3Bfrom-tag%3D[pid]SIPpTag00[call_number]>
+      Refer-To: <sip:transfer@[remote_ip]:[remote_port]?Replaces=[call_number]-[pid]%40[local_ip]%3Bto-tag%3D[$incoming_to_tag]%3Bfrom-tag%3D[pid]SIPpTag00[call_number]>
       Referred-By: <sip:transferor@example.com>
       Content-Length: 0
     ]]>
