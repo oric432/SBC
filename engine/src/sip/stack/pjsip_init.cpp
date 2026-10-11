@@ -33,25 +33,14 @@ MessageRouter* active_router() {
     return g_active_stack != nullptr ? g_active_stack->router() : nullptr;
 }
 
-// Application module: receives out-of-dialog requests (initial INVITE, OPTIONS,
-// and anything without a matching dialog). In-dialog traffic is delivered to the
-// invite-session callbacks instead, so this only forwards to the router.
+// Application module: forwards requests to the router, which decides whether
+// this module owns them.
 pj_bool_t on_rx_request(pjsip_rx_data* rdata) {
     MessageRouter* router = active_router();
     if (router == nullptr) {
         return PJ_FALSE;
     }
-    if (pjsip_rdata_get_dlg(rdata) != nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C event API
-        if (rdata->msg_info.msg->line.req.method.id != PJSIP_OTHER_METHOD ||
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C event API
-            pj_stricmp2(&rdata->msg_info.msg->line.req.method.name, "REFER") != 0) {
-            return PJ_FALSE;
-        }
-        return PJ_TRUE;
-    }
-    router->on_rx_request(rdata);
-    return PJ_TRUE;
+    return router->on_rx_request(rdata) ? PJ_TRUE : PJ_FALSE;
 }
 
 void on_tsx_state(pjsip_transaction* tsx, pjsip_event* event) {

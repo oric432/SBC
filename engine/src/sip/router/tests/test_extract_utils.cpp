@@ -325,11 +325,14 @@ TEST_CASE("CallSession releases a leg's mod_data slot on destruction", "[call_se
     const ScopedPool pool;
     auto request = parse_rdata(pool.get(), kInviteWithSdp);
 
-    // Plain zero-initialized PJSIP structs: set_inv_caller()/set_inv_callee()
-    // and the destructor only ever touch mod_data on these, so a real dialog
-    // isn't needed to exercise the claim/release pairing.
+    // Plain zero-initialized PJSIP structs are enough to exercise both lookup
+    // slots without constructing full invite sessions or dialogs.
+    pjsip_dialog caller_dialog{};
+    pjsip_dialog callee_dialog{};
     pjsip_inv_session caller_inv{};
     pjsip_inv_session callee_inv{};
+    caller_inv.dlg = &caller_dialog;
+    callee_inv.dlg = &callee_dialog;
 
     auto* session = manager.create_session(
         "mod-data-release",
@@ -341,6 +344,8 @@ TEST_CASE("CallSession releases a leg's mod_data slot on destruction", "[call_se
     session->set_inv_callee(&callee_inv);
     REQUIRE(caller_inv.mod_data[0] == session);
     REQUIRE(callee_inv.mod_data[0] == session);
+    REQUIRE(caller_dialog.mod_data[0] == session);
+    REQUIRE(callee_dialog.mod_data[0] == session);
 
     manager.schedule_remove("mod-data-release");
     manager.purge_scheduled();
@@ -350,6 +355,8 @@ TEST_CASE("CallSession releases a leg's mod_data slot on destruction", "[call_se
     // CallSession via mod_data (see the RTP-inactivity teardown use-after-free).
     CHECK(caller_inv.mod_data[0] == nullptr);
     CHECK(callee_inv.mod_data[0] == nullptr);
+    CHECK(caller_dialog.mod_data[0] == nullptr);
+    CHECK(callee_dialog.mod_data[0] == nullptr);
 }
 
 } // namespace SbcEngine

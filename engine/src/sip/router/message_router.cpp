@@ -20,8 +20,14 @@ void reject_reinvite(pjsip_inv_session* inv, pjsip_rx_data* rdata, int status_co
 }
 
 } // namespace
-void MessageRouter::on_rx_request(pjsip_rx_data* request) {
+bool MessageRouter::on_rx_request(pjsip_rx_data* request) {
     const std::string method = extract_method(request);
+    if (pjsip_rdata_get_dlg(request) != nullptr) {
+        // PJSIP's existing dialog usages own every in-dialog method except
+        // REFER, which this module claims and dispatches from on_tsx_state.
+        return method == "REFER";
+    }
+
     if (method == "INVITE") {
         process_invite(request);
     }
@@ -43,6 +49,7 @@ void MessageRouter::on_rx_request(pjsip_rx_data* request) {
     else {
         request_actions_.reject_unsupported_method(request);
     }
+    return true;
 }
 
 void MessageRouter::on_rx_refer(pjsip_rx_data* request) {
