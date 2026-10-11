@@ -1,6 +1,8 @@
 #include "refer_handler.hpp"
 
 #include <array>
+#include <optional>
+#include <string_view>
 
 #include <pjsip-ua/sip_replaces.h>
 #include <pjsip/sip_parser.h>
@@ -20,6 +22,45 @@ constexpr int kLastSipStatus = 699;
 // pointers themselves remain stored and lifetime-bound to each subscription.
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 int g_module_id = -1;
+
+int hex_value(char digit) {
+    if (digit >= '0' && digit <= '9') {
+        return digit - '0';
+    }
+    if (digit >= 'A' && digit <= 'F') {
+        return digit - 'A' + 10;
+    }
+    if (digit >= 'a' && digit <= 'f') {
+        return digit - 'a' + 10;
+    }
+    return -1;
+}
+
+std::optional<std::string> percent_decode(std::string_view value) {
+    std::string decoded;
+    decoded.reserve(value.size());
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        if (value[index] != '%') {
+            decoded.push_back(value[index]);
+            continue;
+        }
+        if (index + 2 >= value.size()) {
+            return std::nullopt;
+        }
+        const int high = hex_value(value[index + 1]);
+        const int low = hex_value(value[index + 2]);
+        if (high < 0 || low < 0) {
+            return std::nullopt;
+        }
+        const char decoded_char = static_cast<char>((high << 4) | low);
+        if (decoded_char == '\0') {
+            return std::nullopt;
+        }
+        decoded.push_back(decoded_char);
+        index += 2;
+    }
+    return decoded;
+}
 } // namespace
 
 ReferHandler::~ReferHandler() {
@@ -106,12 +147,16 @@ std::expected<std::string, int> ReferHandler::refer_to() const {
         }
     }
 
-    std::string replaces_value{replaces_param->value.ptr, static_cast<std::size_t>(replaces_param->value.slen)};
+    auto replaces_value = percent_decode(
+        std::string_view{replaces_param->value.ptr, static_cast<std::size_t>(replaces_param->value.slen)});
+    if (!replaces_value) {
+        return std::unexpected(PJSIP_SC_BAD_REQUEST);
+    }
     auto* replaces = static_cast<pjsip_replaces_hdr*>(pjsip_parse_hdr(
         pending_request_->tp_info.pool,
         &replaces_name,
-        replaces_value.data(),
-        replaces_value.size(),
+        replaces_value->data(),
+        replaces_value->size(),
         nullptr));
     if (replaces == nullptr || replaces->call_id.slen <= 0 || replaces->to_tag.slen <= 0 ||
         replaces->from_tag.slen <= 0) {
