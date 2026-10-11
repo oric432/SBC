@@ -230,10 +230,10 @@ void ReferHandler::busy() {
 bool ReferHandler::start(Leg leg) {
     if (inbound_sub_ != nullptr || outbound_sub_ != nullptr) {
         reject(PJSIP_SC_REQUEST_PENDING);
-        final_result_ = false;
+        result_delivered_  = false;
         return false;
     }
-    final_result_ = false;
+    result_delivered_  = false;
     g_module_id = session_.ctx()->module_id_;
     if (g_module_id < 0) {
         reject(PJSIP_SC_INTERNAL_SERVER_ERROR);
@@ -352,10 +352,10 @@ void ReferHandler::fail_after_accept(int status_code) {
 }
 
 void ReferHandler::finish(ReferOutcome outcome) {
-    if (final_result_) {
+    if (result_delivered_) {
         return;
     }
-    final_result_ = true;
+    result_delivered_ = true;
     session_.dialog_sm().process_event(ReferCompleted{outcome});
 }
 
@@ -393,7 +393,7 @@ void ReferHandler::subscription_changed(pjsip_evsub* sub, pjsip_event* event) {
         return;
     }
     outbound_sub_ = nullptr;
-    if (final_result_) {
+    if (result_delivered_) {
         return;
     }
     int status_code = PJSIP_SC_SERVICE_UNAVAILABLE;
@@ -424,7 +424,7 @@ void ReferHandler::notification_received(pjsip_rx_data* request, int* response_c
         return;
     }
     *response_code = PJSIP_SC_OK;
-    if (final_result_) {
+    if (result_delivered_) {
         return;
     }
     const bool is_final = status_line.code >= 200;

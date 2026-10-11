@@ -59,7 +59,7 @@ private:
     pjsip_evsub* inbound_sub_ = nullptr;
     // UAC subscription on the opposite leg; receives the transfer status relayed through inbound_sub_.
     pjsip_evsub* outbound_sub_ = nullptr;
-    bool final_result_ = false;
+    bool result_delivered_ = false;
 };
 
 } // namespace SbcEngine
