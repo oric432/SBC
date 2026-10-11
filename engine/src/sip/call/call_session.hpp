@@ -86,8 +86,8 @@ public:
 
     [[nodiscard]] pjsip_inv_session* inv_caller() const { return leg(Leg::kCaller).inv_; }
     [[nodiscard]] pjsip_inv_session* inv_callee() const { return leg(Leg::kCallee).inv_; }
-    // Also claims inv->mod_data[ctx_->module_id_] so CallManager::find_by_inv()
-    // can look this session up in O(1) instead of scanning every session.
+    // Also claims the invite session and dialog module slots so CallManager
+    // can recover this session from either callback context in O(1).
     void set_inv_caller(pjsip_inv_session* inv) {
         leg(Leg::kCaller).inv_ = inv;
         leg(Leg::kCaller).dialog_ = inv != nullptr ? inv->dlg : nullptr;
@@ -148,17 +148,22 @@ private:
         if (inv != nullptr && ctx_->module_id_ >= 0) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
             inv->mod_data[ctx_->module_id_] = this;
+            if (inv->dlg != nullptr) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
+                inv->dlg->mod_data[ctx_->module_id_] = this;
+            }
         }
     }
-    // Mirrors claim_mod_data(): a leg's pjsip_inv_session outlives CallSession
-    // (PJSIP owns it), so without this its mod_data slot would keep pointing at
-    // freed memory for any later PJSIP callback on that leg (e.g. a BYE this
-    // session sent to both legs on teardown, whose other-leg completion arrives
-    // after this session is already destroyed).
+    // PJSIP owns both objects beyond CallSession's lifetime, so clear both
+    // lookup slots before this session is destroyed.
     void release_mod_data(pjsip_inv_session* inv) {
         if (inv != nullptr && ctx_->module_id_ >= 0) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
             inv->mod_data[ctx_->module_id_] = nullptr;
+            if (inv->dlg != nullptr) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
+                inv->dlg->mod_data[ctx_->module_id_] = nullptr;
+            }
         }
     }
 
