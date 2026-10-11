@@ -9,8 +9,8 @@ namespace SbcEngine {
 struct Active {};
 struct Reinviting {};
 struct Referring {};
-struct ReferringEndingCall {};
-struct ReferringCallEnded {};
+struct ReferringWhileTerminating {};
+struct AwaitingReferAfterCallEnded {};
 struct Terminating {};
 struct Terminated {};
 struct DialogDone {};
@@ -108,13 +108,13 @@ struct DialogSm {
              // Referring state
              Sml::state<Referring>             + (Sml::event<ReferReceived>                                                         / handle_refer_busy)          = Sml::state<Referring>,
              Sml::state<Referring>             + (Sml::event<ReferCompleted>                                                        / handle_refer_completed)     = Sml::state<Active>,
-             Sml::state<Referring>             + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<ReferringEndingCall>,
+             Sml::state<Referring>             + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<ReferringWhileTerminating>,
              Sml::state<Referring>             + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
              // The original call is ending; retain the dialog until the REFER result arrives.
-             Sml::state<ReferringEndingCall>   + Sml::event<CallEnded>                                                                                          = Sml::state<ReferringCallEnded>,
-             Sml::state<ReferringEndingCall>   + (Sml::event<ReferCompleted>                                                        / handle_refer_completed)     = Sml::state<Terminating>,
-             Sml::state<ReferringCallEnded>    + (Sml::event<ReferCompleted>                                                        / handle_refer_completed_after_call) = Sml::state<Terminated>,
+             Sml::state<ReferringWhileTerminating> + Sml::event<CallEnded>                                                                                      = Sml::state<AwaitingReferAfterCallEnded>,
+             Sml::state<ReferringWhileTerminating> + (Sml::event<ReferCompleted>                                                    / handle_refer_completed)     = Sml::state<Terminating>,
+             Sml::state<AwaitingReferAfterCallEnded> + (Sml::event<ReferCompleted>                                                  / handle_refer_completed_after_call) = Sml::state<Terminated>,
 
              // Terminating state
              Sml::state<Terminating>           + (Sml::event<CallEnded>                                                              / handle_call_ended)          = Sml::state<Terminated>,

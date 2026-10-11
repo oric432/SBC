@@ -94,7 +94,7 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
         else if (dialog.is_active() || dialog.is_referring()) {
             dialog.process_event(ByeReceived{leg});
         }
-        else if (dialog.is_terminating() || dialog.is_referring_ending_call()) {
+        else if (dialog.is_terminating() || dialog.is_referring_while_terminating()) {
             dialog.process_event(CallEnded{});
         }
         break;

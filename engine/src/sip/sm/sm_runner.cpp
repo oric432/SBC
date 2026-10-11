@@ -95,7 +95,7 @@ template bool DialogRunner::process_event(const CallError&);
 template bool DialogRunner::is<Active>() const;
 template bool DialogRunner::is<Reinviting>() const;
 template bool DialogRunner::is<Referring>() const;
-template bool DialogRunner::is<ReferringEndingCall>() const;
+template bool DialogRunner::is<ReferringWhileTerminating>() const;
 template bool DialogRunner::is<Terminating>() const;
 
 using OfferAnswerRunner = SmRunner<OfferAnswer::OfferAnswerSm<IOfferAnswerActions>, IOfferAnswerActions>;

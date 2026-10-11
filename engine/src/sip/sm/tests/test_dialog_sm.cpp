@@ -294,12 +294,12 @@ TEST_CASE("DialogSm retains a pending refer after the original call ends", "[dia
 
     machine.process_event(ReferReceived{});
     REQUIRE(machine.process_event(ByeReceived{Leg::kCallee}));
-    REQUIRE(machine.is(Sml::state<ReferringEndingCall>));
+    REQUIRE(machine.is(Sml::state<ReferringWhileTerminating>));
     REQUIRE(actions.was_called("forward_bye_to_other_leg"));
 
     actions.reset();
     REQUIRE(machine.process_event(CallEnded{}));
-    REQUIRE(machine.is(Sml::state<ReferringCallEnded>));
+    REQUIRE(machine.is(Sml::state<AwaitingReferAfterCallEnded>));
     REQUIRE_FALSE(actions.was_called("cleanup"));
 
     REQUIRE(machine.process_event(ReferCompleted{ReferOutcome::kSucceeded}));
