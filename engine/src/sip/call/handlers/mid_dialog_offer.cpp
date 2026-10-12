@@ -100,8 +100,7 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
         return std::unexpected(ExchangeOutcome::kRolledBack);
     }
 
-    const auto offer_direction =
-        offer_endpoint.ip_ == "0.0.0.0" ? Sdp::MediaDirection::kInactive : Sdp::extract_audio_direction(offer_sdp);
+    const auto offer_direction = Sdp::extract_audio_direction(offer_sdp, offer_endpoint);
     const auto answer_direction = Sdp::answer_direction(offer_direction);
 
     const auto chosen =
@@ -139,7 +138,7 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
 
     Sdp::rewrite_connection_and_port(session.pool(), offer_sdp, session.ctx()->config_.local_ip_, *relay_port);
 
-    if (offer_endpoint.ip_ != "0.0.0.0") {
+    if (!Sdp::is_hold_address(offer_endpoint.ip_)) {
         if (leg == Leg::kCaller) {
             session.media_bridge()->retarget_remote_leg_a(offer_endpoint.ip_, offer_endpoint.port_);
         }

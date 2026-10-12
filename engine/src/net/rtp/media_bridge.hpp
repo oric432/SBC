@@ -83,7 +83,7 @@ public:
     void retarget_remote_leg_a(std::string addr, unsigned short port);
     void retarget_remote_leg_b(std::string addr, unsigned short port);
 
-    // Applies a committed remote SDP direction to one relay leg.
+    // Posts SIP-thread flow updates to the RTP executor, where the relay reads them.
     void set_leg_media_flow(RelayLeg leg, LegFlow flow);
 
     // Empty until the corresponding set_remote_leg_* call — i.e. before the

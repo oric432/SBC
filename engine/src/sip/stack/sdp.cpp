@@ -295,7 +295,11 @@ std::optional<Sdp::MediaDirection> find_media_direction(std::span<pjmedia_sdp_at
 
 } // namespace
 
-MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp) {
+MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp, const RtpEndpoint& offer_endpoint) {
+    if (is_hold_address(offer_endpoint.ip_)) {
+        return MediaDirection::kInactive;
+    }
+
     if (sdp == nullptr) {
         return MediaDirection::kSendRecv;
     }
@@ -341,6 +345,10 @@ bool can_send(MediaDirection direction) {
 
 bool can_receive(MediaDirection direction) {
     return direction == MediaDirection::kSendRecv || direction == MediaDirection::kRecvOnly;
+}
+
+bool is_hold_address(const std::string& address) {
+    return address == "0.0.0.0" || address == "::";
 }
 
 bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction) {

@@ -130,6 +130,11 @@ TEST_CASE("extract_telephone_event_pt reads the DTMF payload type, if any", "[sd
 
 TEST_CASE("audio direction extraction honors media and session-level attributes", "[sdp]") {
     const ScopedPjPool pj_scope;
+    const auto extract_direction = [&pj_scope](const std::string& offer) {
+        pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), offer);
+        REQUIRE(sdp != nullptr);
+        return Sdp::extract_audio_direction(sdp, Sdp::extract_rtp_endpoint(sdp));
+    };
 
     const std::string media_level_inactive = "v=0\r\n"
                                              "o=- 123 456 IN IP4 127.0.0.1\r\n"
@@ -138,9 +143,7 @@ TEST_CASE("audio direction extraction honors media and session-level attributes"
                                              "t=0 0\r\n"
                                              "m=audio 10000 RTP/AVP 0\r\n"
                                              "a=inactive\r\n";
-    CHECK(
-        Sdp::extract_audio_direction(Sdp::parse(pj_scope.pool(), media_level_inactive)) ==
-        Sdp::MediaDirection::kInactive);
+    CHECK(extract_direction(media_level_inactive) == Sdp::MediaDirection::kInactive);
 
     const std::string media_level_sendonly = "v=0\r\n"
                                              "o=- 123 456 IN IP4 127.0.0.1\r\n"
@@ -149,9 +152,7 @@ TEST_CASE("audio direction extraction honors media and session-level attributes"
                                              "t=0 0\r\n"
                                              "m=audio 10000 RTP/AVP 0\r\n"
                                              "a=sendonly\r\n";
-    CHECK(
-        Sdp::extract_audio_direction(Sdp::parse(pj_scope.pool(), media_level_sendonly)) ==
-        Sdp::MediaDirection::kSendOnly);
+    CHECK(extract_direction(media_level_sendonly) == Sdp::MediaDirection::kSendOnly);
 
     const std::string media_level_recvonly = "v=0\r\n"
                                              "o=- 123 456 IN IP4 127.0.0.1\r\n"
@@ -160,9 +161,7 @@ TEST_CASE("audio direction extraction honors media and session-level attributes"
                                              "t=0 0\r\n"
                                              "m=audio 10000 RTP/AVP 0\r\n"
                                              "a=recvonly\r\n";
-    CHECK(
-        Sdp::extract_audio_direction(Sdp::parse(pj_scope.pool(), media_level_recvonly)) ==
-        Sdp::MediaDirection::kRecvOnly);
+    CHECK(extract_direction(media_level_recvonly) == Sdp::MediaDirection::kRecvOnly);
 
     // No media-level direction attribute — falls back to the session-level one.
     const std::string session_level_inactive = "v=0\r\n"
@@ -172,12 +171,25 @@ TEST_CASE("audio direction extraction honors media and session-level attributes"
                                                "t=0 0\r\n"
                                                "a=inactive\r\n"
                                                "m=audio 10000 RTP/AVP 0\r\n";
-    CHECK(
-        Sdp::extract_audio_direction(Sdp::parse(pj_scope.pool(), session_level_inactive)) ==
-        Sdp::MediaDirection::kInactive);
+    CHECK(extract_direction(session_level_inactive) == Sdp::MediaDirection::kInactive);
+    CHECK(extract_direction(kMultiCodecOffer) == Sdp::MediaDirection::kSendRecv);
+}
 
-    CHECK(
-        Sdp::extract_audio_direction(Sdp::parse(pj_scope.pool(), kMultiCodecOffer)) == Sdp::MediaDirection::kSendRecv);
+TEST_CASE("hold address forces inactive audio direction", "[sdp]") {
+    const ScopedPjPool pj_scope;
+    const std::string hold_offer = "v=0\r\n"
+                                   "o=- 123 456 IN IP4 0.0.0.0\r\n"
+                                   "s=-\r\n"
+                                   "c=IN IP4 0.0.0.0\r\n"
+                                   "t=0 0\r\n"
+                                   "m=audio 10000 RTP/AVP 0\r\n"
+                                   "a=sendrecv\r\n";
+    pjmedia_sdp_session* sdp = Sdp::parse(pj_scope.pool(), hold_offer);
+    REQUIRE(sdp != nullptr);
+
+    const Sdp::RtpEndpoint offer_endpoint = Sdp::extract_rtp_endpoint(sdp);
+    CHECK(offer_endpoint.ip_ == "0.0.0.0");
+    CHECK(Sdp::extract_audio_direction(sdp, offer_endpoint) == Sdp::MediaDirection::kInactive);
 }
 
 TEST_CASE("answer direction follows RFC 3264", "[sdp]") {
@@ -222,7 +234,7 @@ TEST_CASE("set_audio_direction writes a media-level answer override", "[sdp]") {
     REQUIRE(sdp != nullptr);
 
     CHECK(Sdp::set_audio_direction(pj_scope.pool(), sdp, Sdp::MediaDirection::kRecvOnly));
-    CHECK(Sdp::extract_audio_direction(sdp) == Sdp::MediaDirection::kRecvOnly);
+    CHECK(Sdp::extract_audio_direction(sdp, Sdp::extract_rtp_endpoint(sdp)) == Sdp::MediaDirection::kRecvOnly);
     const std::string serialized = Sdp::serialize(sdp);
     CHECK(serialized.find("a=recvonly\r\n") != std::string::npos);
 }
@@ -334,6 +346,17 @@ TEST_CASE("restrict_audio_codecs is a no-op without an active audio line", "[sdp
 
     Sdp::restrict_audio_codecs(pj_scope.pool(), sdp, Protocols::kSupportedCodecs);
     CHECK(sdp->media_count == 0);
+}
+
+TEST_CASE("is_hold_address returns true") {
+    CHECK(Sdp::is_hold_address("0.0.0.0"));
+    CHECK(Sdp::is_hold_address("::"));
+}
+
+TEST_CASE("is_hold_address returns false") {
+    CHECK_FALSE(Sdp::is_hold_address("1234"));
+    CHECK_FALSE(Sdp::is_hold_address("abcdefghijk"));
+    CHECK_FALSE(Sdp::is_hold_address("127.0.0.1"));
 }
 
 } // namespace SbcEngine
