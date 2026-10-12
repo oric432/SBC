@@ -38,6 +38,11 @@ bool is_supported_transport(const pjmedia_sdp_media* media) {
     return pj_stricmp2(&media->desc.transport, "RTP/AVP") == 0 || pj_stricmp2(&media->desc.transport, "RTP/AVPF") == 0;
 }
 
+bool is_direction_attr(const pjmedia_sdp_attr* attr) {
+    return pj_stricmp2(&attr->name, "inactive") == 0 || pj_stricmp2(&attr->name, "sendonly") == 0 ||
+           pj_stricmp2(&attr->name, "recvonly") == 0 || pj_stricmp2(&attr->name, "sendrecv") == 0;
+}
+
 // The rtpmap for a given payload type on a media line, if it declares one —
 // dynamic payload types (96-127) always do; RFC 3551 static types often omit
 // it since their name/rate are implied by the type number itself.
@@ -66,6 +71,20 @@ bool has_valid_media(const pjmedia_sdp_session* sdp) {
     for (unsigned i = 0; i < sdp->media_count; ++i) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         const pjmedia_sdp_media* media = sdp->media[i];
+        if (is_media_type(media, "audio")) {
+            const pjmedia_sdp_attr* direction = nullptr;
+            for (unsigned j = 0; j < media->attr_count; ++j) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+                const pjmedia_sdp_attr* attr = media->attr[j];
+                if (!is_direction_attr(attr)) {
+                    continue;
+                }
+                if (direction != nullptr && pj_stricmp(&direction->name, &attr->name) != 0) {
+                    return false;
+                }
+                direction = attr;
+            }
+        }
         if (media->desc.port == 0) {
             continue; // declined stream (RFC 3264) — exempt, not malformed
         }

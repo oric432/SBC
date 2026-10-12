@@ -175,6 +175,22 @@ TEST_CASE("audio direction extraction honors media and session-level attributes"
     CHECK(extract_direction(kMultiCodecOffer) == Sdp::MediaDirection::kSendRecv);
 }
 
+TEST_CASE("SDP validation rejects conflicting audio directions", "[sdp]") {
+    const std::string base = "v=0\r\n"
+                             "o=- 123 456 IN IP4 127.0.0.1\r\n"
+                             "s=-\r\n"
+                             "c=IN IP4 127.0.0.1\r\n"
+                             "t=0 0\r\n"
+                             "m=audio 10000 RTP/AVP 0\r\n";
+
+    CHECK(Sdp::is_valid_sdp(base));
+    CHECK(Sdp::is_valid_sdp(base + "a=sendonly\r\n"));
+    CHECK_FALSE(
+        Sdp::is_valid_sdp(
+            base + "a=sendonly\r\n"
+                   "a=recvonly\r\n"));
+}
+
 TEST_CASE("hold address forces inactive audio direction", "[sdp]") {
     const ScopedPjPool pj_scope;
     const std::string hold_offer = "v=0\r\n"

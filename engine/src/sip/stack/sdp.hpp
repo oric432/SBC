@@ -56,7 +56,8 @@ std::string serialize(const pjmedia_sdp_session* sdp);
 // uses a transport this relay can actually carry (RTP/AVP or RTP/AVPF — plain
 // RTP; MediaBridge has no SRTP support). A declined line (port == 0, RFC
 // 3264's way of saying "no thanks" to an offered stream) is exempt from both
-// checks — it isn't malformed SDP, it's the protocol working as designed.
+// checks — it isn't malformed SDP, it's the protocol working as designed. An
+// audio media line with conflicting direction attributes is invalid.
 bool is_valid_sdp(const std::string& sdp);
 
 // B2BUA mangling: replace the connection address (session + media level) and
