@@ -367,7 +367,18 @@ bool can_receive(MediaDirection direction) {
 }
 
 bool is_hold_address(const std::string& address) {
-    return address == "0.0.0.0" || address == "::";
+    if (address == "0.0.0.0") {
+        return true;
+    }
+
+    std::string address_copy = address;
+    const pj_str_t source = pj_str(address_copy.data());
+    
+    pj_in6_addr parsed{};
+    const pj_in6_addr unspecified{};
+
+    return pj_inet_pton(pj_AF_INET6(), &source, &parsed) == PJ_SUCCESS &&
+           std::memcmp(&parsed, &unspecified, sizeof(parsed)) == 0;
 }
 
 bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction) {

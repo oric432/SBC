@@ -367,6 +367,7 @@ TEST_CASE("restrict_audio_codecs is a no-op without an active audio line", "[sdp
 TEST_CASE("is_hold_address returns true") {
     CHECK(Sdp::is_hold_address("0.0.0.0"));
     CHECK(Sdp::is_hold_address("::"));
+    CHECK(Sdp::is_hold_address("0:0:0:0:0:0:0:0"));
 }
 
 TEST_CASE("is_hold_address returns false") {
