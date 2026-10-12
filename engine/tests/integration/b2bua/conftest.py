@@ -193,6 +193,28 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
     return _run
 
 
+@pytest.fixture
+def run_sipp_client(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path], None]:
+    def _run(scenario: Path) -> None:
+        sbc_engine.log_start = len(sbc_engine.log_lines)
+        process = _run_sipp(
+            sipp_binary,
+            scenario,
+            f"{ports.local_ip}:{ports.sbc_port}",
+            ports.local_ip,
+            ports.caller_port,
+            ports.caller_media_port,
+        )
+        try:
+            output, _ = process.communicate(timeout=15)
+        finally:
+            _stop(process)
+        if process.returncode != 0:
+            pytest.fail(f"client sipp failed ({process.returncode}):\n{output}\nSbcEngine log:\n{sbc_engine.log_tail()}")
+
+    return _run
+
+
 def _backend_call(base_url: str, method: str, path: str, body: dict | None = None) -> tuple[int, bytes]:
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"} if data is not None else {}

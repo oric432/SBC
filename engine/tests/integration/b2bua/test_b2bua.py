@@ -354,9 +354,62 @@ def test_b2bua_register_wrong_aor_rejected(
 
 def test_b2bua_refer_rejected_by_peer(sbc_engine, render_scenario, run_sipp_pair):
     scenario_name = "refer_rejected_by_peer"
-    caller_xml = render_scenario("refer_rejected_caller.xml.j2", scenario_name=scenario_name, holds_ms=[1000])
-    callee_xml = render_scenario("refer_rejected_callee.xml.j2", scenario_name=scenario_name)
+    caller_xml = render_scenario(
+        "refer_rejected_caller.xml.j2",
+        scenario_name=scenario_name,
+        holds_ms=[1000],
+        expected_refer_status=486,
+        send_colliding_refer=False,
+    )
+    callee_xml = render_scenario(
+        "refer_rejected_callee.xml.j2", scenario_name=scenario_name, peer_accepts=False
+    )
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    # SIPp's recv steps and check_it eregs above are the protocol assertions;
+    # the Python assertion only adds the engine-log invariant.
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+@pytest.mark.parametrize("send_colliding_refer", [False, True], ids=["accepted", "busy_collision"])
+def test_b2bua_refer_accepted(sbc_engine, render_scenario, run_sipp_pair, send_colliding_refer):
+    scenario_name = "refer_busy_collision" if send_colliding_refer else "refer_accepted_by_peer"
+    caller_xml = render_scenario(
+        "refer_rejected_caller.xml.j2",
+        scenario_name=scenario_name,
+        holds_ms=[1000],
+        expected_refer_status=200,
+        send_colliding_refer=send_colliding_refer,
+    )
+    callee_xml = render_scenario(
+        "refer_rejected_callee.xml.j2",
+        scenario_name=scenario_name,
+        peer_accepts=True,
+        final_notify_delay_ms=1000 if send_colliding_refer else 100,
+    )
 
     run_sipp_pair(caller_xml, callee_xml)
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+@pytest.mark.parametrize("refer_to_value", [None, "not-a-sip-uri"], ids=["missing", "malformed"])
+def test_b2bua_refer_invalid_refer_to(sbc_engine, render_scenario, run_sipp_pair, refer_to_value):
+    scenario_name = f"refer_{'missing' if refer_to_value is None else 'malformed'}_refer_to"
+    caller_xml = render_scenario(
+        "refer_invalid_caller.xml.j2", scenario_name=scenario_name, refer_to_value=refer_to_value
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+def test_b2bua_refer_out_of_dialog(sbc_engine, render_scenario, run_sipp_client):
+    scenario_xml = render_scenario("refer_out_of_dialog.xml.j2", scenario_name="refer_out_of_dialog")
+
+    run_sipp_client(scenario_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during REFER:\n{sbc_engine.log_tail()}"

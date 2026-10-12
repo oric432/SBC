@@ -61,9 +61,45 @@
       <ereg regexp="sip:transfer@" search_in="hdr" header="Refer-To:" check_it="true" assign_to="refer_target"/>
       <ereg regexp="Replaces=[^%]+%3bto-tag%3d[^%]+%3bfrom-tag%3d[^&amp;&gt;]+" search_in="hdr" header="Refer-To:" check_it="true" assign_to="translated_replaces"/>
       <ereg regexp="sip:transferor@example.com" search_in="hdr" header="Referred-By:" check_it="true" assign_to="referred_by"/>
+{% if peer_accepts %}
+      <ereg regexp="(.*)" search_in="hdr" header="From:" check_it="true" assign_to="refer_from"/>
+      <ereg regexp="(.*)" search_in="hdr" header="To:" check_it="true" assign_to="refer_to"/>
+      <ereg regexp="sip:[^&gt;[:space:]]+" search_in="hdr" header="Contact:" check_it="true" assign_to="refer_contact"/>
+{% endif %}
       <log message="REFER target: [$refer_target], call: [$outgoing_call_id], caller tag: [$from_tag_match]/[$outgoing_from_tag], replacements: [$translated_replaces], referred by: [$referred_by]"/>
     </action>
   </recv>
+{% if peer_accepts %}
+  <send><![CDATA[
+      SIP/2.0 202 Accepted
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+  ]]></send>
+
+  <pause milliseconds="{{ final_notify_delay_ms }}"/>
+
+  <send retrans="500"><![CDATA[
+      NOTIFY [$refer_contact] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: [$refer_to]
+      To: [$refer_from]
+      Call-ID: [$outgoing_call_id]
+      CSeq: 2 NOTIFY
+      Contact: <sip:[local_ip]:[local_port];transport=[transport]>
+      Event: refer
+      Subscription-State: terminated;reason=noresource
+      Content-Type: message/sipfrag
+      Content-Length: [len]
+
+      SIP/2.0 200 OK
+  ]]></send>
+  <recv response="200" crlf="true"></recv>
+{% else %}
   <send><![CDATA[
       SIP/2.0 486 Busy Here
       [last_Via:]
@@ -73,6 +109,7 @@
       [last_CSeq:]
       Content-Length: 0
   ]]></send>
+{% endif %}
 
   <recv request="BYE" crlf="true"></recv>
 

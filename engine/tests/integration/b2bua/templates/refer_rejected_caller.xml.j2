@@ -77,9 +77,27 @@
       [last_CSeq:]
       Content-Length: 0
   ]]></send>
+{% if send_colliding_refer %}
+  <send retrans="500">
+    <![CDATA[
+      REFER sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: sut <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 3 REFER
+      Contact: sip:sipp@[local_ip]:[local_port]
+      Max-Forwards: 70
+      Refer-To: <sip:other-transfer@[remote_ip]:[remote_port]>
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <recv response="491" crlf="true"></recv>
+{% endif %}
   <recv request="NOTIFY" crlf="true">
     <action>
-      <ereg regexp="SIP/2.0 486" search_in="body" check_it="true" assign_to="refer_result"/>
+      <ereg regexp="SIP/2.0 {{ expected_refer_status }}" search_in="body" check_it="true" assign_to="refer_result"/>
       <log message="REFER result: [$refer_result]"/>
     </action>
   </recv>
@@ -113,7 +131,7 @@
       From: sipp <sip:sipp@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
       To: sut <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
       Call-ID: [call_id]
-      CSeq: 3 BYE
+      CSeq: {{ 4 if send_colliding_refer else 3 }} BYE
       Contact: sip:sipp@[local_ip]:[local_port]
       Max-Forwards: 70
       Content-Length: 0
