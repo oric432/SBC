@@ -20,7 +20,7 @@
       s=-
       c=IN IP[media_ip_type] [media_ip]
       t=0 0
-      m=audio [media_port] RTP/AVP 0
+      m=audio {{ caller_rtp_sink_port }} RTP/AVP 0
       a=rtpmap:0 PCMU/8000
       a=sendrecv
     ]]>
@@ -43,12 +43,6 @@
       Content-Length: 0
     ]]>
   </send>
-
-  <nop>
-    <action>
-      <exec play_pcap_audio="{{ pcap_path }}"/>
-    </action>
-  </nop>
 
   <pause milliseconds="500"/>
 
@@ -74,7 +68,7 @@
 {% if legacy_zero_address %}      c=IN IP4 0.0.0.0
 {% else %}      c=IN IP[media_ip_type] [media_ip]
 {% endif %}      t=0 0
-      m=audio [media_port] RTP/AVP 0
+      m=audio {{ caller_rtp_sink_port }} RTP/AVP 0
       a=rtpmap:0 PCMU/8000
       a={{ hold_direction }}
     ]]>
@@ -101,6 +95,9 @@
     ]]>
   </send>
 
+  <nop><action><exec play_pcap_audio="{{ sendonly_pcap_path }}"/></action></nop>
+  <pause milliseconds="2000"/>
+
   <!-- RFC 3264: recvonly in the offer requires sendonly in the answer. -->
   <send retrans="500">
     <![CDATA[
@@ -120,7 +117,7 @@
       s=-
       c=IN IP[media_ip_type] [media_ip]
       t=0 0
-      m=audio [media_port] RTP/AVP 0
+      m=audio {{ caller_rtp_sink_port }} RTP/AVP 0
       a=rtpmap:0 PCMU/8000
       a=recvonly
     ]]>
@@ -147,6 +144,9 @@
     ]]>
   </send>
 
+  <nop><action><exec play_pcap_audio="{{ recvonly_pcap_path }}"/></action></nop>
+  <pause milliseconds="2000"/>
+
   <!-- Inactive hold must be answered inactive; sendrecv resumes media. -->
   <send retrans="500">
     <![CDATA[
@@ -166,7 +166,7 @@
       s=-
       c=IN IP[media_ip_type] [media_ip]
       t=0 0
-      m=audio [media_port] RTP/AVP 0
+      m=audio {{ caller_rtp_sink_port }} RTP/AVP 0
       a=rtpmap:0 PCMU/8000
       a=inactive
     ]]>
@@ -193,6 +193,9 @@
     ]]>
   </send>
 
+  <nop><action><exec play_pcap_audio="{{ inactive_pcap_path }}"/></action></nop>
+  <pause milliseconds="2000"/>
+
   <send retrans="500">
     <![CDATA[
       INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
@@ -211,7 +214,7 @@
       s=-
       c=IN IP[media_ip_type] [media_ip]
       t=0 0
-      m=audio [media_port] RTP/AVP 0
+      m=audio {{ caller_rtp_sink_port }} RTP/AVP 0
       a=rtpmap:0 PCMU/8000
       a=sendrecv
     ]]>
@@ -237,6 +240,9 @@
       Content-Length: 0
     ]]>
   </send>
+
+  <nop><action><exec play_pcap_audio="{{ resume_pcap_path }}"/></action></nop>
+  <pause milliseconds="2000"/>
 
   <pause milliseconds="500"/>
 

@@ -33,7 +33,7 @@
       s=-
       c=IN IP[media_ip_type] [media_ip]
       t=0 0
-      m=audio [media_port] RTP/AVP 0
+      m=audio {{ rtp_sink_port }} RTP/AVP 0
       a=rtpmap:0 PCMU/8000
       a=sendrecv
     ]]>
@@ -41,11 +41,15 @@
 
   <recv request="ACK" rtd="true" crlf="true"></recv>
 
-  <nop>
-    <action>
-      <exec play_pcap_audio="{{ pcap_path }}"/>
-    </action>
-  </nop>
+  <!-- The caller answers each direction locally, so time RTP probes to those phases. -->
+  <pause milliseconds="1500"/>
+  <nop><action><exec play_pcap_audio="{{ sendonly_pcap_path }}"/></action></nop>
+  <pause milliseconds="1900"/>
+  <nop><action><exec play_pcap_audio="{{ recvonly_pcap_path }}"/></action></nop>
+  <pause milliseconds="1900"/>
+  <nop><action><exec play_pcap_audio="{{ inactive_pcap_path }}"/></action></nop>
+  <pause milliseconds="1900"/>
+  <nop><action><exec play_pcap_audio="{{ resume_pcap_path }}"/></action></nop>
 
   <recv request="BYE" crlf="true"></recv>
 
