@@ -230,10 +230,10 @@ void ReferHandler::busy() {
 bool ReferHandler::start(Leg leg) {
     if (inbound_sub_ != nullptr || outbound_sub_ != nullptr) {
         reject(PJSIP_SC_REQUEST_PENDING);
-        result_delivered_  = false;
+        result_delivered_ = false;
         return false;
     }
-    result_delivered_  = false;
+    result_delivered_ = false;
     g_module_id = session_.ctx()->module_id_;
     if (g_module_id < 0) {
         reject(PJSIP_SC_INTERNAL_SERVER_ERROR);
