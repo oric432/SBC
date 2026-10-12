@@ -188,7 +188,7 @@ def test_b2bua_reinvite_hold_directions(
             inactive_pcap_path=probe_pcaps["callee_inactive"],
             resume_pcap_path=probe_pcaps["callee_resume"],
         )
-        run_sipp_pair(caller_xml, callee_xml)
+        run_sipp_pair(caller_xml, callee_xml, trace=True)
 
         def received_ssrcs(rtp_sink: socket.socket) -> set[int]:
             received = set()

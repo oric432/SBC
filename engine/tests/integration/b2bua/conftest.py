@@ -133,14 +133,24 @@ def render_scenario(_jinja_env: Environment, tmp_path: Path) -> Callable[..., Pa
     return _render
 
 
-def _run_sipp(sipp_binary: Path, scenario: Path, target: str | None, local_ip: str, local_port: int, media_port: int):
-    message_log = scenario.with_suffix(".messages.log")
-    error_log = scenario.with_suffix(".errors.log")
+def _run_sipp(
+    sipp_binary: Path,
+    scenario: Path,
+    target: str | None,
+    local_ip: str,
+    local_port: int,
+    media_port: int,
+    *,
+    trace: bool = False,
+):
     args = [str(sipp_binary), "-sf", str(scenario)]
     if target is not None:
         args.append(target)
     args += ["-i", local_ip, "-p", str(local_port), "-mp", str(media_port), "-m", "1", "-nostdin"]
-    args += ["-trace_msg", "-message_file", str(message_log), "-trace_err", "-error_file", str(error_log)]
+    if trace:
+        message_log = scenario.with_suffix(".messages.log")
+        error_log = scenario.with_suffix(".errors.log")
+        args += ["-trace_msg", "-message_file", str(message_log), "-trace_err", "-error_file", str(error_log)]
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
@@ -156,10 +166,16 @@ def _stop(process: subprocess.Popen[str]) -> None:
 
 
 @pytest.fixture
-def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path, Path], None]:
-    def _run(caller_scenario: Path, callee_scenario: Path) -> None:
+def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., None]:
+    def _run(caller_scenario: Path, callee_scenario: Path, *, trace: bool = False) -> None:
         callee = _run_sipp(
-            sipp_binary, callee_scenario, None, ports.local_ip, ports.callee_port, ports.callee_media_port
+            sipp_binary,
+            callee_scenario,
+            None,
+            ports.local_ip,
+            ports.callee_port,
+            ports.callee_media_port,
+            trace=trace,
         )
         # Give the callee time to bind before the caller dials it; matches
         # the previous run_test.py orchestration.
@@ -175,31 +191,42 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
             ports.local_ip,
             ports.caller_port,
             ports.caller_media_port,
+            trace=trace,
         )
         try:
             caller_output, _ = caller.communicate(timeout=60)
             if caller.returncode != 0:
-                caller_errors = caller_scenario.with_suffix(".errors.log")
-                caller_messages = caller_scenario.with_suffix(".messages.log")
+                caller_trace = ""
+                if trace:
+                    caller_errors = caller_scenario.with_suffix(".errors.log")
+                    caller_messages = caller_scenario.with_suffix(".messages.log")
+                    caller_trace = (
+                        f"\ncaller errors: {caller_errors.read_text() if caller_errors.exists() else '(missing)'}"
+                        f"\ncaller messages: {caller_messages.read_text() if caller_messages.exists() else '(missing)'}"
+                    )
                 pytest.fail(
                     f"caller sipp failed ({caller.returncode}):\n{caller_output}"
-                    f"\ncaller errors: {caller_errors.read_text() if caller_errors.exists() else '(missing)'}"
-                    f"\ncaller messages: {caller_messages.read_text() if caller_messages.exists() else '(missing)'}"
+                    f"{caller_trace}"
                 )
             try:
                 callee_output, _ = callee.communicate(timeout=60)
             except subprocess.TimeoutExpired:
                 _stop(callee)
                 callee_output, _ = callee.communicate()
-                callee_messages = callee_scenario.with_suffix(".messages.log")
-                callee_errors = callee_scenario.with_suffix(".errors.log")
+                callee_trace = ""
+                if trace:
+                    callee_messages = callee_scenario.with_suffix(".messages.log")
+                    callee_errors = callee_scenario.with_suffix(".errors.log")
+                    callee_trace = (
+                        f"\ncallee messages: {callee_messages.read_text() if callee_messages.exists() else '(missing)'}"
+                        f"\ncallee errors: {callee_errors.read_text() if callee_errors.exists() else '(missing)'}"
+                    )
                 pytest.fail(
                     "callee sipp timed out waiting for the scenario to finish;"
                     f"\nengine log tail:\n{sbc_engine.log_tail()}"
                     f"\ncaller output:\n{caller_output}"
                     f"\ncallee output:\n{callee_output}"
-                    f"\ncallee messages: {callee_messages.read_text() if callee_messages.exists() else '(missing)'}"
-                    f"\ncallee errors: {callee_errors.read_text() if callee_errors.exists() else '(missing)'}"
+                    f"{callee_trace}"
                 )
         finally:
             _stop(caller)
