@@ -373,7 +373,6 @@ bool is_hold_address(const std::string& address) {
 
     std::string address_copy = address;
     const pj_str_t source = pj_str(address_copy.data());
-    
     pj_in6_addr parsed{};
     const pj_in6_addr unspecified{};
 
