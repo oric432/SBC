@@ -372,7 +372,15 @@ bool is_hold_address(const std::string& address) {
     }
 
     std::string address_copy = address;
-    const pj_str_t source = pj_str(address_copy.data());
+    if (address_copy.find('\0') != std::string::npos) {
+        return false;
+    }
+
+    const pj_str_t source{
+        address_copy.data(),
+        static_cast<pj_ssize_t>(address_copy.size()),
+    };
+
     pj_in6_addr parsed{};
     const pj_in6_addr unspecified{};
 
