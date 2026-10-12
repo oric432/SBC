@@ -77,7 +77,7 @@ RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 
 // RFC 3264 direction of the first non-declined audio line. Media-level
 // attributes override session-level attributes; the default is sendrecv.
-MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp, const RtpEndpoint& offer_endpoint);
+[[nodiscard]] MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp, const RtpEndpoint& offer_endpoint);
 
 // RFC 3264 answer direction corresponding to an offer direction.
 [[nodiscard]] MediaDirection answer_direction(MediaDirection offer_direction);
