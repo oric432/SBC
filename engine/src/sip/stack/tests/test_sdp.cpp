@@ -175,20 +175,38 @@ TEST_CASE("audio direction extraction honors media and session-level attributes"
     CHECK(extract_direction(kMultiCodecOffer) == Sdp::MediaDirection::kSendRecv);
 }
 
-TEST_CASE("SDP validation rejects conflicting audio directions", "[sdp]") {
+TEST_CASE("SDP validation permits at most one direction per session or audio media section", "[sdp]") {
+    const ScopedPjPool pj_scope;
     const std::string base = "v=0\r\n"
                              "o=- 123 456 IN IP4 127.0.0.1\r\n"
                              "s=-\r\n"
                              "c=IN IP4 127.0.0.1\r\n"
-                             "t=0 0\r\n"
-                             "m=audio 10000 RTP/AVP 0\r\n";
+                             "t=0 0\r\n";
+    const std::string media = "m=audio 10000 RTP/AVP 0\r\n";
+    constexpr std::array directions{
+        Sdp::MediaDirection::kSendRecv,
+        Sdp::MediaDirection::kSendOnly,
+        Sdp::MediaDirection::kRecvOnly,
+        Sdp::MediaDirection::kInactive};
 
-    CHECK(Sdp::is_valid_sdp(base));
-    CHECK(Sdp::is_valid_sdp(base + "a=sendonly\r\n"));
-    CHECK_FALSE(
-        Sdp::is_valid_sdp(
-            base + "a=sendonly\r\n"
-                   "a=recvonly\r\n"));
+    CHECK(Sdp::is_valid_sdp(base + media));
+    for (const auto first : directions) {
+        const std::string first_attr = std::string{"a="} + Sdp::direction_name(first) + "\r\n";
+        CHECK(Sdp::is_valid_sdp(base + first_attr + media));
+        CHECK(Sdp::is_valid_sdp(base + media + first_attr));
+        for (const auto second : directions) {
+            CAPTURE(first, second);
+            const std::string second_attr = std::string{"a="} + Sdp::direction_name(second) + "\r\n";
+            CHECK_FALSE(Sdp::is_valid_sdp(base + first_attr + second_attr + media));
+            CHECK_FALSE(Sdp::is_valid_sdp(base + media + first_attr + second_attr));
+            const std::string overridden = base + first_attr + media + second_attr;
+            CHECK(Sdp::is_valid_sdp(overridden));
+            const auto* sdp = Sdp::parse(pj_scope.pool(), overridden);
+            REQUIRE(sdp != nullptr);
+            CHECK(Sdp::extract_audio_direction(sdp, Sdp::extract_rtp_endpoint(sdp)) == second);
+        }
+    }
+    CHECK_FALSE(Sdp::is_valid_sdp(base + "a=sendonly\r\na=recvonly\r\n" + media + "a=inactive\r\n"));
 }
 
 TEST_CASE("hold address forces inactive audio direction", "[sdp]") {
