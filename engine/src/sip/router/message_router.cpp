@@ -69,7 +69,7 @@ void MessageRouter::on_rx_refer(pjsip_rx_data* request) {
     const bool handled = session->dialog_sm().process_event(ReferReceived{leg});
     session->dialog_actions().set_pending_refer(nullptr);
     if (!handled) {
-        pjsip_dlg_respond(dialog, request, PJSIP_SC_REQUEST_PENDING, nullptr, nullptr, nullptr);
+        pjsip_dlg_respond(dialog, request, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST, nullptr, nullptr, nullptr);
     }
 }
 
