@@ -226,7 +226,6 @@ void ReferHandler::busy() {
 bool ReferHandler::start(Leg leg) {
     if (inbound_sub_ != nullptr || outbound_sub_ != nullptr) {
         reject(PJSIP_SC_REQUEST_PENDING);
-        result_delivered_ = false;
         return false;
     }
     result_delivered_ = false;
