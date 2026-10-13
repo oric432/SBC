@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "core/utils/log.hpp"
+#include "net/rtp/media_bridge.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/stack/inv_session.hpp"
 
@@ -75,11 +76,25 @@ void ReinviteHandler::on_media_update(pjsip_inv_session* inv, pj_status_t status
         return;
     }
     *found = nullptr;
-    const ExchangeOutcome outcome = status == PJ_SUCCESS ? ExchangeOutcome::kCommitted : ExchangeOutcome::kFailed;
+    ExchangeOutcome outcome = ExchangeOutcome::kFailed;
+    if (status == PJ_SUCCESS && inv->neg != nullptr) {
+        const pjmedia_sdp_session* active_local = nullptr;
+        if (pjmedia_sdp_neg_get_active_local(inv->neg, &active_local) == PJ_SUCCESS && active_local != nullptr) {
+            const auto endpoint = Sdp::extract_rtp_endpoint(active_local);
+            // The negotiated local SDP describes the SBC, while LegFlow describes its peer.
+            const auto direction = Sdp::answer_direction(Sdp::extract_audio_direction(active_local, endpoint));
+            const Leg leg = session_.leg_for(inv);
+            session_.media_bridge()->set_leg_media_flow(
+                leg == Leg::kCaller ? RelayLeg::kLegA : RelayLeg::kLegB,
+                LegFlow{.can_send_ = Sdp::can_send(direction), .can_receive_ = Sdp::can_receive(direction)});
+            session_.record_media_direction(leg, direction);
+            outcome = ExchangeOutcome::kCommitted;
+        }
+    }
     Log::call()->debug(
         "[{}] offerless re-INVITE answer in ACK {}",
         session_.call_id(),
-        status == PJ_SUCCESS ? "accepted" : "failed");
+        outcome == ExchangeOutcome::kCommitted ? "accepted" : "failed");
     session_.dialog_sm().process_event(Dialog::ExchangeFinished{outcome});
 }
 

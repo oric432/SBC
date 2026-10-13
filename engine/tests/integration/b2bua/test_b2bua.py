@@ -85,14 +85,38 @@ def test_b2bua_reinvite_same_sdp(sbc_engine, render_scenario, run_sipp_pair):
     _log.info("scenario '%s' passed", scenario_name)
 
 
-def test_b2bua_reinvite_offerless(sbc_engine, render_scenario, run_sipp_pair):
+@pytest.mark.parametrize("ack_direction", ["sendrecv", "sendonly", "recvonly", "inactive"])
+def test_b2bua_reinvite_offerless(sbc_engine, render_scenario, run_sipp_pair, ack_direction, tmp_path):
     """A mid-call re-INVITE with no SDP body gets an SBC-generated offer in
     the 200 OK, and the caller's ACK carries the answer."""
     scenario_name = "reinvite_offerless"
-    caller_xml = render_scenario("reinvite_offerless_caller.xml.j2", scenario_name=scenario_name)
-    callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
-
-    run_sipp_pair(caller_xml, callee_xml)
+    probe_ssrc = 0xA0000010
+    probe_path = tmp_path / "ack_direction.pcap"
+    _make_rtp_probe_pcap(_PCAP_PATHS["g711a"], probe_path, probe_ssrc)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sink:
+        sink.bind(("127.0.0.1", 0))
+        sink.setblocking(False)
+        caller_xml = render_scenario(
+            "reinvite_offerless_caller.xml.j2",
+            scenario_name=scenario_name,
+            ack_direction=ack_direction,
+            probe_pcap_path=probe_path,
+        )
+        callee_xml = render_scenario(
+            "callee.xml.j2", scenario_name=scenario_name, rtp_sink_port=sink.getsockname()[1]
+        )
+        run_sipp_pair(caller_xml, callee_xml, trace=True)
+        received = set()
+        while True:
+            try:
+                packet, _ = sink.recvfrom(2048)
+            except BlockingIOError:
+                break
+            if len(packet) >= 12 and packet[0] >> 6 == 2:
+                received.add(struct.unpack_from(">I", packet, 8)[0])
+    assert (probe_ssrc in received) == (ack_direction in {"sendrecv", "sendonly"}), (
+        f"incorrect RTP forwarding after {ack_direction} answer in ACK"
+    )
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
     _log.info("scenario '%s' passed", scenario_name)
