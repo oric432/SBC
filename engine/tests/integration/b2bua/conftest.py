@@ -133,11 +133,21 @@ def render_scenario(_jinja_env: Environment, tmp_path: Path) -> Callable[..., Pa
     return _render
 
 
-def _run_sipp(sipp_binary: Path, scenario: Path, target: str | None, local_ip: str, local_port: int, media_port: int):
+def _run_sipp(
+    sipp_binary: Path,
+    scenario: Path,
+    target: str | None,
+    local_ip: str,
+    local_port: int,
+    media_port: int,
+    message_file: Path | None = None,
+):
     args = [str(sipp_binary), "-sf", str(scenario)]
     if target is not None:
         args.append(target)
     args += ["-i", local_ip, "-p", str(local_port), "-mp", str(media_port), "-m", "1", "-nostdin"]
+    if message_file is not None:
+        args += ["-trace_msg", "-message_file", str(message_file)]
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
@@ -153,11 +163,18 @@ def _stop(process: subprocess.Popen[str]) -> None:
 
 
 @pytest.fixture
-def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path, Path], None]:
-    def _run(caller_scenario: Path, callee_scenario: Path) -> None:
+def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., str | None]:
+    def _run(caller_scenario: Path, callee_scenario: Path, *, trace_callee_messages: bool = False) -> str | None:
         sbc_engine.log_start = len(sbc_engine.log_lines)
+        callee_message_file = callee_scenario.with_suffix(".messages.log") if trace_callee_messages else None
         callee = _run_sipp(
-            sipp_binary, callee_scenario, None, ports.local_ip, ports.callee_port, ports.callee_media_port
+            sipp_binary,
+            callee_scenario,
+            None,
+            ports.local_ip,
+            ports.callee_port,
+            ports.callee_media_port,
+            callee_message_file,
         )
         # Give the callee time to bind before the caller dials it; matches
         # the previous run_test.py orchestration.
@@ -189,6 +206,7 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
             )
         if callee.returncode != 0:
             pytest.fail(f"callee sipp failed ({callee.returncode}):\n{callee_output}")
+        return callee_message_file.read_text() if callee_message_file is not None else None
 
     return _run
 

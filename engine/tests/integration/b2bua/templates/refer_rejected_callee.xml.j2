@@ -81,7 +81,20 @@
       Content-Length: 0
   ]]></send>
 
+{% if bye_during_refer %}
+  <recv request="BYE" crlf="true"></recv>
+  <send><![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+  ]]></send>
+{% else %}
   <pause milliseconds="{{ final_notify_delay_ms }}"/>
+{% endif %}
 
   <send retrans="500"><![CDATA[
       NOTIFY [$refer_contact] SIP/2.0
@@ -96,7 +109,7 @@
       Content-Type: message/sipfrag
       Content-Length: [len]
 
-      SIP/2.0 200 OK
+      SIP/2.0 {{ notify_status }} {{ "OK" if notify_status == 200 else "Failure" }}
   ]]></send>
   <recv response="200" crlf="true"></recv>
 {% else %}
@@ -111,6 +124,7 @@
   ]]></send>
 {% endif %}
 
+{% if not bye_during_refer %}
   <recv request="BYE" crlf="true"></recv>
 
   <send>
@@ -124,4 +138,5 @@
       Content-Length: 0
     ]]>
   </send>
+{% endif %}
 </scenario>
