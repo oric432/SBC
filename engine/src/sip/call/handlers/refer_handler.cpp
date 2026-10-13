@@ -16,10 +16,6 @@ namespace SbcEngine {
 
 namespace {
 constexpr int kLastSipStatus = 699;
-// PJSIP callbacks provide only pjsip_evsub*, but retrieving its ReferHandler
-// from mod_data requires the runtime-assigned SBC module ID first. One active
-// PJSIP stack makes this lookup key common to every subscription; the handler
-// pointers themselves remain stored and lifetime-bound to each subscription.
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 int g_module_id = -1;
 
@@ -234,11 +230,14 @@ bool ReferHandler::start(Leg leg) {
         return false;
     }
     result_delivered_ = false;
-    g_module_id = session_.ctx()->module_id_;
-    if (g_module_id < 0) {
+    if (g_module_id == -1) {
+        g_module_id = session_.ctx()->module_id_;
+    }
+    if (g_module_id == -1) {
         reject(PJSIP_SC_INTERNAL_SERVER_ERROR);
         return false;
     }
+
     const auto target = refer_to();
     if (!target) {
         reject(target.error());
