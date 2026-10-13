@@ -111,7 +111,6 @@ bool has_valid_media(const pjmedia_sdp_session* sdp) {
     if (!has_valid_direction({sdp->attr, sdp->attr_count})) {
         return false;
     }
-    
     for (unsigned i = 0; i < sdp->media_count; ++i) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         const pjmedia_sdp_media* media = sdp->media[i];
