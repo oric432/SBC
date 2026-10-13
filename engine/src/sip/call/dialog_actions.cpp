@@ -75,8 +75,10 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     case PJSIP_INV_STATE_CONNECTING:
     case PJSIP_INV_STATE_CONFIRMED: break;
 
-    case PJSIP_INV_STATE_DISCONNECTED:
+    case PJSIP_INV_STATE_DISCONNECTED: {
         session_.leg(leg).disconnected_ = true;
+        const bool both_disconnected =
+            session_.leg(Leg::kCaller).disconnected_ && session_.leg(Leg::kCallee).disconnected_;
         Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
         if (is_session_timer_expiry(inv)) {
             Log::call()->warn(
@@ -94,10 +96,15 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
         else if (dialog.is_active() || dialog.is_referring()) {
             dialog.process_event(ByeReceived{leg});
         }
-        else if (dialog.is_terminating() || dialog.is_referring_while_terminating()) {
+        else if (dialog.is_referring_while_terminating() && both_disconnected) {
+            refer_.abort();
+            dialog.process_event(CallEnded{});
+        }
+        else if (dialog.is_terminating()) {
             dialog.process_event(CallEnded{});
         }
         break;
+    }
 
     default: break;
     }

@@ -10,7 +10,6 @@ struct Active {};
 struct Reinviting {};
 struct Referring {};
 struct ReferringWhileTerminating {};
-struct AwaitingReferAfterCallEnded {};
 struct Terminating {};
 struct Terminated {};
 struct DialogDone {};
@@ -79,12 +78,6 @@ struct DialogSm {
 
         auto handle_call_ended = [](DialogSelfFireQueue cleanup_event) { cleanup_event(Cleanup{}); };
 
-        auto handle_refer_completed_after_call =
-            [](Actions& actions, const ReferCompleted& evt, DialogSelfFireQueue cleanup_event) {
-                actions.refer_completed(evt.outcome_);
-                cleanup_event(Cleanup{});
-            };
-
         auto handle_cleanup = [](Actions& actions) { actions.cleanup(); };
 
         // clang-format off
@@ -111,10 +104,8 @@ struct DialogSm {
              Sml::state<Referring>             + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<ReferringWhileTerminating>,
              Sml::state<Referring>             + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
-             // The original call is ending; retain the dialog until the REFER result arrives.
-             Sml::state<ReferringWhileTerminating> + Sml::event<CallEnded>                                                                                      = Sml::state<AwaitingReferAfterCallEnded>,
+             // The original call is ending; leg callbacks abort the REFER once both legs disconnect.
              Sml::state<ReferringWhileTerminating> + (Sml::event<ReferCompleted>                                                    / handle_refer_completed)     = Sml::state<Terminating>,
-             Sml::state<AwaitingReferAfterCallEnded> + (Sml::event<ReferCompleted>                                                  / handle_refer_completed_after_call) = Sml::state<Terminated>,
 
              // Terminating state
              Sml::state<Terminating>           + (Sml::event<CallEnded>                                                              / handle_call_ended)          = Sml::state<Terminated>,

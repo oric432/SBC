@@ -93,6 +93,7 @@
   </send>
   <recv response="200" crlf="true"></recv>
 {% endif %}
+{% if not bye_during_refer %}
 {% if send_colliding_refer %}
   <send retrans="500">
     <![CDATA[
@@ -130,7 +131,6 @@
   <!-- Re-triggering the pcap once per hold (rather than one trigger plus a
        long pause) is what lets a single template express both a short call
        and a longer, sustained-relay one via holds_ms alone. -->
-{% if not bye_during_refer %}
 {% for hold_ms in holds_ms %}
   <nop>
     <action>

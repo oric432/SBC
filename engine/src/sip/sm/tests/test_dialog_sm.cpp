@@ -288,7 +288,7 @@ TEST_CASE("DialogSm reports refer received during media renegotiation", "[dialog
     REQUIRE(actions.was_called("refer_busy:callee"));
 }
 
-TEST_CASE("DialogSm retains a pending refer after the original call ends", "[dialog_sm]") {
+TEST_CASE("DialogSm retains a pending refer while the original call is ending", "[dialog_sm]") {
     MockDialogActions actions;
     TestMachine machine{actions};
 
@@ -298,13 +298,16 @@ TEST_CASE("DialogSm retains a pending refer after the original call ends", "[dia
     REQUIRE(actions.was_called("forward_bye_to_other_leg"));
 
     actions.reset();
-    REQUIRE(machine.process_event(CallEnded{}));
-    REQUIRE(machine.is(Sml::state<AwaitingReferAfterCallEnded>));
+    REQUIRE_FALSE(machine.process_event(CallEnded{}));
+    REQUIRE(machine.is(Sml::state<ReferringWhileTerminating>));
     REQUIRE_FALSE(actions.was_called("cleanup"));
 
-    REQUIRE(machine.process_event(ReferCompleted{ReferOutcome::kSucceeded}));
+    REQUIRE(machine.process_event(ReferCompleted{ReferOutcome::kFailed}));
+    REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("refer_completed:failure"));
+
+    REQUIRE(machine.process_event(CallEnded{}));
     REQUIRE(machine.is(Sml::state<DialogDone>));
-    REQUIRE(actions.was_called("refer_completed:success"));
     REQUIRE(actions.was_called("cleanup"));
 }
 

@@ -94,7 +94,6 @@
   ]]></send>
 {% else %}
   <pause milliseconds="{{ final_notify_delay_ms }}"/>
-{% endif %}
 
   <send retrans="500"><![CDATA[
       NOTIFY [$refer_contact] SIP/2.0
@@ -112,6 +111,7 @@
       SIP/2.0 {{ notify_status }} {{ "OK" if notify_status == 200 else "Failure" }}
   ]]></send>
   <recv response="200" crlf="true"></recv>
+{% endif %}
 {% else %}
   <send><![CDATA[
       SIP/2.0 486 Busy Here

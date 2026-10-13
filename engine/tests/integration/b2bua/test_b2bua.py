@@ -494,6 +494,7 @@ def test_b2bua_bye_during_refer(sbc_engine, render_scenario, run_sipp_pair):
 
     run_sipp_pair(caller_xml, callee_xml)
 
+    assert "REFER failed" in sbc_engine.log_tail()
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
 
 

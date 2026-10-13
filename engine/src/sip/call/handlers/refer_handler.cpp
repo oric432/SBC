@@ -223,6 +223,11 @@ void ReferHandler::busy() {
     reject(PJSIP_SC_REQUEST_PENDING);
 }
 
+void ReferHandler::abort() {
+    stop_subscriptions();
+    finish(ReferOutcome::kFailed);
+}
+
 bool ReferHandler::start(Leg leg) {
     if (inbound_sub_ != nullptr || outbound_sub_ != nullptr) {
         reject(PJSIP_SC_REQUEST_PENDING);

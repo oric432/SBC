@@ -30,6 +30,7 @@ public:
     void set_pending_request(pjsip_rx_data* request) { pending_request_ = request; }
     bool start(Leg leg);
     void busy();
+    void abort();
 
 private:
     static ReferHandler* from_subscription(pjsip_evsub* sub);
