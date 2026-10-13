@@ -68,6 +68,11 @@ void ReinviteHandler::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_sessio
     }
 
     *offer = pjmedia_sdp_session_clone(inv->pool_prov, active_local);
+    // A previous hold answer must not constrain the peer's next answer.
+    if (!Sdp::set_audio_direction(inv->pool_prov, *offer, Sdp::MediaDirection::kSendRecv)) {
+        Log::sip()->error("[{}] failed to reset offerless re-INVITE direction", session_.call_id());
+        *offer = nullptr;
+    }
 }
 
 void ReinviteHandler::on_media_update(pjsip_inv_session* inv, pj_status_t status) {
@@ -78,11 +83,10 @@ void ReinviteHandler::on_media_update(pjsip_inv_session* inv, pj_status_t status
     *found = nullptr;
     ExchangeOutcome outcome = ExchangeOutcome::kFailed;
     if (status == PJ_SUCCESS && inv->neg != nullptr) {
-        const pjmedia_sdp_session* active_local = nullptr;
-        if (pjmedia_sdp_neg_get_active_local(inv->neg, &active_local) == PJ_SUCCESS && active_local != nullptr) {
-            const auto endpoint = Sdp::extract_rtp_endpoint(active_local);
-            // The negotiated local SDP describes the SBC, while LegFlow describes its peer.
-            const auto direction = Sdp::answer_direction(Sdp::extract_audio_direction(active_local, endpoint));
+        const pjmedia_sdp_session* active_remote = nullptr;
+        if (pjmedia_sdp_neg_get_active_remote(inv->neg, &active_remote) == PJ_SUCCESS && active_remote != nullptr) {
+            const auto endpoint = Sdp::extract_rtp_endpoint(active_remote);
+            const auto direction = Sdp::extract_audio_direction(active_remote, endpoint);
             const Leg leg = session_.leg_for(inv);
             session_.media_bridge()->set_leg_media_flow(
                 leg == Leg::kCaller ? RelayLeg::kLegA : RelayLeg::kLegB,

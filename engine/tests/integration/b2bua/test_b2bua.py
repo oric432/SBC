@@ -86,24 +86,43 @@ def test_b2bua_reinvite_same_sdp(sbc_engine, render_scenario, run_sipp_pair):
 
 
 @pytest.mark.parametrize("ack_direction", ["sendrecv", "sendonly", "recvonly", "inactive"])
-def test_b2bua_reinvite_offerless(sbc_engine, render_scenario, run_sipp_pair, ack_direction, tmp_path):
+@pytest.mark.parametrize("hold_first", [False, True], ids=["active-call", "resume-after-sendonly-hold"])
+@pytest.mark.parametrize("ack_zero_address", [False, True], ids=["normal-address", "zero-address"])
+def test_b2bua_reinvite_offerless(
+    sbc_engine, render_scenario, run_sipp_pair, ack_direction, hold_first, ack_zero_address, tmp_path
+):
     """A mid-call re-INVITE with no SDP body gets an SBC-generated offer in
     the 200 OK, and the caller's ACK carries the answer."""
     scenario_name = "reinvite_offerless"
     probe_ssrc = 0xA0000010
     probe_path = tmp_path / "ack_direction.pcap"
     _make_rtp_probe_pcap(_PCAP_PATHS["g711a"], probe_path, probe_ssrc)
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sink:
+    hold_ssrc, resume_ssrc = 0xB0000010, 0xB0000011
+    hold_probe, resume_probe = tmp_path / "hold.pcap", tmp_path / "resume.pcap"
+    _make_rtp_probe_pcap(_PCAP_PATHS["g711a"], hold_probe, hold_ssrc)
+    _make_rtp_probe_pcap(_PCAP_PATHS["g711a"], resume_probe, resume_ssrc)
+    with (
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sink,
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as caller_sink,
+    ):
         sink.bind(("127.0.0.1", 0))
         sink.setblocking(False)
+        caller_sink.bind(("127.0.0.1", 0))
+        caller_sink.setblocking(False)
         caller_xml = render_scenario(
             "reinvite_offerless_caller.xml.j2",
             scenario_name=scenario_name,
             ack_direction=ack_direction,
             probe_pcap_path=probe_path,
+            hold_first=hold_first,
+            ack_zero_address=ack_zero_address,
+            caller_rtp_sink_port=caller_sink.getsockname()[1],
         )
         callee_xml = render_scenario(
-            "callee.xml.j2", scenario_name=scenario_name, rtp_sink_port=sink.getsockname()[1]
+            "callee.xml.j2",
+            scenario_name=scenario_name,
+            rtp_sink_port=sink.getsockname()[1],
+            timed_probes=[(3500, hold_probe), (1500, resume_probe)] if hold_first else [(2500, resume_probe)],
         )
         run_sipp_pair(caller_xml, callee_xml, trace=True)
         received = set()
@@ -114,8 +133,20 @@ def test_b2bua_reinvite_offerless(sbc_engine, render_scenario, run_sipp_pair, ac
                 break
             if len(packet) >= 12 and packet[0] >> 6 == 2:
                 received.add(struct.unpack_from(">I", packet, 8)[0])
-    assert (probe_ssrc in received) == (ack_direction in {"sendrecv", "sendonly"}), (
+        caller_received = set()
+        while True:
+            try:
+                packet, _ = caller_sink.recvfrom(2048)
+            except BlockingIOError:
+                break
+            if len(packet) >= 12 and packet[0] >> 6 == 2:
+                caller_received.add(struct.unpack_from(">I", packet, 8)[0])
+    assert (probe_ssrc in received) == (not ack_zero_address and ack_direction in {"sendrecv", "sendonly"}), (
         f"incorrect RTP forwarding after {ack_direction} answer in ACK"
+    )
+    assert hold_ssrc not in caller_received, "sendonly hold RTP incorrectly reached the caller"
+    assert (resume_ssrc in caller_received) == (not ack_zero_address and ack_direction in {"sendrecv", "recvonly"}), (
+        f"incorrect RTP forwarding toward caller after {ack_direction} answer in ACK"
     )
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"

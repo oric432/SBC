@@ -23,16 +23,16 @@ struct RtpEndpoint {
 enum class MediaDirection : std::uint8_t { kSendRecv, kSendOnly, kRecvOnly, kInactive };
 
 // Returns the name of the direction, see MediaDirection
-const char* direction_name(MediaDirection direction);
+[[nodiscard]] const char* direction_name(MediaDirection direction);
 
 // Returns true if media direction allows to send, false otherwise
-bool can_send(MediaDirection direction);
+[[nodiscard]] bool can_send(MediaDirection direction);
 
 // Returns true if media direction allows to receive, false otherwise
-bool can_receive(MediaDirection direction);
+[[nodiscard]] bool can_receive(MediaDirection direction);
 
 // Returns true if the offer address is 0.0.0.0 or :: for IPV6 which means hold address, false otherwise
-bool is_hold_address(const std::string& address);
+[[nodiscard]] bool is_hold_address(const std::string& address);
 
 // A negotiated audio codec, identified by its RTP payload type. clock_rate_ is
 // 0 when the payload type is one of RFC 3551's static types carried without an
@@ -84,7 +84,7 @@ RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 
 // Overrides the first non-declined audio line's direction, creating a
 // media-level attribute so it overrides any inherited session-level direction.
-bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction);
+[[nodiscard]] bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction);
 
 // The audio codec carried on an SDP: the first payload type of its first
 // non-declined audio media line. Returns nullopt if there is no active audio

@@ -40,6 +40,12 @@
 
   <recv request="ACK" rtd="true" crlf="true"></recv>
 
+  {% if timed_probes is defined %}
+  {% for delay_ms, probe_path in timed_probes %}
+  <pause milliseconds="{{ delay_ms }}"/>
+  <nop><action><exec play_pcap_audio="{{ probe_path }}"/></action></nop>
+  {% endfor %}
+  {% else %}
   <!-- No pause between this and the BYE recv below: an explicit pause would
        block this call's scenario progression and risk the caller's BYE
        arriving before a recv step is active to catch it. The pcap keeps
@@ -50,6 +56,8 @@
       <exec play_pcap_audio="{{ pcap_path }}"/>
     </action>
   </nop>
+
+  {% endif %}
 
   <recv request="BYE" crlf="true"></recv>
 
