@@ -50,6 +50,27 @@ CallSession* CallManager::find_by_inv(pjsip_inv_session* inv) {
     return nullptr;
 }
 
+CallSession* CallManager::find_by_dialog(pjsip_dialog* dialog) {
+    if (dialog == nullptr) {
+        return nullptr;
+    }
+    if (module_id_ >= 0) {
+        // Dialog and invite-session mod_data are separate; assigning a call
+        // leg must claim this slot so in-dialog callbacks can recover it.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, module_id_ is not a constant
+        // expression
+        return static_cast<CallSession*>(dialog->mod_data[module_id_]);
+    }
+
+    for (auto& [call_id, session] : sessions_) {
+        (void)call_id;
+        if (session->leg(Leg::kCaller).dialog_ == dialog || session->leg(Leg::kCallee).dialog_ == dialog) {
+            return session.get();
+        }
+    }
+    return nullptr;
+}
+
 void CallManager::remove_session(const std::string& call_id) {
     schedule_remove(call_id);
 }
@@ -99,7 +120,7 @@ void CallManager::process_pending_rtp_inactivity() {
             }
 
             auto& dialog = session->dialog_sm();
-            if (dialog.is_active() || dialog.is_reinviting()) {
+            if (dialog.is_active() || dialog.is_reinviting() || dialog.is_referring()) {
                 Log::call()->warn("[{}] removing session because the RTP inactivity timeout expired", call_id);
                 dialog.process_event(CallError{});
             }
@@ -111,7 +132,7 @@ void CallManager::terminate_established_calls() {
     for (auto& [call_id, session] : sessions_) {
         (void)call_id;
         auto& dialog = session->dialog_sm();
-        if (dialog.is_active() || dialog.is_reinviting()) {
+        if (dialog.is_active() || dialog.is_reinviting() || dialog.is_referring()) {
             dialog.process_event(CallError{});
         }
     }

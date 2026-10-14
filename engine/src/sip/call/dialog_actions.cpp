@@ -26,6 +26,23 @@ void DialogActions::reject_update_collision(Leg leg) {
         to_string(leg));
 }
 
+bool DialogActions::refer_started(Leg leg) {
+    Log::call()->info("[{}] REFER started on {} leg", session_.call_id(), to_string(leg));
+    return refer_.start(leg);
+}
+
+void DialogActions::refer_completed(ReferOutcome outcome) {
+    Log::call()->info(
+        "[{}] REFER {}",
+        session_.call_id(),
+        outcome == ReferOutcome::kSucceeded ? "succeeded" : "failed");
+}
+
+void DialogActions::refer_busy(Leg leg) {
+    Log::call()->info("[{}] REFER received while dialog is busy on {} leg", session_.call_id(), to_string(leg));
+    refer_.busy();
+}
+
 void DialogActions::terminate_call() {
     // Reported here, not just in cleanup(): at shutdown the SIP loop is
     // already stopped, so the BYE responses that would drive cleanup() never
@@ -58,7 +75,11 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
     case PJSIP_INV_STATE_CONNECTING:
     case PJSIP_INV_STATE_CONFIRMED: break;
 
-    case PJSIP_INV_STATE_DISCONNECTED:
+    case PJSIP_INV_STATE_DISCONNECTED: {
+        session_.leg(leg).disconnected_ = true;
+        const bool both_disconnected =
+            session_.leg(Leg::kCaller).disconnected_ && session_.leg(Leg::kCallee).disconnected_;
+        Log::sip()->trace("[{}] Entering dialog inv state PJSIP_INV_STATE_DISCONNECTED", session_.call_id());
         if (is_session_timer_expiry(inv)) {
             Log::call()->warn(
                 "[{}] RFC 4028 session timer expired on {} leg; PJSIP sent BYE because the session refresh was "
@@ -72,13 +93,18 @@ void DialogActions::on_leg_state_changed(pjsip_inv_session* inv, pjsip_rx_data* 
         if (dialog.is_reinviting()) {
             dialog.process_event(Dialog::ExchangeFinished{ExchangeOutcome::kFailed});
         }
-        else if (dialog.is_active()) {
+        else if (dialog.is_active() || dialog.is_referring()) {
             dialog.process_event(ByeReceived{leg});
+        }
+        else if (dialog.is_referring_while_terminating() && both_disconnected) {
+            refer_.abort();
+            dialog.process_event(CallEnded{});
         }
         else if (dialog.is_terminating()) {
             dialog.process_event(CallEnded{});
         }
         break;
+    }
 
     default: break;
     }

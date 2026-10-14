@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import re
 import socket
 import struct
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,25 @@ from .conftest import _PCAP_PATHS
 from .scenarios import SCENARIOS
 
 _log = logging.getLogger("integration.b2bua")
+
+
+def _assert_replaces_translated_to_callee_dialog(message_trace: str) -> None:
+    invite = re.search(r"INVITE sip:.*? SIP/2\.0(?P<headers>.*?)(?:\r?\n){2}", message_trace, re.DOTALL)
+    invite_ok = re.search(r"SIP/2\.0 200 OK(?P<headers>.*?)(?:\r?\n){2}", message_trace, re.DOTALL)
+    refer = re.search(r"REFER sip:.*? SIP/2\.0(?P<headers>.*?)(?:\r?\n){2}", message_trace, re.DOTALL)
+    assert invite is not None and invite_ok is not None and refer is not None
+
+    call_id = re.search(r"^Call-ID:\s*(\S+)", invite["headers"], re.MULTILINE)
+    from_tag = re.search(r"^From:.*?;tag=([^;\s>]+)", invite["headers"], re.MULTILINE)
+    to_tag = re.search(r"^To:.*?;tag=([^;\s>]+)", invite_ok["headers"], re.MULTILINE)
+    replaces = re.search(r"^Refer-To:.*?[?&]Replaces=([^>\s&]+)", refer["headers"], re.MULTILINE)
+    assert call_id is not None and from_tag is not None and to_tag is not None and replaces is not None
+
+    translated = re.fullmatch(
+        r"([^;]+);to-tag=([^;]+);from-tag=([^;]+)", urllib.parse.unquote(replaces.group(1))
+    )
+    assert translated is not None
+    assert translated.groups() == (call_id.group(1), to_tag.group(1), from_tag.group(1))
 
 
 def _make_rtp_probe_pcap(source: Path, destination: Path, ssrc: int) -> None:
@@ -543,3 +564,136 @@ def test_b2bua_register_wrong_aor_rejected(
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during REGISTER:\n{sbc_engine.log_tail()}"
     _log.info("scenario 'register_wrong_aor_rejected' passed")
+
+
+def test_b2bua_refer_rejected_by_peer(sbc_engine, render_scenario, run_sipp_pair):
+    scenario_name = "refer_rejected_by_peer"
+    caller_xml = render_scenario(
+        "refer_rejected_caller.xml.j2",
+        scenario_name=scenario_name,
+        holds_ms=[1000],
+        expected_refer_status=486,
+        send_colliding_refer=False,
+        bye_during_refer=False,
+    )
+    callee_xml = render_scenario(
+        "refer_rejected_callee.xml.j2", scenario_name=scenario_name, peer_accepts=False
+    )
+
+    callee_messages = run_sipp_pair(caller_xml, callee_xml, trace_callee_messages=True)
+
+    assert callee_messages is not None
+    _assert_replaces_translated_to_callee_dialog(callee_messages)
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+@pytest.mark.parametrize("send_colliding_refer", [False, True], ids=["accepted", "busy_collision"])
+def test_b2bua_refer_accepted(sbc_engine, render_scenario, run_sipp_pair, send_colliding_refer):
+    scenario_name = "refer_busy_collision" if send_colliding_refer else "refer_accepted_by_peer"
+    caller_xml = render_scenario(
+        "refer_rejected_caller.xml.j2",
+        scenario_name=scenario_name,
+        holds_ms=[1000],
+        expected_refer_status=200,
+        send_colliding_refer=send_colliding_refer,
+        bye_during_refer=False,
+    )
+    callee_xml = render_scenario(
+        "refer_rejected_callee.xml.j2",
+        scenario_name=scenario_name,
+        peer_accepts=True,
+        final_notify_delay_ms=1000 if send_colliding_refer else 100,
+        notify_status=200,
+        bye_during_refer=False,
+    )
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+@pytest.mark.parametrize(
+    ("case", "refer_to_value", "expected_status"),
+    [
+        ("missing", None, 400),
+        ("malformed_uri", "not-a-sip-uri", 400),
+        ("garbled_replaces", "<sip:transfer@example.com?Replaces=call%ZZid>", 400),
+        (
+            "unknown_replaces_dialog",
+            "<sip:transfer@example.com?Replaces=missing%3Bto-tag%3Dmissing%3Bfrom-tag%3Dmissing>",
+            481,
+        ),
+    ],
+)
+def test_b2bua_refer_invalid_refer_to(
+    sbc_engine, render_scenario, run_sipp_pair, case, refer_to_value, expected_status
+):
+    scenario_name = f"refer_{case}"
+    caller_xml = render_scenario(
+        "refer_invalid_caller.xml.j2",
+        scenario_name=scenario_name,
+        refer_to_value=refer_to_value,
+        expected_status=expected_status,
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+def test_b2bua_refer_failure_notify(sbc_engine, render_scenario, run_sipp_pair):
+    scenario_name = "refer_failure_notify"
+    caller_xml = render_scenario(
+        "refer_rejected_caller.xml.j2",
+        scenario_name=scenario_name,
+        holds_ms=[1000],
+        expected_refer_status=503,
+        send_colliding_refer=False,
+        bye_during_refer=False,
+    )
+    callee_xml = render_scenario(
+        "refer_rejected_callee.xml.j2",
+        scenario_name=scenario_name,
+        peer_accepts=True,
+        final_notify_delay_ms=100,
+        notify_status=503,
+        bye_during_refer=False,
+    )
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+def test_b2bua_bye_during_refer(sbc_engine, render_scenario, run_sipp_pair):
+    scenario_name = "bye_during_refer"
+    caller_xml = render_scenario(
+        "refer_rejected_caller.xml.j2",
+        scenario_name=scenario_name,
+        holds_ms=[],
+        expected_refer_status=200,
+        send_colliding_refer=False,
+        bye_during_refer=True,
+    )
+    callee_xml = render_scenario(
+        "refer_rejected_callee.xml.j2",
+        scenario_name=scenario_name,
+        peer_accepts=True,
+        final_notify_delay_ms=0,
+        notify_status=200,
+        bye_during_refer=True,
+    )
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert "REFER failed" in sbc_engine.log_tail()
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+def test_b2bua_refer_out_of_dialog(sbc_engine, render_scenario, run_sipp_client):
+    scenario_xml = render_scenario("refer_out_of_dialog.xml.j2", scenario_name="refer_out_of_dialog")
+
+    run_sipp_client(scenario_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during REFER:\n{sbc_engine.log_tail()}"

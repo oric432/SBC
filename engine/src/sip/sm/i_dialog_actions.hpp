@@ -8,8 +8,7 @@
 
 namespace SbcEngine {
 
-// Actions driven by DialogSm once the call is established: BYE, re-INVITE
-// and call termination.
+// Actions driven by DialogSm once the call is established.
 class IDialogActions : public IActions {
 public:
     IDialogActions() = default;
@@ -32,6 +31,12 @@ public:
     // No explicit status code is available for a colliding UPDATE (see #116);
     // this only logs, PJSIP auto-rejects with 488 when no answer is set.
     virtual void reject_update_collision(Leg leg) = 0;
+
+    // Returns false when startup failed synchronously; completion after a
+    // successful start arrives later from the REFER subscription callbacks.
+    virtual bool refer_started(Leg leg) = 0;
+    virtual void refer_completed(ReferOutcome outcome) = 0;
+    virtual void refer_busy(Leg leg) = 0;
 
     virtual void terminate_call() = 0;
 };

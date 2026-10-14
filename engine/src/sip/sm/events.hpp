@@ -56,6 +56,16 @@ struct UpdateReceived {
     Leg leg_ = Leg::kCaller;
 };
 
+struct ReferReceived {
+    Leg leg_ = Leg::kCaller;
+};
+
+enum class ReferOutcome : std::uint8_t { kSucceeded, kFailed };
+
+struct ReferCompleted {
+    ReferOutcome outcome_;
+};
+
 struct CallError {};
 
 struct CallEnded {};

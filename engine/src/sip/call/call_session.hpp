@@ -37,6 +37,8 @@ public:
     // issue #128: the SBC negotiates each leg independently, so these can differ).
     struct CallLeg {
         pjsip_inv_session* inv_ = nullptr;
+        pjsip_dialog* dialog_ = nullptr;
+        bool disconnected_ = false;
         std::optional<Sdp::AudioCodecInfo> codec_;
         std::optional<std::uint8_t> dtmf_pt_;
         Sdp::MediaDirection media_direction_ = Sdp::MediaDirection::kSendRecv;
@@ -85,22 +87,26 @@ public:
 
     [[nodiscard]] pjsip_inv_session* inv_caller() const { return leg(Leg::kCaller).inv_; }
     [[nodiscard]] pjsip_inv_session* inv_callee() const { return leg(Leg::kCallee).inv_; }
-    // Also claims inv->mod_data[ctx_->module_id_] so CallManager::find_by_inv()
-    // can look this session up in O(1) instead of scanning every session.
+    // Also claims the invite session and dialog module slots so CallManager
+    // can recover this session from either callback context in O(1).
     void set_inv_caller(pjsip_inv_session* inv) {
         leg(Leg::kCaller).inv_ = inv;
+        leg(Leg::kCaller).dialog_ = inv != nullptr ? inv->dlg : nullptr;
+        leg(Leg::kCaller).disconnected_ = false;
         claim_mod_data(inv);
     }
     void set_inv_callee(pjsip_inv_session* inv) {
         leg(Leg::kCallee).inv_ = inv;
+        leg(Leg::kCallee).dialog_ = inv != nullptr ? inv->dlg : nullptr;
+        leg(Leg::kCallee).disconnected_ = false;
         claim_mod_data(inv);
     }
 
     // Indexed access for call sites that resolve "which leg" generically
     // (as opposed to a call site that always means one specific leg, which
     // should keep using the named accessors above).
-    [[nodiscard]] CallLeg& leg(Leg which) { return legs_[static_cast<std::size_t>(which)]; }
-    [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_[static_cast<std::size_t>(which)]; }
+    [[nodiscard]] CallLeg& leg(Leg which) { return legs_.at(static_cast<std::size_t>(which)); }
+    [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_.at(static_cast<std::size_t>(which)); }
     [[nodiscard]] bool media_is_held() const;
     [[nodiscard]] bool rtp_inactivity_expired(
         std::chrono::steady_clock::time_point now,
@@ -149,17 +155,22 @@ private:
         if (inv != nullptr && ctx_->module_id_ >= 0) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
             inv->mod_data[ctx_->module_id_] = this;
+            if (inv->dlg != nullptr) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
+                inv->dlg->mod_data[ctx_->module_id_] = this;
+            }
         }
     }
-    // Mirrors claim_mod_data(): a leg's pjsip_inv_session outlives CallSession
-    // (PJSIP owns it), so without this its mod_data slot would keep pointing at
-    // freed memory for any later PJSIP callback on that leg (e.g. a BYE this
-    // session sent to both legs on teardown, whose other-leg completion arrives
-    // after this session is already destroyed).
+    // PJSIP owns both objects beyond CallSession's lifetime, so clear both
+    // lookup slots before this session is destroyed.
     void release_mod_data(pjsip_inv_session* inv) {
         if (inv != nullptr && ctx_->module_id_ >= 0) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
             inv->mod_data[ctx_->module_id_] = nullptr;
+            if (inv->dlg != nullptr) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) - PJSIP C API, not a constant expr
+                inv->dlg->mod_data[ctx_->module_id_] = nullptr;
+            }
         }
     }
 

@@ -140,6 +140,7 @@ def _run_sipp(
     local_ip: str,
     local_port: int,
     media_port: int,
+    message_file: Path | None = None,
     *,
     trace: bool = False,
 ):
@@ -151,6 +152,8 @@ def _run_sipp(
         message_log = scenario.with_suffix(".messages.log")
         error_log = scenario.with_suffix(".errors.log")
         args += ["-trace_msg", "-message_file", str(message_log), "-trace_err", "-error_file", str(error_log)]
+    elif message_file is not None:
+        args += ["-trace_msg", "-message_file", str(message_file)]
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
@@ -192,8 +195,12 @@ def _communicate_sipp(
 
 
 @pytest.fixture
-def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., None]:
-    def _run(caller_scenario: Path, callee_scenario: Path, *, trace: bool = False) -> None:
+def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., str | None]:
+    def _run(
+        caller_scenario: Path, callee_scenario: Path, *, trace: bool = False, trace_callee_messages: bool = False
+    ) -> str | None:
+        sbc_engine.log_start = len(sbc_engine.log_lines)
+        callee_message_file = callee_scenario.with_suffix(".messages.log") if trace_callee_messages else None
         callee = _run_sipp(
             sipp_binary,
             callee_scenario,
@@ -201,6 +208,7 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., 
             ports.local_ip,
             ports.callee_port,
             ports.callee_media_port,
+            callee_message_file,
             trace=trace,
         )
         # Give the callee time to bind before the caller dials it; matches
@@ -223,6 +231,8 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., 
             caller_output = _communicate_sipp(
                 caller, caller_scenario, "caller", sbc_engine, trace=trace
             )
+            if sbc_engine.process.poll() is not None:
+                pytest.fail(f"SbcEngine exited during the call ({sbc_engine.process.returncode}):\n{sbc_engine.log_tail()}")
             callee_output = _communicate_sipp(
                 callee,
                 callee_scenario,
@@ -237,11 +247,37 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., 
 
         if caller.returncode != 0:
             caller_trace = _sipp_trace(caller_scenario, "caller") if trace else ""
-            pytest.fail(f"caller sipp failed ({caller.returncode}):\n{caller_output}{caller_trace}")
+            pytest.fail(
+                f"caller sipp failed ({caller.returncode}):\n{caller_output}{caller_trace}"
+                f"\nSbcEngine log:\n{sbc_engine.log_tail()}"
+            )
 
         if callee.returncode != 0:
             callee_trace = _sipp_trace(callee_scenario, "callee") if trace else ""
             pytest.fail(f"callee sipp failed ({callee.returncode}):\n{callee_output}{callee_trace}")
+        return callee_message_file.read_text() if callee_message_file is not None else None
+
+    return _run
+
+
+@pytest.fixture
+def run_sipp_client(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path], None]:
+    def _run(scenario: Path) -> None:
+        sbc_engine.log_start = len(sbc_engine.log_lines)
+        process = _run_sipp(
+            sipp_binary,
+            scenario,
+            f"{ports.local_ip}:{ports.sbc_port}",
+            ports.local_ip,
+            ports.caller_port,
+            ports.caller_media_port,
+        )
+        try:
+            output, _ = process.communicate(timeout=15)
+        finally:
+            _stop(process)
+        if process.returncode != 0:
+            pytest.fail(f"client sipp failed ({process.returncode}):\n{output}\nSbcEngine log:\n{sbc_engine.log_tail()}")
 
     return _run
 

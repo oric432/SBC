@@ -5,7 +5,10 @@
 #include <format>
 
 #include <pjlib-util.h>
+#include <pjsip-simple/evsub.h>
 #include <pjsip_ua.h>
+#include <pjsip-ua/sip_replaces.h>
+#include <pjsip-ua/sip_xfer.h>
 
 #include "sip/router/message_router.hpp"
 #include "core/utils/log.hpp"
@@ -30,16 +33,35 @@ MessageRouter* active_router() {
     return g_active_stack != nullptr ? g_active_stack->router() : nullptr;
 }
 
-// Application module: receives out-of-dialog requests (initial INVITE, OPTIONS,
-// and anything without a matching dialog). In-dialog traffic is delivered to the
-// invite-session callbacks instead, so this only forwards to the router.
+// Application module: forwards requests to the router, which decides whether
+// this module owns them.
 pj_bool_t on_rx_request(pjsip_rx_data* rdata) {
     MessageRouter* router = active_router();
     if (router == nullptr) {
         return PJ_FALSE;
     }
-    router->on_rx_request(rdata);
-    return PJ_TRUE;
+    return router->on_rx_request(rdata) ? PJ_TRUE : PJ_FALSE;
+}
+
+void on_tsx_state(pjsip_transaction* tsx, pjsip_event* event) {
+    MessageRouter* router = active_router();
+    // The TRYING-state restriction ensures the REFER is dispatched once
+    if (router == nullptr || tsx->state != PJSIP_TSX_STATE_TRYING || event == nullptr ||
+        event->type != PJSIP_EVENT_TSX_STATE) {
+        return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C event API
+    if (event->body.tsx_state.type != PJSIP_EVENT_RX_MSG) {
+        return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C event API
+    pjsip_rx_data* request = event->body.tsx_state.src.rdata;
+    if (request != nullptr && request->msg_info.msg->type == PJSIP_REQUEST_MSG &&
+        pjsip_rdata_get_dlg(request) != nullptr &&
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C event API
+        pjsip_method_cmp(&request->msg_info.msg->line.req.method, pjsip_get_refer_method()) == 0) {
+        router->on_rx_refer(request);
+    }
 }
 
 // Invite-session state changes: hand the new state (plus the message that
@@ -181,12 +203,28 @@ VoidResult PjsipStack::init(const PjsipConfig& config) {
         return std::unexpected(pj_error("pjsip_100rel_init_module failed", status));
     }
 
+    status = pjsip_evsub_init_module(endpt_);
+    if (status != PJ_SUCCESS) {
+        return std::unexpected(pj_error("pjsip_evsub_init_module failed", status));
+    }
+
+    status = pjsip_xfer_init_module(endpt_);
+    if (status != PJ_SUCCESS) {
+        return std::unexpected(pj_error("pjsip_xfer_init_module failed", status));
+    }
+
+    status = pjsip_replaces_init_module(endpt_);
+    if (status != PJ_SUCCESS) {
+        return std::unexpected(pj_error("pjsip_replaces_init_module failed", status));
+    }
+
     static std::string mod_name = "mod-sbc";
     pj_bzero(&module_, sizeof(module_));
     module_.name = pj_str(mod_name.data());
     module_.id = -1;
     module_.priority = PJSIP_MOD_PRIORITY_APPLICATION;
     module_.on_rx_request = &on_rx_request;
+    module_.on_tsx_state = &on_tsx_state;
 
     status = pjsip_endpt_register_module(endpt_, &module_);
     if (status != PJ_SUCCESS) {

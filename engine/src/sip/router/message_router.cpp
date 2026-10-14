@@ -20,8 +20,14 @@ void reject_reinvite(pjsip_inv_session* inv, pjsip_rx_data* rdata, int status_co
 }
 
 } // namespace
-void MessageRouter::on_rx_request(pjsip_rx_data* request) {
+bool MessageRouter::on_rx_request(pjsip_rx_data* request) {
     const std::string method = extract_method(request);
+    if (pjsip_rdata_get_dlg(request) != nullptr) {
+        // PJSIP's existing dialog usages own every in-dialog method except
+        // REFER, which this module claims and dispatches from on_tsx_state.
+        return method == "REFER";
+    }
+
     if (method == "INVITE") {
         process_invite(request);
     }
@@ -37,8 +43,33 @@ void MessageRouter::on_rx_request(pjsip_rx_data* request) {
     else if (method == "ACK") {
         request_actions_.handle_unmatched_ack(request);
     }
+    else if (method == "REFER") {
+        request_actions_.reject_out_of_dialog_refer(request);
+    }
     else {
         request_actions_.reject_unsupported_method(request);
+    }
+    return true;
+}
+
+void MessageRouter::on_rx_refer(pjsip_rx_data* request) {
+    pjsip_dialog* dialog = pjsip_rdata_get_dlg(request);
+    auto* session = call_manager_->find_by_dialog(dialog);
+    if (session == nullptr) {
+        pjsip_dlg_respond(dialog, request, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST, nullptr, nullptr, nullptr);
+        return;
+    }
+    if (!session->setup_sm().is_established()) {
+        pjsip_dlg_respond(dialog, request, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST, nullptr, nullptr, nullptr);
+        return;
+    }
+
+    const Leg leg = session->leg(Leg::kCaller).dialog_ == dialog ? Leg::kCaller : Leg::kCallee;
+    session->dialog_actions().set_pending_refer(request);
+    const bool handled = session->dialog_sm().process_event(ReferReceived{leg});
+    session->dialog_actions().set_pending_refer(nullptr);
+    if (!handled) {
+        pjsip_dlg_respond(dialog, request, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST, nullptr, nullptr, nullptr);
     }
 }
 
@@ -63,7 +94,7 @@ MessageRouter::on_rx_reinvite(pjsip_inv_session* inv, const pjmedia_sdp_session*
         return PJ_SUCCESS;
     }
     if (!session->setup_sm().is_established()) {
-        reject_reinvite(inv, rdata, PJSIP_SC_REQUEST_PENDING);
+        reject_reinvite(inv, rdata, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
         return PJ_SUCCESS;
     }
 
