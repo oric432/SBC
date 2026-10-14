@@ -61,7 +61,7 @@
       <ereg regexp="sip:transfer@" search_in="hdr" header="Refer-To:" check_it="true" assign_to="refer_target"/>
       <ereg regexp="Replaces=[^%]+%3bto-tag%3d[^%]+%3bfrom-tag%3d[^&amp;&gt;]+" search_in="hdr" header="Refer-To:" check_it="true" assign_to="translated_replaces"/>
       <ereg regexp="sip:transferor@example.com" search_in="hdr" header="Referred-By:" check_it="true" assign_to="referred_by"/>
-{% if peer_accepts %}
+{% if peer_accepts and not bye_during_refer %}
       <ereg regexp="(.*)" search_in="hdr" header="From:" check_it="true" assign_to="refer_from"/>
       <ereg regexp="(.*)" search_in="hdr" header="To:" check_it="true" assign_to="refer_to"/>
       <ereg regexp="sip:[^&gt;[:space:]]+" search_in="hdr" header="Contact:" check_it="true" assign_to="refer_contact"/>
