@@ -39,6 +39,7 @@ public:
         pjsip_inv_session* inv_ = nullptr;
         std::optional<Sdp::AudioCodecInfo> codec_;
         std::optional<std::uint8_t> dtmf_pt_;
+        Sdp::MediaDirection media_direction_ = Sdp::MediaDirection::kSendRecv;
     };
 
     // request_uri/caller_offer_sdp are extracted from rdata internally.
@@ -100,6 +101,10 @@ public:
     // should keep using the named accessors above).
     [[nodiscard]] CallLeg& leg(Leg which) { return legs_[static_cast<std::size_t>(which)]; }
     [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_[static_cast<std::size_t>(which)]; }
+    [[nodiscard]] bool media_is_held() const;
+    [[nodiscard]] bool rtp_inactivity_expired(
+        std::chrono::steady_clock::time_point now,
+        std::chrono::steady_clock::duration timeout) const;
     // Which leg's pjsip_inv_session this is. Matches only against inv_callee();
     // anything else (including nullptr) is reported as the caller leg, same
     // fallback semantics the ad-hoc `inv == inv_callee()` comparisons had.
@@ -136,6 +141,8 @@ public:
     // log line -- nullopt before the call was answered.
     [[nodiscard]] std::optional<std::chrono::seconds> established_duration() const;
 
+    void apply_media_direction(Leg leg, Sdp::MediaDirection direction);
+
 private:
     void send_call_updated();
     void claim_mod_data(pjsip_inv_session* inv) {
@@ -155,6 +162,8 @@ private:
             inv->mod_data[ctx_->module_id_] = nullptr;
         }
     }
+
+    void record_media_direction(Leg which, Sdp::MediaDirection direction);
 
     std::string call_id_;
     PjContext* ctx_;

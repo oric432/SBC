@@ -94,8 +94,7 @@ void CallManager::process_pending_rtp_inactivity() {
                 continue;
             }
 
-            const auto last_packet = session->media_bridge()->last_packet_time();
-            if (now - last_packet < interval) {
+            if (!session->rtp_inactivity_expired(now, interval)) {
                 continue;
             }
 

@@ -133,11 +133,24 @@ def render_scenario(_jinja_env: Environment, tmp_path: Path) -> Callable[..., Pa
     return _render
 
 
-def _run_sipp(sipp_binary: Path, scenario: Path, target: str | None, local_ip: str, local_port: int, media_port: int):
+def _run_sipp(
+    sipp_binary: Path,
+    scenario: Path,
+    target: str | None,
+    local_ip: str,
+    local_port: int,
+    media_port: int,
+    *,
+    trace: bool = False,
+):
     args = [str(sipp_binary), "-sf", str(scenario)]
     if target is not None:
         args.append(target)
     args += ["-i", local_ip, "-p", str(local_port), "-mp", str(media_port), "-m", "1", "-nostdin"]
+    if trace:
+        message_log = scenario.with_suffix(".messages.log")
+        error_log = scenario.with_suffix(".errors.log")
+        args += ["-trace_msg", "-message_file", str(message_log), "-trace_err", "-error_file", str(error_log)]
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
@@ -152,11 +165,43 @@ def _stop(process: subprocess.Popen[str]) -> None:
         process.wait()
 
 
+def _communicate_sipp(
+    process: subprocess.Popen[str],
+    scenario: Path,
+    role: str,
+    sbc_engine,
+    *,
+    trace: bool,
+    caller_output: str = "",
+) -> str:
+    try:
+        output, _ = process.communicate(timeout=60)
+        return output
+    except subprocess.TimeoutExpired:
+        _stop(process)
+        output, _ = process.communicate()
+        caller_diagnostic = f"\ncaller output:\n{caller_output}" if caller_output else ""
+        role_trace = _sipp_trace(scenario, role) if trace else ""
+        pytest.fail(
+            f"{role} sipp timed out waiting for the scenario to finish;"
+            f"\nengine log tail:\n{sbc_engine.log_tail()}"
+            f"{caller_diagnostic}"
+            f"\n{role} output:\n{output}"
+            f"{role_trace}"
+        )
+
+
 @pytest.fixture
-def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path, Path], None]:
-    def _run(caller_scenario: Path, callee_scenario: Path) -> None:
+def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., None]:
+    def _run(caller_scenario: Path, callee_scenario: Path, *, trace: bool = False) -> None:
         callee = _run_sipp(
-            sipp_binary, callee_scenario, None, ports.local_ip, ports.callee_port, ports.callee_media_port
+            sipp_binary,
+            callee_scenario,
+            None,
+            ports.local_ip,
+            ports.callee_port,
+            ports.callee_media_port,
+            trace=trace,
         )
         # Give the callee time to bind before the caller dials it; matches
         # the previous run_test.py orchestration.
@@ -172,20 +217,41 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[[Path
             ports.local_ip,
             ports.caller_port,
             ports.caller_media_port,
+            trace=trace,
         )
         try:
-            caller_output, _ = caller.communicate(timeout=60)
-            callee_output, _ = callee.communicate(timeout=60)
+            caller_output = _communicate_sipp(
+                caller, caller_scenario, "caller", sbc_engine, trace=trace
+            )
+            callee_output = _communicate_sipp(
+                callee,
+                callee_scenario,
+                "callee",
+                sbc_engine,
+                trace=trace,
+                caller_output=caller_output,
+            )
         finally:
             _stop(caller)
             _stop(callee)
 
         if caller.returncode != 0:
-            pytest.fail(f"caller sipp failed ({caller.returncode}):\n{caller_output}")
+            caller_trace = _sipp_trace(caller_scenario, "caller") if trace else ""
+            pytest.fail(f"caller sipp failed ({caller.returncode}):\n{caller_output}{caller_trace}")
+
         if callee.returncode != 0:
-            pytest.fail(f"callee sipp failed ({callee.returncode}):\n{callee_output}")
+            callee_trace = _sipp_trace(callee_scenario, "callee") if trace else ""
+            pytest.fail(f"callee sipp failed ({callee.returncode}):\n{callee_output}{callee_trace}")
 
     return _run
+
+
+def _sipp_trace(scenario: Path, role: str) -> str:
+    message_log = scenario.with_suffix(".messages.log")
+    error_log = scenario.with_suffix(".errors.log")
+    messages = message_log.read_text() if message_log.exists() else "(missing)"
+    errors = error_log.read_text() if error_log.exists() else "(missing)"
+    return f"\n{role} errors: {errors}\n{role} messages: {messages}"
 
 
 def _backend_call(base_url: str, method: str, path: str, body: dict | None = None) -> tuple[int, bytes]:
