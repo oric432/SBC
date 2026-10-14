@@ -30,9 +30,7 @@ struct NegotiatedOffer {
 // (#116): picks a codec, reconfigures MediaBridge if it changed, and rewrites
 // the offer into the answer SDP the caller commits. Never forwards to the
 // other leg (#195) -- always answered locally.
-//
-// On failure, kRolledBack is a normal reject (unsupported codec, hold not
-// implemented) the caller should answer with "not acceptable"; kFailed is an
+// kRolledBack requires a "not acceptable" response; kFailed means no answer could be produced due to an internal error.
 [[nodiscard]] std::expected<NegotiatedOffer, ExchangeOutcome>
 negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg leg);
 

@@ -76,7 +76,8 @@ void rewrite_connection_and_port(
 // structurally validated/rewritten but never bridged.
 RtpEndpoint extract_rtp_endpoint(const pjmedia_sdp_session* sdp);
 
-// RFC 3264 direction of the first non-declined audio line. Media-level
+// RFC 3264 direction of the first non-declined audio line.
+// Media-level direction overrides session-level; absent direction defaults to sendrecv, and a hold address means inactive.
 [[nodiscard]] MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp, const RtpEndpoint& offer_endpoint);
 
 // RFC 3264 answer direction corresponding to an offer direction.
