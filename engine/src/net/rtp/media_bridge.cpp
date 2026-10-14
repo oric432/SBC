@@ -63,6 +63,15 @@ struct MediaBridge::Impl {
     std::optional<boost::asio::ip::udp::endpoint> dest_a_;
     std::optional<boost::asio::ip::udp::endpoint> dest_b_;
 
+    LegFlow leg_a_flow_;
+    LegFlow leg_b_flow_;
+
+    [[nodiscard]] bool relay_allowed(RelayLeg src_leg) const {
+        const LegFlow& src_flow = src_leg == RelayLeg::kLegA ? leg_a_flow_ : leg_b_flow_;
+        const LegFlow& dst_flow = src_leg == RelayLeg::kLegA ? leg_b_flow_ : leg_a_flow_;
+        return src_flow.can_send_ && dst_flow.can_receive_;
+    }
+
     MediaBridgeErrorHandler error_handler_;
     std::atomic<std::chrono::steady_clock::time_point> last_packet_time_;
 
@@ -141,7 +150,6 @@ struct MediaBridge::Impl {
                 return;
             }
 
-            self->impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
             process(std::move(self), src_leg, src, dst, dst_ep, pkt);
         });
     }
@@ -185,19 +193,32 @@ struct MediaBridge::Impl {
         RtpSession<BasicRawRtpSender>& dst,
         boost::asio::ip::udp::endpoint& dst_ep,
         const RtpPacketView& pkt) {
-        const Impl& impl = *self->impl_;
-        const bool from_a = (src_leg == RelayLeg::kLegA);
-        const auto dtmf = relay_dtmf_pt(
-            pkt,
-            from_a ? impl.leg_a_dtmf_pt_ : impl.leg_b_dtmf_pt_,
-            from_a ? impl.leg_b_dtmf_pt_ : impl.leg_a_dtmf_pt_);
+        Impl& impl = *self->impl_;
+        const bool from_leg_a = src_leg == RelayLeg::kLegA;
+
+        const auto rearm_receive_loop = [&]() {
+            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::process_packet);
+        };
+
+        if (!impl.relay_allowed(src_leg)) {
+            rearm_receive_loop();
+            return;
+        }
+
+        impl.last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
+
+        const auto src_dtmf_pt = from_leg_a ? impl.leg_a_dtmf_pt_ : impl.leg_b_dtmf_pt_;
+        const auto dst_dtmf_pt = from_leg_a ? impl.leg_b_dtmf_pt_ : impl.leg_a_dtmf_pt_;
+        const auto dtmf = relay_dtmf_pt(pkt, src_dtmf_pt, dst_dtmf_pt);
+
         if (dtmf.outcome_ == DtmfRelayOutcome::kDropUnmapped) {
             Log::rtp()->trace(
                 "media bridge: dropping DTMF packet with no destination PT mapping on {}",
                 to_string(src_leg));
-            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::process_packet);
+            rearm_receive_loop();
             return;
         }
+
         auto on_sent = send_completion(self, src_leg, src, dst, dst_ep, &Impl::process_packet);
 
         // Copied, not referenced: a configure_legs() swap posted from the SIP
@@ -211,11 +232,13 @@ struct MediaBridge::Impl {
             dst.sender().async_send_pkt(pkt.packet(), dst_ep, std::move(on_sent));
             return;
         }
+
         auto keep_session_alive = [session, on_sent = std::move(on_sent)](
                                       std::size_t bytes_sent,
                                       const std::error_code& err) mutable { on_sent(bytes_sent, err); };
 
-        auto& out_stream = from_a ? session->stream_towards_b() : session->stream_towards_a();
+        auto& out_stream = from_leg_a ? session->stream_towards_b() : session->stream_towards_a();
+
         if (dtmf.outcome_ == DtmfRelayOutcome::kRelay) {
             out_stream.send_dtmf(
                 dtmf.payload_type_,
@@ -225,16 +248,18 @@ struct MediaBridge::Impl {
                 std::move(keep_session_alive));
             return;
         }
-        auto transcoded = from_a ? session->transcoder().transcode_a_to_b(pkt.payload())
-                                 : session->transcoder().transcode_b_to_a(pkt.payload());
+
+        auto transcoded = from_leg_a ? session->transcoder().transcode_a_to_b(pkt.payload())
+                                     : session->transcoder().transcode_b_to_a(pkt.payload());
         if (!transcoded) {
             Log::rtp()->trace(
                 "media bridge: dropping untranscodable packet on {} ({} bytes)",
                 to_string(src_leg),
                 pkt.payload().size());
-            listen(std::move(self), src_leg, src, dst, dst_ep, &Impl::process_packet);
+            rearm_receive_loop();
             return;
         }
+
         out_stream
             .send_audio(transcoded->encoded_, transcoded->timestamp_delta_, dst_ep, std::move(keep_session_alive));
     }
@@ -343,6 +368,17 @@ void MediaBridge::retarget_remote_leg_b(std::string addr, unsigned short port) {
     });
 }
 
+void MediaBridge::set_leg_media_flow(RelayLeg leg, LegFlow leg_flow) {
+    boost::asio::post(impl_->executor_, [self = shared_from_this(), leg, leg_flow] {
+        if (leg == RelayLeg::kLegA) {
+            self->impl_->leg_a_flow_ = leg_flow;
+        }
+        else {
+            self->impl_->leg_b_flow_ = leg_flow;
+        }
+    });
+}
+
 std::optional<boost::asio::ip::udp::endpoint> MediaBridge::remote_leg_a() const {
     return impl_->dest_a_;
 }
@@ -357,6 +393,10 @@ void MediaBridge::set_error_handler(MediaBridgeErrorHandler handler) {
 
 std::chrono::steady_clock::time_point MediaBridge::last_packet_time() const {
     return impl_->last_packet_time_.load(std::memory_order_relaxed);
+}
+
+void MediaBridge::reset_inactivity_baseline() {
+    impl_->last_packet_time_.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
 }
 
 VoidResult MediaBridge::configure_legs(PjmediaEndpoint& endpoint, LegCodec leg_a, LegCodec leg_b) {

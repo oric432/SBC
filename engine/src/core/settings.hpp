@@ -47,7 +47,7 @@ struct SipSettings {
     // treating it as timed out (PJSIP transaction Timer B/D), in milliseconds.
     int invite_timeout_ms = SettingsDefaults::kInviteTimeoutMs;
     // Ends an established call after this many seconds without RTP from either
-    // leg. Set to 0 to disable inactivity detection.
+    // leg. Paused while either leg's media is held. Set to 0 to disable detection.
     int rtp_inactivity_timeout_s = SettingsDefaults::kRtpInactivityTimeoutSeconds;
 };
 

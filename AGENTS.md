@@ -16,7 +16,7 @@ routing table. Three components:
 ## Known Limitations
 
 SIP features not currently supported by the engine: PRACK (100rel) orchestration, app-level
-UPDATE, REFER, hold (a re-INVITE without an active audio line is rejected with 488), SIP forking,
+UPDATE, REFER, SIP forking,
 ICE, SRTP, WebRTC.
 
 REGISTER (#104) has its own caveats, since it's the first thing in this project that authenticates

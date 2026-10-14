@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <cstring>
+#include <string>
 #include <string_view>
 
 #include "core/utils/log.hpp"
@@ -37,6 +38,50 @@ bool is_supported_transport(const pjmedia_sdp_media* media) {
     return pj_stricmp2(&media->desc.transport, "RTP/AVP") == 0 || pj_stricmp2(&media->desc.transport, "RTP/AVPF") == 0;
 }
 
+bool is_direction_name(std::string_view name) {
+    constexpr std::array<std::string_view, 4> directions{"inactive", "sendonly", "recvonly", "sendrecv"};
+    return std::ranges::any_of(directions, [name](std::string_view direction) {
+        return std::ranges::equal(name, direction, [](unsigned char lhs, unsigned char rhs) {
+            return std::tolower(lhs) == std::tolower(rhs);
+        });
+    });
+}
+
+bool has_valid_direction(std::span<pjmedia_sdp_attr* const> attrs) {
+    return std::ranges::count_if(attrs, [](const pjmedia_sdp_attr* attr) {
+               return is_direction_name({attr->name.ptr, static_cast<std::size_t>(attr->name.slen)});
+           }) <= 1;
+}
+
+bool has_valid_session_direction(std::string_view sdp) {
+    bool direction_seen = false;
+
+    while (!sdp.empty()) {
+        const auto end = sdp.find_first_of("\r\n");
+        const auto line = sdp.substr(0, end);
+        if (line.starts_with("m=")) {
+            break;
+        }
+
+        if (line.starts_with("a=")) {
+            const auto name = line.substr(2, line.find_first_of(": \t", 2) - 2);
+            if (is_direction_name(name)) {
+                if (direction_seen) {
+                    return false;
+                }
+                direction_seen = true;
+            }
+        }
+
+        if (end == std::string_view::npos) {
+            break;
+        }
+
+        sdp.remove_prefix(end + 1);
+    }
+    return true;
+}
+
 // The rtpmap for a given payload type on a media line, if it declares one —
 // dynamic payload types (96-127) always do; RFC 3551 static types often omit
 // it since their name/rate are implied by the type number itself.
@@ -62,9 +107,16 @@ bool has_valid_media(const pjmedia_sdp_session* sdp) {
     if (sdp == nullptr || sdp->media_count == 0) {
         return false;
     }
+
+    if (!has_valid_direction({sdp->attr, sdp->attr_count})) {
+        return false;
+    }
     for (unsigned i = 0; i < sdp->media_count; ++i) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         const pjmedia_sdp_media* media = sdp->media[i];
+        if (is_media_type(media, "audio") && !has_valid_direction({media->attr, media->attr_count})) {
+            return false;
+        }
         if (media->desc.port == 0) {
             continue; // declined stream (RFC 3264) — exempt, not malformed
         }
@@ -137,6 +189,10 @@ std::string serialize(const pjmedia_sdp_session* sdp) {
 }
 
 bool is_valid_sdp(const std::string& sdp) {
+    // PJSIP moves one session direction into media sections, hiding duplicates after parsing.
+    if (!has_valid_session_direction(sdp)) {
+        return false;
+    }
     static const ScopedPjInit init;
     // One pool for the process lifetime, reset (not recreated) on every call —
     // validation runs on PJSIP's single event-loop thread, so reuse is safe,
@@ -275,24 +331,115 @@ bool is_dtmf_fmtp(const pjmedia_sdp_attr* attr, const pj_str_t& dtmf_pt) {
     return pjmedia_sdp_attr_get_fmtp(attr, &fmtp) == PJ_SUCCESS && pj_strcmp(&fmtp.fmt, &dtmf_pt) == 0;
 }
 
+std::optional<Sdp::MediaDirection> find_media_direction(std::span<pjmedia_sdp_attr* const> attrs) {
+    constexpr std::array directions{
+        std::pair{"inactive", Sdp::MediaDirection::kInactive},
+        std::pair{"sendonly", Sdp::MediaDirection::kSendOnly},
+        std::pair{"recvonly", Sdp::MediaDirection::kRecvOnly},
+        std::pair{"sendrecv", Sdp::MediaDirection::kSendRecv},
+    };
+
+    for (const auto& [name, direction] : directions) {
+        if (pjmedia_sdp_attr_find2(static_cast<unsigned>(attrs.size()), attrs.data(), name, nullptr) != nullptr) {
+            return direction;
+        }
+    }
+
+    return std::nullopt;
+}
+
 } // namespace
 
-bool has_inactive_direction(const pjmedia_sdp_session* sdp) {
+MediaDirection extract_audio_direction(const pjmedia_sdp_session* sdp, const RtpEndpoint& offer_endpoint) {
+    if (is_hold_address(offer_endpoint.ip_)) {
+        return MediaDirection::kInactive;
+    }
+
+    if (sdp == nullptr) {
+        return MediaDirection::kSendRecv;
+    }
+
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
     const pjmedia_sdp_media* media = find_active_audio_media(const_cast<pjmedia_sdp_session*>(sdp));
     if (media == nullptr) {
-        return false;
+        return MediaDirection::kSendRecv;
     }
-    if (pjmedia_sdp_media_find_attr2(media, "inactive", nullptr) != nullptr ||
-        pjmedia_sdp_media_find_attr2(media, "sendonly", nullptr) != nullptr) {
+
+    const auto media_direction = find_media_direction({media->attr, media->attr_count});
+    if (media_direction) {
+        return *media_direction;
+    }
+
+    return find_media_direction({sdp->attr, sdp->attr_count}).value_or(MediaDirection::kSendRecv);
+}
+
+MediaDirection answer_direction(MediaDirection offer_direction) {
+    switch (offer_direction) {
+    case MediaDirection::kSendRecv: return MediaDirection::kSendRecv;
+    case MediaDirection::kSendOnly: return MediaDirection::kRecvOnly;
+    case MediaDirection::kRecvOnly: return MediaDirection::kSendOnly;
+    case MediaDirection::kInactive: return MediaDirection::kInactive;
+    }
+
+    return MediaDirection::kInactive;
+}
+
+const char* direction_name(MediaDirection direction) {
+    switch (direction) {
+    case MediaDirection::kSendRecv: return "sendrecv";
+    case MediaDirection::kSendOnly: return "sendonly";
+    case MediaDirection::kRecvOnly: return "recvonly";
+    case MediaDirection::kInactive: return "inactive";
+    }
+    return "unknown";
+}
+
+bool can_send(MediaDirection direction) {
+    return direction == MediaDirection::kSendRecv || direction == MediaDirection::kSendOnly;
+}
+
+bool can_receive(MediaDirection direction) {
+    return direction == MediaDirection::kSendRecv || direction == MediaDirection::kRecvOnly;
+}
+
+bool is_hold_address(const std::string& address) {
+    if (address == "0.0.0.0") {
         return true;
     }
-    // Media line declares no direction attribute of its own — RFC 3264 S5.1
-    // has it inherit the session-level one, if any.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
-    return pjmedia_sdp_attr_find2(sdp->attr_count, sdp->attr, "inactive", nullptr) != nullptr ||
-           // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - pjlib C API
-           pjmedia_sdp_attr_find2(sdp->attr_count, sdp->attr, "sendonly", nullptr) != nullptr;
+
+    std::string address_copy = address;
+    if (address_copy.find('\0') != std::string::npos) {
+        return false;
+    }
+
+    const pj_str_t source{
+        address_copy.data(),
+        static_cast<pj_ssize_t>(address_copy.size()),
+    };
+
+    pj_in6_addr parsed{};
+    const pj_in6_addr unspecified{};
+
+    return pj_inet_pton(pj_AF_INET6(), &source, &parsed) == PJ_SUCCESS &&
+           std::memcmp(&parsed, &unspecified, sizeof(parsed)) == 0;
+}
+
+bool set_audio_direction(pj_pool_t* pool, pjmedia_sdp_session* sdp, MediaDirection direction) {
+    if (pool == nullptr || sdp == nullptr) {
+        return false;
+    }
+
+    pjmedia_sdp_media* media = find_active_audio_media(sdp);
+    if (media == nullptr) {
+        return false;
+    }
+
+    for (const char* name : {"sendrecv", "sendonly", "recvonly", "inactive"}) {
+        (void)pjmedia_sdp_media_remove_all_attr(media, name);
+    }
+
+    return pjmedia_sdp_media_add_attr(media, pjmedia_sdp_attr_create(pool, direction_name(direction), nullptr)) ==
+           PJ_SUCCESS;
 }
 
 std::optional<AudioCodecInfo> extract_active_audio_codec(const pjmedia_sdp_session* sdp) {

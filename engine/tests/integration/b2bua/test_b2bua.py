@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import logging
 import re
+import socket
+import struct
 import urllib.parse
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +32,49 @@ def _assert_replaces_translated_to_callee_dialog(message_trace: str) -> None:
     )
     assert translated is not None
     assert translated.groups() == (call_id.group(1), to_tag.group(1), from_tag.group(1))
+
+
+def _make_rtp_probe_pcap(source: Path, destination: Path, ssrc: int) -> None:
+    """Make a four-packet, uniquely tagged probe from the checked-in capture."""
+    data = source.read_bytes()
+    if data[:4] == b"\xd4\xc3\xb2\xa1":
+        endian = "<"
+    elif data[:4] == b"\xa1\xb2\xc3\xd4":
+        endian = ">"
+    else:
+        raise ValueError(f"unsupported PCAP byte order in {source}")
+
+    link_type = struct.unpack_from(f"{endian}I", data, 20)[0]
+    if link_type != 1:
+        raise ValueError(f"expected an Ethernet PCAP, got link type {link_type}")
+
+    output = bytearray(data[:24])
+    offset = 24
+    rtp_offset = 14 + 20 + 8  # Ethernet + IPv4 + UDP headers in g711a.pcap.
+    for _ in range(4):
+        record_header = data[offset : offset + 16]
+        if len(record_header) != 16:
+            raise ValueError(f"expected four packets in {source}")
+        _, _, packet_length, _ = struct.unpack(f"{endian}IIII", record_header)
+        packet_start = offset + 16
+        packet = bytearray(data[packet_start : packet_start + packet_length])
+        if len(packet) != packet_length:
+            raise ValueError(f"truncated packet in {source}")
+
+        # This fixture is Ethernet/IPv4/UDP and the scenario negotiates PCMU.
+        if packet[12:14] != b"\x08\x00" or packet[14] != 0x45 or packet[23] != 17:
+            raise ValueError(f"unexpected packet layout in {source}")
+        if packet[rtp_offset] >> 6 != 2:
+            raise ValueError(f"expected RTP in {source}")
+
+        # The fixture carries PCMA (PT 8); these probes only test packet flow.
+        packet[rtp_offset + 1] &= 0x80  # Keep marker bit, set payload type to PCMU (PT 0).
+        packet[rtp_offset + 8 : rtp_offset + 12] = struct.pack(">I", ssrc)
+        output.extend(record_header)
+        output.extend(packet)
+        offset = packet_start + packet_length
+
+    destination.write_bytes(output)
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.name)
@@ -60,14 +106,69 @@ def test_b2bua_reinvite_same_sdp(sbc_engine, render_scenario, run_sipp_pair):
     _log.info("scenario '%s' passed", scenario_name)
 
 
-def test_b2bua_reinvite_offerless(sbc_engine, render_scenario, run_sipp_pair):
+@pytest.mark.parametrize("ack_direction", ["sendrecv", "sendonly", "recvonly", "inactive"])
+@pytest.mark.parametrize("hold_first", [False, True], ids=["active-call", "resume-after-sendonly-hold"])
+@pytest.mark.parametrize("ack_zero_address", [False, True], ids=["normal-address", "zero-address"])
+def test_b2bua_reinvite_offerless(
+    sbc_engine, render_scenario, run_sipp_pair, ack_direction, hold_first, ack_zero_address, tmp_path
+):
     """A mid-call re-INVITE with no SDP body gets an SBC-generated offer in
     the 200 OK, and the caller's ACK carries the answer."""
     scenario_name = "reinvite_offerless"
-    caller_xml = render_scenario("reinvite_offerless_caller.xml.j2", scenario_name=scenario_name)
-    callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
-
-    run_sipp_pair(caller_xml, callee_xml)
+    probe_ssrc = 0xA0000010
+    probe_path = tmp_path / "ack_direction.pcap"
+    _make_rtp_probe_pcap(_PCAP_PATHS["g711a"], probe_path, probe_ssrc)
+    hold_ssrc, resume_ssrc = 0xB0000010, 0xB0000011
+    hold_probe, resume_probe = tmp_path / "hold.pcap", tmp_path / "resume.pcap"
+    _make_rtp_probe_pcap(_PCAP_PATHS["g711a"], hold_probe, hold_ssrc)
+    _make_rtp_probe_pcap(_PCAP_PATHS["g711a"], resume_probe, resume_ssrc)
+    with (
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sink,
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as caller_sink,
+    ):
+        sink.bind(("127.0.0.1", 0))
+        sink.setblocking(False)
+        caller_sink.bind(("127.0.0.1", 0))
+        caller_sink.setblocking(False)
+        caller_xml = render_scenario(
+            "reinvite_offerless_caller.xml.j2",
+            scenario_name=scenario_name,
+            ack_direction=ack_direction,
+            probe_pcap_path=probe_path,
+            hold_first=hold_first,
+            ack_zero_address=ack_zero_address,
+            caller_rtp_sink_port=caller_sink.getsockname()[1],
+        )
+        callee_xml = render_scenario(
+            "callee.xml.j2",
+            scenario_name=scenario_name,
+            rtp_sink_port=sink.getsockname()[1],
+            timed_probes=[(3500, hold_probe), (1500, resume_probe)] if hold_first else [(2500, resume_probe)],
+        )
+        run_sipp_pair(caller_xml, callee_xml, trace=True)
+        received = set()
+        while True:
+            try:
+                packet, _ = sink.recvfrom(2048)
+            except BlockingIOError:
+                break
+            if len(packet) >= 12 and packet[0] >> 6 == 2:
+                received.add(struct.unpack_from(">I", packet, 8)[0])
+        caller_received = set()
+        while True:
+            try:
+                packet, _ = caller_sink.recvfrom(2048)
+            except BlockingIOError:
+                break
+            if len(packet) >= 12 and packet[0] >> 6 == 2:
+                caller_received.add(struct.unpack_from(">I", packet, 8)[0])
+    assert (probe_ssrc in received) == (not ack_zero_address and ack_direction in {"sendrecv", "sendonly"}), (
+        f"incorrect RTP forwarding after {ack_direction} answer in ACK"
+    )
+    assert hold_ssrc not in caller_received, "sendonly hold RTP incorrectly reached the caller"
+    assert (resume_ssrc in caller_received) == (not ack_zero_address and ack_direction in {"sendrecv", "recvonly"}), (
+        f"incorrect RTP forwarding toward caller after {ack_direction} answer in ACK"
+    )
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
     _log.info("scenario '%s' passed", scenario_name)
@@ -99,6 +200,98 @@ def test_b2bua_reinvite_new_codec(sbc_engine, render_scenario, run_sipp_pair):
     callee_xml = render_scenario("callee.xml.j2", scenario_name=scenario_name)
 
     run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+    _log.info("scenario '%s' passed", scenario_name)
+
+
+@pytest.mark.parametrize(
+    ("legacy_zero_address", "hold_direction", "hold_answer_direction"),
+    [
+        pytest.param(False, "sendonly", "recvonly", id="cisco-sendonly-hold-resume"),
+        pytest.param(True, "sendonly", "inactive", id="cisco-legacy-zero-address-hold-resume"),
+    ],
+)
+def test_b2bua_reinvite_hold_directions(
+    sbc_engine, render_scenario, run_sipp_pair, legacy_zero_address, hold_direction, hold_answer_direction, tmp_path
+):
+    """Cisco-style sendonly/legacy zero-address hold and RFC 3264 direction
+    inversion are answered locally; recvonly, inactive, and sendrecv resume
+    are checked for both SDP answers and RTP relay gating."""
+    scenario_name = "reinvite_hold_directions"
+    probe_ssrcs = {
+        "caller_sendonly": 0xA0000001,
+        "caller_recvonly": 0xA0000002,
+        "caller_inactive": 0xA0000003,
+        "caller_resume": 0xA0000004,
+        "callee_sendonly": 0xB0000001,
+        "callee_recvonly": 0xB0000002,
+        "callee_inactive": 0xB0000003,
+        "callee_resume": 0xB0000004,
+    }
+    probe_pcaps = {}
+    for name, ssrc in probe_ssrcs.items():
+        probe_path = tmp_path / f"{name}.pcap"
+        _make_rtp_probe_pcap(_PCAP_PATHS["g711a"], probe_path, ssrc)
+        probe_pcaps[name] = probe_path
+
+    with (
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as callee_rtp_sink,
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as caller_rtp_sink,
+    ):
+        callee_rtp_sink.bind(("127.0.0.1", 0))
+        caller_rtp_sink.bind(("127.0.0.1", 0))
+        callee_rtp_sink.setblocking(False)
+        caller_rtp_sink.setblocking(False)
+        caller_xml = render_scenario(
+            "reinvite_hold_directions_caller.xml.j2",
+            scenario_name=scenario_name,
+            legacy_zero_address=legacy_zero_address,
+            hold_direction=hold_direction,
+            hold_answer_direction=hold_answer_direction,
+            caller_rtp_sink_port=caller_rtp_sink.getsockname()[1],
+            sendonly_pcap_path=probe_pcaps["caller_sendonly"],
+            recvonly_pcap_path=probe_pcaps["caller_recvonly"],
+            inactive_pcap_path=probe_pcaps["caller_inactive"],
+            resume_pcap_path=probe_pcaps["caller_resume"],
+        )
+        callee_xml = render_scenario(
+            "callee_signaling_only.xml.j2",
+            scenario_name=scenario_name,
+            rtp_sink_port=callee_rtp_sink.getsockname()[1],
+            sendonly_pcap_path=probe_pcaps["callee_sendonly"],
+            recvonly_pcap_path=probe_pcaps["callee_recvonly"],
+            inactive_pcap_path=probe_pcaps["callee_inactive"],
+            resume_pcap_path=probe_pcaps["callee_resume"],
+        )
+        run_sipp_pair(caller_xml, callee_xml, trace=True)
+
+        def received_ssrcs(rtp_sink: socket.socket) -> set[int]:
+            received = set()
+            while True:
+                try:
+                    packet, _ = rtp_sink.recvfrom(2048)
+                except BlockingIOError:
+                    break
+                if len(packet) >= 12 and packet[0] >> 6 == 2:
+                    received.add(struct.unpack_from(">I", packet, 8)[0])
+            return received
+
+        callee_received = received_ssrcs(callee_rtp_sink)
+        caller_received = received_ssrcs(caller_rtp_sink)
+
+    if legacy_zero_address:
+        assert probe_ssrcs["caller_sendonly"] not in callee_received, "legacy zero-address hold RTP reached the callee"
+    else:
+        assert probe_ssrcs["caller_sendonly"] in callee_received, "sendonly RTP was not relayed to the callee"
+    assert probe_ssrcs["caller_recvonly"] not in callee_received, "recvonly RTP incorrectly reached the callee"
+    assert probe_ssrcs["caller_inactive"] not in callee_received, "inactive RTP incorrectly reached the callee"
+    assert probe_ssrcs["caller_resume"] in callee_received, "sendrecv RTP was not relayed after resume"
+
+    assert probe_ssrcs["callee_sendonly"] not in caller_received, "sendonly hold RTP incorrectly reached the caller"
+    assert probe_ssrcs["callee_recvonly"] in caller_received, "recvonly RTP was not relayed to the caller"
+    assert probe_ssrcs["callee_inactive"] not in caller_received, "inactive RTP incorrectly reached the caller"
+    assert probe_ssrcs["callee_resume"] in caller_received, "sendrecv RTP was not relayed to the caller after resume"
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
     _log.info("scenario '%s' passed", scenario_name)

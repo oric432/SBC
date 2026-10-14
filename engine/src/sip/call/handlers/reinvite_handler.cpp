@@ -5,6 +5,7 @@
 #include "core/utils/log.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/stack/inv_session.hpp"
+#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
@@ -67,6 +68,11 @@ void ReinviteHandler::on_create_offer(pjsip_inv_session* inv, pjmedia_sdp_sessio
     }
 
     *offer = pjmedia_sdp_session_clone(inv->pool_prov, active_local);
+    // A previous hold answer must not constrain the peer's next answer.
+    if (!Sdp::set_audio_direction(inv->pool_prov, *offer, Sdp::MediaDirection::kSendRecv)) {
+        Log::sip()->error("[{}] failed to reset offerless re-INVITE direction", session_.call_id());
+        *offer = nullptr;
+    }
 }
 
 void ReinviteHandler::on_media_update(pjsip_inv_session* inv, pj_status_t status) {
@@ -75,11 +81,22 @@ void ReinviteHandler::on_media_update(pjsip_inv_session* inv, pj_status_t status
         return;
     }
     *found = nullptr;
-    const ExchangeOutcome outcome = status == PJ_SUCCESS ? ExchangeOutcome::kCommitted : ExchangeOutcome::kFailed;
+    ExchangeOutcome outcome = ExchangeOutcome::kFailed;
+    if (status == PJ_SUCCESS && inv->neg != nullptr) {
+        const pjmedia_sdp_session* active_remote = nullptr;
+        if (pjmedia_sdp_neg_get_active_remote(inv->neg, &active_remote) == PJ_SUCCESS && active_remote != nullptr) {
+            const auto endpoint = Sdp::extract_rtp_endpoint(active_remote);
+            const auto direction = endpoint.port_ == 0 ? Sdp::MediaDirection::kInactive
+                                                       : Sdp::extract_audio_direction(active_remote, endpoint);
+            const Leg leg = session_.leg_for(inv);
+            session_.apply_media_direction(leg, direction);
+            outcome = ExchangeOutcome::kCommitted;
+        }
+    }
     Log::call()->debug(
         "[{}] offerless re-INVITE answer in ACK {}",
         session_.call_id(),
-        status == PJ_SUCCESS ? "accepted" : "failed");
+        outcome == ExchangeOutcome::kCommitted ? "accepted" : "failed");
     session_.dialog_sm().process_event(Dialog::ExchangeFinished{outcome});
 }
 
