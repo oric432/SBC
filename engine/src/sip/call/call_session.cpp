@@ -3,10 +3,13 @@
 #include <chrono>
 #include <format>
 
+#include "net/rtp/media_bridge.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/i_call_event_sink.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "core/utils/log.hpp"
+#include "sip/sm/leg.hpp"
+#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
@@ -177,6 +180,14 @@ bool CallSession::rtp_inactivity_expired(
     std::chrono::steady_clock::time_point now,
     std::chrono::steady_clock::duration timeout) const {
     return !media_is_held() && now - media_bridge_->last_packet_time() >= timeout;
+}
+
+void CallSession::apply_media_direction(Leg leg, Sdp::MediaDirection direction) {
+    const RelayLeg relay_leg = leg == Leg::kCaller ? RelayLeg::kLegA : RelayLeg::kLegB;
+    media_bridge_->set_leg_media_flow(
+        relay_leg,
+        LegFlow{.can_send_ = Sdp::can_send(direction), .can_receive_ = Sdp::can_receive(direction)});
+    record_media_direction(leg, direction);
 }
 
 } // namespace SbcEngine

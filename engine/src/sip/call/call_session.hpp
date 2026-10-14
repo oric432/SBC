@@ -101,7 +101,6 @@ public:
     // should keep using the named accessors above).
     [[nodiscard]] CallLeg& leg(Leg which) { return legs_[static_cast<std::size_t>(which)]; }
     [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_[static_cast<std::size_t>(which)]; }
-    void record_media_direction(Leg which, Sdp::MediaDirection direction);
     [[nodiscard]] bool media_is_held() const;
     [[nodiscard]] bool rtp_inactivity_expired(
         std::chrono::steady_clock::time_point now,
@@ -142,6 +141,8 @@ public:
     // log line -- nullopt before the call was answered.
     [[nodiscard]] std::optional<std::chrono::seconds> established_duration() const;
 
+    void apply_media_direction(Leg leg, Sdp::MediaDirection direction);
+
 private:
     void send_call_updated();
     void claim_mod_data(pjsip_inv_session* inv) {
@@ -161,6 +162,8 @@ private:
             inv->mod_data[ctx_->module_id_] = nullptr;
         }
     }
+
+    void record_media_direction(Leg which, Sdp::MediaDirection direction);
 
     std::string call_id_;
     PjContext* ctx_;

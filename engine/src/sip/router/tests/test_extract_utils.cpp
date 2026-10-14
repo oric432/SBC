@@ -376,31 +376,31 @@ TEST_CASE("CallSession pauses RTP inactivity during hold and restarts it on resu
 
     CHECK_FALSE(session->media_is_held());
     CHECK(session->rtp_inactivity_expired(stale_time, timeout));
-    session->record_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
+    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
     CHECK(session->media_is_held());
     CHECK_FALSE(session->rtp_inactivity_expired(stale_time, timeout));
-    session->record_media_direction(Leg::kCallee, Sdp::MediaDirection::kInactive);
+    session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kInactive);
     CHECK(session->media_is_held());
     CHECK_FALSE(session->rtp_inactivity_expired(stale_time, timeout));
 
-    session->record_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
+    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
     CHECK(session->media_is_held());
     const auto before_resume = session->media_bridge()->last_packet_time();
-    session->record_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendRecv);
+    session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendRecv);
     CHECK_FALSE(session->media_is_held());
     CHECK(session->media_bridge()->last_packet_time() >= before_resume);
     const auto resume_time = session->media_bridge()->last_packet_time();
     CHECK_FALSE(session->rtp_inactivity_expired(resume_time + 59s, timeout));
     CHECK(session->rtp_inactivity_expired(resume_time + timeout, timeout));
 
-    session->record_media_direction(Leg::kCaller, Sdp::MediaDirection::kRecvOnly);
+    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kRecvOnly);
     CHECK_FALSE(session->media_is_held());
-    session->record_media_direction(Leg::kCallee, Sdp::MediaDirection::kRecvOnly);
+    session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kRecvOnly);
     CHECK(session->media_is_held());
     CHECK_FALSE(session->rtp_inactivity_expired(stale_time, timeout));
 
     const auto before_recvonly_resume = session->media_bridge()->last_packet_time();
-    session->record_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
+    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
     CHECK_FALSE(session->media_is_held());
     CHECK(session->media_bridge()->last_packet_time() >= before_recvonly_resume);
     const auto recvonly_resume_time = session->media_bridge()->last_packet_time();

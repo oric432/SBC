@@ -3,9 +3,9 @@
 #include <algorithm>
 
 #include "core/utils/log.hpp"
-#include "net/rtp/media_bridge.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/stack/inv_session.hpp"
+#include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
@@ -86,12 +86,10 @@ void ReinviteHandler::on_media_update(pjsip_inv_session* inv, pj_status_t status
         const pjmedia_sdp_session* active_remote = nullptr;
         if (pjmedia_sdp_neg_get_active_remote(inv->neg, &active_remote) == PJ_SUCCESS && active_remote != nullptr) {
             const auto endpoint = Sdp::extract_rtp_endpoint(active_remote);
-            const auto direction = Sdp::extract_audio_direction(active_remote, endpoint);
+            const auto direction = endpoint.port_ == 0 ? Sdp::MediaDirection::kInactive
+                                                       : Sdp::extract_audio_direction(active_remote, endpoint);
             const Leg leg = session_.leg_for(inv);
-            session_.media_bridge()->set_leg_media_flow(
-                leg == Leg::kCaller ? RelayLeg::kLegA : RelayLeg::kLegB,
-                LegFlow{.can_send_ = Sdp::can_send(direction), .can_receive_ = Sdp::can_receive(direction)});
-            session_.record_media_direction(leg, direction);
+            session_.apply_media_direction(leg, direction);
             outcome = ExchangeOutcome::kCommitted;
         }
     }
