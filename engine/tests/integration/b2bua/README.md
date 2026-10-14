@@ -7,6 +7,7 @@ pytest + SIPp integration tests for the SBC's B2BUA call handling. See
 
 ```bash
 just test-b2bua          # from engine/
+just test-b2bua --show-engine-logs  # also stream the spawned engine's logs
 ```
 
 This installs the Python dependencies declared in `../../pyproject.toml`,

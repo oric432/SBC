@@ -29,6 +29,13 @@ A suite adding new scenario types (e.g. registration, media failure) should
 extend the *assertion* side via `EngineHandle` rather than re-deriving engine
 startup — that part is meant to be reused as-is.
 
+## `--show-engine-logs`
+
+Pass `--show-engine-logs` to stream the spawned engine's logs through pytest's
+live logger while retaining the same in-memory copy used by readiness checks
+and test assertions. Without this option, engine logs remain quiet unless a
+failure includes `EngineHandle.log_tail()`.
+
 ## `--live-engine`
 
 Pass `--live-engine` to run against an `SbcEngine` and Backend you already
