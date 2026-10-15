@@ -49,6 +49,7 @@ struct SipSettings {
     // Ends an established call after this many seconds without RTP from either
     // leg. Paused while either leg's media is held. Set to 0 to disable detection.
     int rtp_inactivity_timeout_s = SettingsDefaults::kRtpInactivityTimeoutSeconds;
+    int max_hold_duration_s = 0;
 };
 
 struct ControlPlaneSettings {

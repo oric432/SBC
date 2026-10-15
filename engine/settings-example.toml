@@ -23,6 +23,9 @@ invite_timeout_ms = 32000
 # many seconds. Set to 0 to disable RTP inactivity detection.
 rtp_inactivity_timeout_s = 60
 
+# End a call after this many consecutive seconds on hold.
+max_hold_duration_s = 900  # 0 disables the hold limit
+
 [control_plane]
 ws_url = "ws://127.0.0.1:3001/ws/engine"
 connect_timeout_s = 5
