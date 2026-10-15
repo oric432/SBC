@@ -224,13 +224,22 @@ class EngineHandle:
         return "\n".join(self.log_lines[max(self.log_start, len(self.log_lines) - count) :])
 
 
-def _drain_stdout(process: subprocess.Popen[str], sink: list[str]) -> None:
+def _drain_stdout(process: subprocess.Popen[str], sink: list[str], show_logs: bool) -> None:
     assert process.stdout is not None
     for line in process.stdout:
-        sink.append(line.rstrip("\n"))
+        log_line = line.rstrip("\n")
+        sink.append(log_line)
+        if show_logs:
+            _log.info("[engine] %s", log_line)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--show-engine-logs",
+        action="store_true",
+        default=False,
+        help="Show the spawned SbcEngine's logs live while retaining them for test assertions.",
+    )
     parser.addoption(
         "--live-engine",
         action="store_true",
@@ -316,7 +325,12 @@ def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_
         text=True,
     )
     handle = EngineHandle(process=process)
-    reader = threading.Thread(target=_drain_stdout, args=(process, handle.log_lines), daemon=True)
+    show_engine_logs = request.config.getoption("--show-engine-logs")
+    reader = threading.Thread(
+        target=_drain_stdout,
+        args=(process, handle.log_lines, show_engine_logs),
+        daemon=True,
+    )
     reader.start()
 
     deadline = time.monotonic() + 15
