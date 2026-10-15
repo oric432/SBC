@@ -70,6 +70,7 @@ public:
     void terminate_established_calls();
 
     void process_pending_rtp_inactivity();
+    void process_pending_hold_timeouts();
 
 private:
     void stop_rtp_inactivity_timer();

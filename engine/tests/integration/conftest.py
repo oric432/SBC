@@ -295,7 +295,10 @@ def sip_users() -> list[SipUserFixture]:
 
 @pytest.fixture(scope="session")
 def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_routes, sip_users):
+    hold_timeout_s = getattr(request, "param", None)
     if request.config.getoption("--live-engine"):
+        if hold_timeout_s is not None:
+            pytest.skip("hold timeout tests require an owned engine with controlled settings and captured logs")
         _log.info(
             "--live-engine set: assuming SbcEngine + Backend are already running "
             "on port %d; skipping engine startup and route/user seeding "
@@ -310,8 +313,11 @@ def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_
     routes_stub_server.set_users(sip_users)
 
     work_dir = tmp_path_factory.mktemp("sbc_engine")
+    hold_settings = "" if hold_timeout_s is None else f"max_hold_duration_s = {hold_timeout_s}\n"
+    logging_settings = "" if hold_timeout_s is None else '[logging]\nlevel = "trace"\n\n'
     (work_dir / "settings.toml").write_text(
-        f'[sip]\naddress = "127.0.0.1"\nport = {sip_port}\n\n'
+        logging_settings
+        + f'[sip]\naddress = "127.0.0.1"\nport = {sip_port}\n{hold_settings}\n'
         f'[control_plane]\nws_url = "{routes_stub_server.url}"\n\n'
         f'[registrar]\nmin_expires_s = 60\nmax_expires_s = 120\n'
     )

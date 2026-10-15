@@ -128,6 +128,24 @@ void CallManager::process_pending_rtp_inactivity() {
     });
 }
 
+void CallManager::process_pending_hold_timeouts() {
+    for (auto iter = sessions_.begin(); iter != sessions_.end();) {
+        auto& session = *iter->second;
+        ++iter;
+
+        if (!session.setup_sm().is_established() || !session.hold_timeout_expired()) {
+            continue;
+        }
+
+        auto& dialog = session.dialog_sm();
+        if (dialog.is_active() || dialog.is_reinviting() || dialog.is_referring()) {
+            Log::call()->warn("[{}] ending call because the hold timeout expired", session.call_id());
+            session.report_call_terminated(Protocols::CallStatus::kSuccess, "hold timeout expired");
+            dialog.process_event(CallError{});
+        }
+    }
+}
+
 void CallManager::terminate_established_calls() {
     for (auto& [call_id, session] : sessions_) {
         (void)call_id;
