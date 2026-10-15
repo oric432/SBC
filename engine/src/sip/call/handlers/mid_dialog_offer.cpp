@@ -172,4 +172,52 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
     };
 }
 
+bool apply_answered_media(CallSession& session, Leg leg, const pjmedia_sdp_session* answer) {
+    const auto endpoint = Sdp::extract_rtp_endpoint(answer);
+    const bool declined = endpoint.port_ == 0;
+    const auto direction = declined ? Sdp::MediaDirection::kInactive : Sdp::extract_audio_direction(answer, endpoint);
+
+    const CallSession::CallLeg& current = session.leg(leg);
+    std::optional<Sdp::AudioCodecInfo> codec = current.codec_;
+    std::optional<std::uint8_t> dtmf_pt = current.dtmf_pt_;
+
+    if (!declined) {
+        const auto chosen = Sdp::pick_answer_codec(current.codec_, Sdp::extract_all_audio_codecs(answer));
+        if (!chosen) {
+            Log::call()->warn(
+                "[{}] offerless re-INVITE answer from {} has no supported codec",
+                session.call_id(),
+                to_string(leg));
+            return false;
+        }
+        dtmf_pt = Sdp::extract_telephone_event_pt(answer);
+        if (media_changed(current.codec_, current.dtmf_pt_, chosen->name_, dtmf_pt)) {
+            if (!reconfigure_media_bridge(session, leg, *chosen, dtmf_pt)) {
+                return false;
+            }
+            codec = Sdp::extract_active_audio_codec(answer);
+        }
+        if (!endpoint.ip_.empty() && !Sdp::is_hold_address(endpoint.ip_)) {
+            if (leg == Leg::kCaller) {
+                session.media_bridge()->retarget_remote_leg_a(endpoint.ip_, endpoint.port_);
+            }
+            else {
+                session.media_bridge()->retarget_remote_leg_b(endpoint.ip_, endpoint.port_);
+            }
+            Log::call()->debug(
+                "[{}] offerless re-INVITE answer from {}: relay retargeted to {}:{}",
+                session.call_id(),
+                to_string(leg),
+                endpoint.ip_,
+                endpoint.port_);
+        }
+    }
+
+    commit_negotiated_media(
+        session,
+        leg,
+        NegotiatedOffer{.answer_sdp_ = nullptr, .codec_ = codec, .dtmf_pt_ = dtmf_pt, .offer_direction_ = direction});
+    return true;
+}
+
 } // namespace SbcEngine
