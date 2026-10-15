@@ -13,6 +13,7 @@
 #include <pjsip.h>
 #include <pjsip_ua.h>
 
+#include "sip/call/call_manager.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/engine_stores.hpp"
 #include "sip/sm/leg.hpp"
@@ -23,6 +24,7 @@
 #include "sip/sm/setup_sm_runner.hpp"
 #include "sip/call/offer_answer_exchange.hpp"
 #include "sip/stack/sdp.hpp"
+#include "sip/call/call_hold_timer.hpp"
 
 namespace SbcEngine {
 
@@ -108,6 +110,7 @@ public:
     [[nodiscard]] CallLeg& leg(Leg which) { return legs_.at(static_cast<std::size_t>(which)); }
     [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_.at(static_cast<std::size_t>(which)); }
     [[nodiscard]] bool media_is_held() const;
+    [[nodiscard]] bool hold_timeout_expired();
     [[nodiscard]] bool rtp_inactivity_expired(
         std::chrono::steady_clock::time_point now,
         std::chrono::steady_clock::duration timeout) const;
@@ -206,6 +209,8 @@ private:
 
     std::optional<std::chrono::steady_clock::time_point> answered_at_;
     bool terminated_reported_ = false;
+
+    std::shared_ptr<CallHoldTimer> call_hold_timer_;
 };
 
 } // namespace SbcEngine
