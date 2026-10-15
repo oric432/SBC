@@ -20,7 +20,7 @@
       s=-
       c=IN IP[media_ip_type] [media_ip]
       t=0 0
-      m=audio {{ caller_rtp_sink_port | default('[media_port]') }} RTP/AVP 0
+      m=audio [media_port] RTP/AVP 0
       a=rtpmap:0 PCMU/8000
     ]]>
   </send>
@@ -77,7 +77,7 @@
       s=-
       c=IN IP[media_ip_type] [media_ip]
       t=0 0
-      m=audio {{ caller_rtp_sink_port }} RTP/AVP 0
+      m=audio [media_port] RTP/AVP 0
       a=rtpmap:0 PCMU/8000
       a=sendonly
     ]]>
@@ -111,7 +111,8 @@
        generate the offer itself (DialogActions::on_create_offer,
        cloned from the leg's active local SDP) and send it in the 200 OK;
        the answer then arrives in our ACK below and is applied via
-       on_media_update. -->
+       on_media_update. Every earlier offer used [media_port], so the sink
+       port is first learned from that ACK answer. -->
   <send retrans="500">
     <![CDATA[
       INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
