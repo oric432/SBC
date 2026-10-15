@@ -300,6 +300,64 @@ def test_b2bua_reinvite_hold_directions(
     _log.info("scenario '%s' passed", scenario_name)
 
 
+def _assert_hold_timeout_removed(sbc_engine, caller_xml: Path) -> None:
+    messages = caller_xml.with_suffix(".messages.log").read_text()
+    match = re.search(r"^Call-ID:\s*(\S+)", messages, re.MULTILINE)
+    assert match is not None, messages
+    call_id = match.group(1)
+    destroyed = f"[{call_id}] CallSession destroyed, releasing pool"
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        lines = sbc_engine.log_lines[sbc_engine.log_start :]
+        if any(destroyed in line for line in lines):
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"session {call_id} was not removed and destroyed:\n{sbc_engine.log_tail()}")
+
+    timeout = f"[{call_id}] ending call because the hold timeout expired"
+    assert sum(timeout in line for line in lines) == 1, sbc_engine.log_tail()
+    assert any(f"[{call_id}] dialog cleanup complete" in line for line in lines), sbc_engine.log_tail()
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+@pytest.mark.parametrize("sbc_engine", [3], indirect=True, ids=["3s-hold-limit"])
+@pytest.mark.parametrize("direction", ["sendonly", "inactive"])
+def test_b2bua_hold_timeout_terminates_and_removes_call(sbc_engine, render_scenario, run_sipp_pair, direction):
+    caller_xml = render_scenario(
+        "reinvite_same_sdp_caller.xml.j2",
+        scenario_name="hold_timeout",
+        initial_pause_ms=100,
+        media_steps=[{"direction": direction, "pause_ms": 0}],
+        expect_engine_bye=True,
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name="hold_timeout")
+
+    run_sipp_pair(caller_xml, callee_xml, trace=True)
+    _assert_hold_timeout_removed(sbc_engine, caller_xml)
+
+
+@pytest.mark.parametrize("sbc_engine", [3], indirect=True, ids=["3s-hold-limit"])
+def test_b2bua_hold_timeout_resets_after_resume(sbc_engine, render_scenario, run_sipp_pair):
+    caller_xml = render_scenario(
+        "reinvite_same_sdp_caller.xml.j2",
+        scenario_name="hold_timeout_resume",
+        initial_pause_ms=100,
+        media_steps=[
+            {"direction": "sendonly", "pause_ms": 1500},
+            {"direction": "sendrecv", "pause_ms": 3500},
+            {"direction": "sendonly", "pause_ms": 2000},
+            {"direction": "sendonly", "pause_ms": 0},
+        ],
+        expect_engine_bye=True,
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name="hold_timeout_resume")
+
+    # Successful re-INVITEs prove the same dialog survived the old deadline and cumulative hold limit.
+    run_sipp_pair(caller_xml, callee_xml, trace=True)
+    _assert_hold_timeout_removed(sbc_engine, caller_xml)
+
+
 def test_b2bua_caller_prack(sbc_engine, render_scenario, run_sipp_pair):
     """Issue #123: an INVITE that requires 100rel gets reliable provisional
     responses on the caller-facing leg -- the SBC's 180 carries RSeq and
