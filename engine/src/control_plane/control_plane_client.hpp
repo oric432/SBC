@@ -70,7 +70,8 @@ public:
     [[nodiscard]] VoidResult wait_for_first_snapshot() { return first_snapshot_.wait(); }
 
     // Blocks the calling thread (never call this from the executor) until
-    // every queued event has been written or `timeout` elapses -- a
+    // every queued event has been handed to the websocket transport or
+    // `timeout` elapses -- a
     // disconnect during the wait does not give up early, since a reconnect
     // may still deliver what's queued before the timeout does. For clean
     // shutdown, so the final call_terminated events aren't discarded by

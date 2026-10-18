@@ -6,9 +6,9 @@
 
 namespace SbcEngine {
 
-// FIFO of serialized messages waiting to be written to the control plane, one
-// write in flight at a time. The message being written stays queued until it
-// succeeds, so one that was lost with its connection is resent as-is.
+// FIFO of serialized messages waiting to be handed to the websocket transport,
+// one handoff in flight at a time. A message stays queued until Glaze accepts it
+// into its internal write queue.
 class OutboundQueue {
 public:
     explicit OutboundQueue(std::size_t max_size)
@@ -23,10 +23,9 @@ public:
     // Marks the front as in flight and returns it, or nullptr if the queue is
     // empty or a write is already in flight. Valid until complete().
     [[nodiscard]] const std::string* start_next();
-    // The in-flight write succeeded: drop it.
+    // The in-flight message was accepted by the transport: drop it.
     void complete();
-    // The in-flight write died with its connection: it stays at the front,
-    // no longer in flight, to be resent.
+    // The in-flight handoff was aborted: keep it at the front for resend.
     void abort();
 
     // Drops every best-effort message except one already in flight.

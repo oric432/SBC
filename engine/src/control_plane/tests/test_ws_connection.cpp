@@ -26,12 +26,13 @@ struct Recorder {
     WsStage stage_ = WsStage::kSession;
     boost::system::error_code error_;
     int opens_ = 0;
+    int writes_ = 0;
 
     WsHandlers handlers() {
         return WsHandlers{
             .on_open = [this] { ++opens_; },
             .on_message = [](const std::string&) {},
-            .on_write_complete = [] {},
+            .on_write_complete = [this] { ++writes_; },
             .on_failure =
                 [this](WsStage failed_stage, boost::system::error_code err) {
                     ++failures_;
@@ -78,10 +79,24 @@ TEST_CASE("WsConnection fires no handler after cancel", "[ws_connection]") {
     CHECK(recorder.opens_ == 0);
 }
 
+TEST_CASE("WsConnection posts writes without blocking the caller", "[ws_connection]") {
+    Asio::io_context ioc;
+    Recorder recorder;
+    auto connection = std::make_shared<WsConnection>(
+        ioc.get_executor(),
+        WsUrlParts{.host_ = "127.0.0.1", .port_ = unused_port(), .target_ = "/"},
+        kConnectTimeout,
+        recorder.handlers());
+
+    connection->write("payload");
+
+    CHECK(recorder.writes_ == 0);
+    REQUIRE(ioc.poll_one() == 1);
+    CHECK(recorder.writes_ == 1);
+}
+
 TEST_CASE("WsStage has a readable name", "[ws_connection]") {
-    CHECK(to_string(WsStage::kResolve) == "resolve");
     CHECK(to_string(WsStage::kConnect) == "connect");
-    CHECK(to_string(WsStage::kHandshake) == "handshake");
     CHECK(to_string(WsStage::kSession) == "session");
 }
 
