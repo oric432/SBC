@@ -135,6 +135,16 @@ void SetupActions::note_failure(std::string_view status, std::string reason) {
     }
 }
 
+void SetupActions::fail_setup(std::string reason) {
+    const std::string& destination = session_.outbound_destination();
+    Log::call()->warn(
+        "[{}] setup failed: {}{}",
+        session_.call_id(),
+        reason,
+        destination.empty() ? std::string{} : std::format(" (towards {})", destination));
+    note_failure(Protocols::CallStatus::kFailed, std::move(reason));
+}
+
 void SetupActions::route_failed() {
     note_failure(
         Protocols::CallStatus::kNoRouteAvailable,
@@ -329,7 +339,7 @@ void SetupActions::handle_disconnect(pjsip_inv_session* inv) {
     }
     if ((session_.exchange() != nullptr) && session_.exchange()->awaiting_confirmation()) {
         if (leg == Leg::kCaller && cause == PJSIP_SC_REQUEST_TIMEOUT) {
-            note_failure(Protocols::CallStatus::kFailed, "caller never acknowledged the answer");
+            fail_setup("caller never acknowledged the answer");
             finish_exchange(session_, session_.exchange()->confirmation_timeout());
         }
         else {
@@ -339,18 +349,19 @@ void SetupActions::handle_disconnect(pjsip_inv_session* inv) {
     }
     if (leg == Leg::kCallee) {
         if (cause == PJSIP_SC_REQUEST_TIMEOUT) {
-            note_failure(Protocols::CallStatus::kFailed, "callee did not answer in time");
+            fail_setup("callee did not answer in time");
             if (session_.exchange() != nullptr) {
                 finish_exchange(session_, session_.exchange()->answer_timeout());
             }
         }
         else if (cause >= kMinFinalErrorCode) {
-            note_failure(Protocols::CallStatus::kFailed, std::format("callee rejected the call with {}", cause));
+            fail_setup(std::format("callee rejected the call with {}", cause));
             if (session_.exchange() != nullptr) {
                 finish_exchange(session_, session_.exchange()->reject(cause));
             }
         }
         else {
+            Log::call()->warn("[{}] callee leg disconnected during setup (cause {})", session_.call_id(), cause);
             setup.process_event(Setup::ExchangeFinished{ExchangeOutcome::kFailed});
         }
     }

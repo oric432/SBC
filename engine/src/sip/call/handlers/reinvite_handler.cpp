@@ -84,12 +84,8 @@ void ReinviteHandler::on_media_update(pjsip_inv_session* inv, pj_status_t status
     ExchangeOutcome outcome = ExchangeOutcome::kFailed;
     if (status == PJ_SUCCESS && inv->neg != nullptr) {
         const pjmedia_sdp_session* active_remote = nullptr;
-        if (pjmedia_sdp_neg_get_active_remote(inv->neg, &active_remote) == PJ_SUCCESS && active_remote != nullptr) {
-            const auto endpoint = Sdp::extract_rtp_endpoint(active_remote);
-            const auto direction = endpoint.port_ == 0 ? Sdp::MediaDirection::kInactive
-                                                       : Sdp::extract_audio_direction(active_remote, endpoint);
-            const Leg leg = session_.leg_for(inv);
-            session_.apply_media_direction(leg, direction);
+        if (pjmedia_sdp_neg_get_active_remote(inv->neg, &active_remote) == PJ_SUCCESS && active_remote != nullptr &&
+            apply_answered_media(session_, session_.leg_for(inv), active_remote)) {
             outcome = ExchangeOutcome::kCommitted;
         }
     }

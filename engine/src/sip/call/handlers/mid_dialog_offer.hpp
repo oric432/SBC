@@ -53,4 +53,9 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
 // call codec to the control plane.
 void commit_negotiated_media(CallSession& session, Leg leg, const NegotiatedOffer& negotiated);
 
+// Applies the answer an offerless re-INVITE's ACK carried: retargets the leg's
+// relay endpoint, reconfigures codec/DTMF if they changed, then commits the
+// direction. false means the answer can't be applied and the call must end.
+[[nodiscard]] bool apply_answered_media(CallSession& session, Leg leg, const pjmedia_sdp_session* answer);
+
 } // namespace SbcEngine
