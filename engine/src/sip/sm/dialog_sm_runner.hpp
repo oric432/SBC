@@ -26,6 +26,7 @@ public:
     [[nodiscard]] bool is_referring() const { return is<Referring>(); }
     [[nodiscard]] bool is_referring_while_terminating() const { return is<ReferringWhileTerminating>(); }
     [[nodiscard]] bool is_terminating() const { return is<Terminating>(); }
+    [[nodiscard]] bool can_terminate() const { return is_active() || is_reinviting() || is_referring(); }
 };
 
 } // namespace SbcEngine

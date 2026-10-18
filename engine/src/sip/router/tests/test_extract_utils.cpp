@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 #include <pjlib-util.h>
 #include <pjsip.h>
@@ -418,64 +420,6 @@ TEST_CASE("CallSession pauses RTP inactivity during hold and restarts it on resu
     manager.purge_scheduled();
 }
 
-TEST_CASE("CallHoldTimer publishes one expiry and rejects cancelled hold periods", "[hold_timer]") {
-    using namespace std::chrono_literals;
-    boost::asio::io_context ioc;
-    auto timer = std::make_shared<CallHoldTimer>(ioc.get_executor(), 1ms);
-
-    SECTION("one-shot expiry is consumed only once") {
-        timer->start();
-        CHECK_FALSE(timer->has_expired());
-        ioc.run();
-        CHECK(timer->has_expired());
-        CHECK_FALSE(timer->has_expired());
-    }
-
-    SECTION("stop before the executor runs cancels the wait") {
-        timer->start();
-        timer->stop();
-        ioc.run();
-        CHECK_FALSE(timer->has_expired());
-    }
-
-    SECTION("stop after expiry invalidates the pending notification") {
-        timer->start();
-        ioc.run();
-        timer->stop();
-        CHECK_FALSE(timer->has_expired());
-        ioc.restart();
-        ioc.run();
-    }
-
-    SECTION("a new hold ignores an unconsumed expiry from the previous hold") {
-        timer->start();
-        ioc.run();
-        timer->stop();
-        timer->start();
-        CHECK_FALSE(timer->has_expired());
-        ioc.restart();
-        ioc.run();
-        CHECK(timer->has_expired());
-    }
-
-    SECTION("pending handlers retain only the timer after its owner releases it") {
-        std::weak_ptr<CallHoldTimer> weak = timer;
-        timer->start();
-        timer->stop();
-        timer.reset();
-        ioc.run();
-        CHECK(weak.expired());
-    }
-}
-
-TEST_CASE("CallHoldTimer can be disabled", "[hold_timer]") {
-    boost::asio::io_context ioc;
-    auto timer = std::make_shared<CallHoldTimer>(ioc.get_executor(), std::chrono::seconds::zero());
-    timer->start();
-    CHECK(ioc.run() == 0);
-    CHECK_FALSE(timer->has_expired());
-}
-
 TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on termination", "[call_session][hold]") {
     boost::asio::io_context ioc;
     PjContext context;
@@ -494,21 +438,44 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
         ioc.get_executor(),
         &request);
 
+    using namespace std::chrono_literals;
+    constexpr auto wait_past_timeout = 1100ms;
+    CHECK_FALSE(session->hold_timeout_expired());
     session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
-    ioc.run();
-    // Further changes while held must preserve the already-expired countdown.
-    session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kInactive);
-    CHECK(session->hold_timeout_expired());
     CHECK_FALSE(session->hold_timeout_expired());
 
-    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
-    session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendRecv);
-    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
-    CHECK_FALSE(session->hold_timeout_expired());
-    ioc.restart();
-    ioc.run();
-    session->report_call_terminated(Protocols::CallStatus::kSuccess, std::nullopt);
-    CHECK_FALSE(session->hold_timeout_expired());
+    SECTION("expiry persists until resume and a new hold gets a fresh deadline") {
+        // Expiry is measured on the SIP thread, without running the Asio executor.
+        std::this_thread::sleep_for(wait_past_timeout);
+        CHECK(session->hold_timeout_expired());
+        CHECK(session->hold_timeout_expired());
+
+        session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kInactive);
+        CHECK(session->hold_timeout_expired());
+        session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
+        CHECK(session->hold_timeout_expired());
+        session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendRecv);
+        CHECK_FALSE(session->hold_timeout_expired());
+
+        session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendOnly);
+        CHECK_FALSE(session->hold_timeout_expired());
+        std::this_thread::sleep_for(wait_past_timeout);
+        CHECK(session->hold_timeout_expired());
+        session->report_call_terminated(Protocols::CallStatus::kSuccess, std::nullopt);
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
+
+    SECTION("termination cancels a hold before its deadline") {
+        session->report_call_terminated(Protocols::CallStatus::kSuccess, std::nullopt);
+        std::this_thread::sleep_for(wait_past_timeout);
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
+
+    SECTION("resuming before expiry cancels the deadline") {
+        session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
+        std::this_thread::sleep_for(wait_past_timeout);
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
 
     manager.schedule_remove("hold-timeout");
     manager.purge_scheduled();

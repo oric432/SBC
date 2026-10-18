@@ -24,7 +24,6 @@
 #include "sip/sm/setup_sm_runner.hpp"
 #include "sip/call/offer_answer_exchange.hpp"
 #include "sip/stack/sdp.hpp"
-#include "sip/call/call_hold_timer.hpp"
 
 namespace SbcEngine {
 
@@ -210,7 +209,7 @@ private:
     std::optional<std::chrono::steady_clock::time_point> answered_at_;
     bool terminated_reported_ = false;
 
-    std::shared_ptr<CallHoldTimer> call_hold_timer_;
+    std::optional<std::chrono::steady_clock::time_point> hold_started_at_;
 };
 
 } // namespace SbcEngine

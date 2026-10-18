@@ -42,9 +42,7 @@ CallSession::CallSession(
     , setup_actions_(*this, stores)
     , dialog_actions_(*this)
     , setup_sm_(setup_actions_, call_id_)
-    , dialog_sm_(dialog_actions_, call_id_)
-    , call_hold_timer_(
-          std::make_shared<CallHoldTimer>(executor, std::chrono::seconds{ctx_->config_.max_hold_duration_s_})) {
+    , dialog_sm_(dialog_actions_, call_id_) {
     // Must be installed before MediaBridge::start_bridge_loop() (see its own
     // thread-safety note) — the constructor body runs before any later action
     // can reach that call, so this satisfies it.
@@ -59,7 +57,7 @@ CallSession::CallSession(
 }
 
 CallSession::~CallSession() {
-    call_hold_timer_->stop();
+    hold_started_at_.reset();
     release_mod_data(inv_caller());
     release_mod_data(inv_callee());
     exchange_.reset();
@@ -130,7 +128,7 @@ void CallSession::report_call_terminated(std::string_view status, std::optional<
         return;
     }
     terminated_reported_ = true;
-    call_hold_timer_->stop();
+    hold_started_at_.reset();
     if (ctx_->call_events_ == nullptr) {
         return;
     }
@@ -164,16 +162,12 @@ void CallSession::record_media_direction(Leg which, Sdp::MediaDirection directio
     const bool is_held = media_is_held();
 
     if (!was_held && is_held) {
-        call_hold_timer_->start();
+        hold_started_at_ = std::chrono::steady_clock::now();
     }
     else if (was_held && !is_held) {
-        call_hold_timer_->stop();
+        hold_started_at_.reset();
         media_bridge_->reset_inactivity_baseline();
     }
-}
-
-bool CallSession::hold_timeout_expired() {
-    return call_hold_timer_->has_expired() && media_is_held() && !terminated_reported_;
 }
 
 bool CallSession::media_is_held() const {
@@ -194,6 +188,15 @@ bool CallSession::rtp_inactivity_expired(
     std::chrono::steady_clock::time_point now,
     std::chrono::steady_clock::duration timeout) const {
     return !media_is_held() && now - media_bridge_->last_packet_time() >= timeout;
+}
+
+bool CallSession::hold_timeout_expired() {
+    if (!hold_started_at_.has_value()) {
+        return false;
+    }
+
+    return std::chrono::steady_clock::now() - *hold_started_at_ >=
+           std::chrono::seconds(ctx_->config_.max_hold_duration_s_);
 }
 
 void CallSession::apply_media_direction(Leg leg, Sdp::MediaDirection direction) {
