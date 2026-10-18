@@ -6,6 +6,7 @@
 
 #include "core/utils/log.hpp"
 #include "net/rtp/media_bridge.hpp"
+#include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/sm/events.hpp"
 #include "sip/stack/sdp.hpp"
@@ -41,6 +42,31 @@ bool reconfigure_media_bridge(
         return false;
     }
     return true;
+}
+
+void retarget_leg(CallSession& session, Leg leg, const std::string& address, std::uint16_t port) {
+    if (leg == Leg::kCaller) {
+        session.media_bridge()->retarget_remote_leg_a(address, port);
+    }
+    else {
+        session.media_bridge()->retarget_remote_leg_b(address, port);
+    }
+    Log::call()->debug("[{}] {} leg relay retargeted to {}:{}", session.call_id(), to_string(leg), address, port);
+
+    // CUCM transfers by pointing each call's leg at the other call's media, which this SBC anchors.
+    if (address != session.ctx()->config_.local_ip_) {
+        return;
+    }
+    const CallSession* peer = session.call_manager()->find_by_relay_port(port, &session);
+    if (peer != nullptr) {
+        Log::call()->info(
+            "[{}] transfer: {} leg now relayed through call [{}] ({} -> {})",
+            session.call_id(),
+            to_string(leg),
+            peer->call_id(),
+            peer->caller_uri(),
+            peer->outbound_destination());
+    }
 }
 
 } // namespace
@@ -138,12 +164,7 @@ negotiate_mid_dialog_offer(CallSession& session, const std::string& offer, Leg l
     Sdp::rewrite_connection_and_port(session.pool(), offer_sdp, session.ctx()->config_.local_ip_, *relay_port);
 
     if (!Sdp::is_hold_address(offer_endpoint.ip_)) {
-        if (leg == Leg::kCaller) {
-            session.media_bridge()->retarget_remote_leg_a(offer_endpoint.ip_, offer_endpoint.port_);
-        }
-        else {
-            session.media_bridge()->retarget_remote_leg_b(offer_endpoint.ip_, offer_endpoint.port_);
-        }
+        retarget_leg(session, leg, offer_endpoint.ip_, offer_endpoint.port_);
     }
 
     if (codec_or_dtmf_changed) {
@@ -198,18 +219,7 @@ bool apply_answered_media(CallSession& session, Leg leg, const pjmedia_sdp_sessi
             codec = Sdp::extract_active_audio_codec(answer);
         }
         if (!endpoint.ip_.empty() && !Sdp::is_hold_address(endpoint.ip_)) {
-            if (leg == Leg::kCaller) {
-                session.media_bridge()->retarget_remote_leg_a(endpoint.ip_, endpoint.port_);
-            }
-            else {
-                session.media_bridge()->retarget_remote_leg_b(endpoint.ip_, endpoint.port_);
-            }
-            Log::call()->debug(
-                "[{}] offerless re-INVITE answer from {}: relay retargeted to {}:{}",
-                session.call_id(),
-                to_string(leg),
-                endpoint.ip_,
-                endpoint.port_);
+            retarget_leg(session, leg, endpoint.ip_, endpoint.port_);
         }
     }
 

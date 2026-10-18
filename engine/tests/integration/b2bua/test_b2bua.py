@@ -4,7 +4,10 @@ import logging
 import re
 import socket
 import struct
+import threading
+import time
 import urllib.parse
+import uuid
 from pathlib import Path
 
 import pytest
@@ -697,3 +700,203 @@ def test_b2bua_refer_out_of_dialog(sbc_engine, render_scenario, run_sipp_client)
     run_sipp_client(scenario_xml)
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during REFER:\n{sbc_engine.log_tail()}"
+
+
+def _raw_sdp(port: int) -> str:
+    return (
+        "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\n"
+        f"m=audio {port} RTP/AVP 0\r\na=rtpmap:0 PCMU/8000\r\n"
+    )
+
+
+def _header_line(message: str, name: str) -> str:
+    return re.search(rf"^{name}:.*$", message, re.MULTILINE | re.IGNORECASE).group(0).rstrip()
+
+
+class _RawUas:
+    """UDP callee that answers every INVITE with `status` (a 200 carries SDP) and every BYE with 200."""
+
+    def __init__(self, port: int, status: int = 200) -> None:
+        self._status = status
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.bind(("127.0.0.1", port))
+        self._sock.settimeout(0.2)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2)
+        self._sock.close()
+
+    def _serve(self) -> None:
+        while not self._stop.is_set():
+            try:
+                data, peer = self._sock.recvfrom(65535)
+            except OSError:
+                continue
+            request = data.decode(errors="replace")
+            method = request.split(" ", 1)[0]
+            if method == "INVITE":
+                self._sock.sendto(self._reply(request, self._status), peer)
+            elif method == "BYE":
+                self._sock.sendto(self._reply(request, 200), peer)
+
+    def _reply(self, request: str, status: int) -> bytes:
+        to_line = _header_line(request, "To")
+        if ";tag=" not in to_line:
+            to_line += f";tag=uas{uuid.uuid4().hex[:8]}"
+        port = self._sock.getsockname()[1]
+        lines = [
+            f"SIP/2.0 {status} {'OK' if status == 200 else 'Rejected'}",
+            *(via.rstrip() for via in re.findall(r"^Via:.*$", request, re.MULTILINE | re.IGNORECASE)),
+            _header_line(request, "From"),
+            to_line,
+            _header_line(request, "Call-ID"),
+            _header_line(request, "CSeq"),
+            f"Contact: <sip:uas@127.0.0.1:{port}>",
+        ]
+        body = _raw_sdp(42000) if status == 200 and request.startswith("INVITE") else ""
+        if body:
+            lines.append("Content-Type: application/sdp")
+        return ("\r\n".join([*lines, f"Content-Length: {len(body)}"]) + "\r\n\r\n" + body).encode()
+
+
+class _RawCaller:
+    """One hand-built UDP call towards the SBC, so a test can script the exact dialog a peer like CUCM sends."""
+
+    def __init__(self, sbc_port: int) -> None:
+        self.call_id = f"raw-{uuid.uuid4().hex[:10]}@127.0.0.1"
+        self.relay_port = 0
+        self._sbc = ("127.0.0.1", sbc_port)
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.bind(("127.0.0.1", 0))
+        self._sock.settimeout(5)
+        self._port = self._sock.getsockname()[1]
+        self._tag = f"raw{self._port}"
+        self._to_tag = ""
+        self._cseq = 0
+        self._branch = ""
+
+    def close(self) -> None:
+        self._sock.close()
+
+    def _request(self, method: str, *, body: str = "", bump_cseq: bool = True, new_branch: bool = True) -> None:
+        if bump_cseq:
+            self._cseq += 1
+        if new_branch:
+            self._branch = f"z9hG4bK{uuid.uuid4().hex[:12]}"
+        to_tag = f";tag={self._to_tag}" if self._to_tag else ""
+        lines = [
+            f"{method} sip:service@127.0.0.1:{self._sbc[1]} SIP/2.0",
+            f"Via: SIP/2.0/UDP 127.0.0.1:{self._port};branch={self._branch}",
+            "Max-Forwards: 70",
+            f"From: <sip:raw@127.0.0.1:{self._port}>;tag={self._tag}",
+            f"To: <sip:service@127.0.0.1:{self._sbc[1]}>{to_tag}",
+            f"Call-ID: {self.call_id}",
+            f"CSeq: {self._cseq} {method}",
+            f"Contact: <sip:raw@127.0.0.1:{self._port}>",
+        ]
+        if body:
+            lines.append("Content-Type: application/sdp")
+        message = "\r\n".join([*lines, f"Content-Length: {len(body)}"]) + "\r\n\r\n" + body
+        self._sock.sendto(message.encode(), self._sbc)
+
+    def _final(self, method: str) -> str:
+        while True:
+            text = self._sock.recvfrom(65535)[0].decode(errors="replace")
+            status = re.match(r"SIP/2\.0 (\d+)", text)
+            if status and int(status.group(1)) >= 200 and re.search(rf"^CSeq: \d+ {method}", text, re.MULTILINE):
+                tag = re.search(r"^To:.*;tag=([^;>\r\n]+)", text, re.MULTILINE)
+                self._to_tag = tag.group(1) if tag else self._to_tag
+                return text
+
+    def invite(self, rtp_port: int) -> str:
+        """Sends the INVITE and ACKs the final response; returns it."""
+        self._request("INVITE", body=_raw_sdp(rtp_port))
+        response = self._final("INVITE")
+        if response.startswith("SIP/2.0 200"):
+            self.relay_port = int(re.search(r"^m=audio (\d+)", response, re.MULTILINE).group(1))
+            self._request("ACK", bump_cseq=False)
+        else:
+            self._request("ACK", bump_cseq=False, new_branch=False)
+        return response
+
+    def reinvite_offerless_answering(self, rtp_port: int) -> None:
+        """An offerless re-INVITE whose ACK answers the SBC's offer with media at `rtp_port` on the SBC itself."""
+        self._request("INVITE")
+        assert self._final("INVITE").startswith("SIP/2.0 200")
+        self._request("ACK", body=_raw_sdp(rtp_port), bump_cseq=False)
+
+    def bye(self) -> None:
+        try:
+            self._request("BYE")
+            self._final("BYE")
+        except OSError:
+            pass
+
+
+def _wait_for_log(engine, needle: str, start: int, timeout_s: float = 5.0) -> str | None:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        for line in engine.log_lines[start:]:
+            if needle in line:
+                return line
+        time.sleep(0.05)
+    return None
+
+
+def test_b2bua_transfer_chain_logged(sbc_engine, ports):
+    """CUCM transfers by re-pointing each call at the other call's media, which the SBC anchors. Each call's
+    offerless re-INVITE ACK then names the other session's relay port, and the engine must log it as a transfer."""
+    if sbc_engine.process is None:
+        pytest.skip("asserts on the log of the engine this suite spawned")
+    start = len(sbc_engine.log_lines)
+    uas = _RawUas(ports.callee_port)
+    first, second = _RawCaller(ports.sbc_port), _RawCaller(ports.sbc_port)
+    try:
+        assert first.invite(41000).startswith("SIP/2.0 200")
+        assert second.invite(41002).startswith("SIP/2.0 200")
+        first.reinvite_offerless_answering(second.relay_port)
+        second.reinvite_offerless_answering(first.relay_port)
+        first_line = _wait_for_log(
+            sbc_engine, f"[{first.call_id}] transfer: caller leg now relayed through call [{second.call_id}]", start
+        )
+        second_line = _wait_for_log(
+            sbc_engine, f"[{second.call_id}] transfer: caller leg now relayed through call [{first.call_id}]", start
+        )
+    finally:
+        first.bye()
+        second.bye()
+        first.close()
+        second.close()
+        uas.stop()
+
+    assert first_line is not None, f"no transfer log for the first call:\n{sbc_engine.log_tail()}"
+    assert second_line is not None, f"no transfer log for the second call:\n{sbc_engine.log_tail()}"
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+def test_b2bua_callee_rejection_logged(sbc_engine, ports):
+    """A callee that rejects the INVITE is relayed to the caller, and the engine log says why setup failed."""
+    if sbc_engine.process is None:
+        pytest.skip("asserts on the log of the engine this suite spawned")
+    start = len(sbc_engine.log_lines)
+    uas = _RawUas(ports.callee_port, status=404)
+    caller = _RawCaller(ports.sbc_port)
+    try:
+        response = caller.invite(41010)
+        line = _wait_for_log(
+            sbc_engine,
+            f"[{caller.call_id}] setup failed: callee rejected the call with 404"
+            f" (towards sip:service@127.0.0.1:{ports.callee_port})",
+            start,
+        )
+    finally:
+        caller.close()
+        uas.stop()
+
+    assert response.startswith("SIP/2.0 404"), f"caller was not told about the rejection:\n{response}"
+    assert line is not None, f"no setup-failure log:\n{sbc_engine.log_tail()}"
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
