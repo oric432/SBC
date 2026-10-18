@@ -44,6 +44,8 @@ private:
     // Keeps only the first failure noted -- the specific cause a failing path
     // recorded, not the generic fallback terminate_call() adds afterward.
     void note_failure(std::string_view status, std::string reason);
+    // Logs a setup failure that has no other log line, then records it like note_failure().
+    void fail_setup(std::string reason);
     CallSession& session_;
     EngineStores stores_;
     // The status code report_progress() last actually sent the caller (post
