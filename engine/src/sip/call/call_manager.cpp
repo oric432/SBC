@@ -71,6 +71,20 @@ CallSession* CallManager::find_by_dialog(pjsip_dialog* dialog) {
     return nullptr;
 }
 
+CallSession* CallManager::find_by_relay_port(unsigned short port, const CallSession* except) {
+    for (auto& [call_id, session] : sessions_) {
+        (void)call_id;
+        if (session.get() == except) {
+            continue;
+        }
+        const auto bridge = session->media_bridge();
+        if (bridge->leg_a_port().value_or(0) == port || bridge->leg_b_port().value_or(0) == port) {
+            return session.get();
+        }
+    }
+    return nullptr;
+}
+
 void CallManager::remove_session(const std::string& call_id) {
     schedule_remove(call_id);
 }
