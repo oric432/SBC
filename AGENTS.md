@@ -15,9 +15,21 @@ routing table. Three components:
 
 ## Known Limitations
 
-SIP features not currently supported by the engine: PRACK (100rel) orchestration, app-level
-UPDATE, REFER, SIP forking,
-ICE, SRTP, WebRTC.
+SIP features not currently supported by the engine: SIP forking, ICE, SRTP, WebRTC.
+
+Partially supported -- know these before touching the area:
+- **PRACK (100rel)**: PJSIP's 100rel module handles reliable provisionals independently on each
+  leg (reliable 183 with early media is covered by the SIPp suite). The engine does not relay
+  PRACK end to end.
+- **REFER (RFC 3515)**: relayed, not terminated. An in-dialog REFER is accepted on the leg it
+  arrives on, and a new REFER goes out on the opposite leg with `Replaces` translated to that
+  leg's dialog identity and `Referred-By` kept; the transferee's `message/sipfrag` NOTIFYs are
+  relayed back. The transferee's new INVITE is an independent call with its own `CallSession`.
+  An INVITE that *carries* `Replaces` is not honored: it is accepted as a fresh call and the named
+  dialog is left alone (#292).
+- **Hold/resume**: handled as re-INVITE/UPDATE direction changes (`sendonly`/`recvonly`/
+  `inactive`/`0.0.0.0`), which gate the relay per leg and pause RTP-inactivity detection while the
+  call is held. A held call is never timed out (#285).
 
 REGISTER (#104) has its own caveats, since it's the first thing in this project that authenticates
 anything:
@@ -70,8 +82,9 @@ read it before touching `src/sip/` or `src/net/rtp/`. Build/style conventions li
 - `call/` — one call's state and its PJSIP adapters: `CallSession` (both legs, the `MediaBridge`,
   the two machines and their adapters), `SetupActions`, `OfferAnswerExchange` + `OfferAnswerActions`
   (the initial INVITE's offer/answer relay), and `DialogActions`, a facade over one handler per
-  in-dialog method in `call/handlers/` (`ByeHandler`, `ReinviteHandler`). A new in-dialog method
-  (UPDATE, REFER) is a new handler plus a line in the facade.
+  in-dialog method in `call/handlers/` (`ByeHandler`, `ReinviteHandler`, `UpdateHandler`,
+  `ReferHandler`). `mid_dialog_offer` there holds the negotiation re-INVITE and UPDATE share. A new
+  in-dialog method is a new handler plus a line in the facade.
 - `route_table/` — the route snapshot fetched from the control plane.
 
 ### Threading model
@@ -103,10 +116,14 @@ Four Boost.SML machines, each templated on the `I*Actions` interface it drives:
 - **`OfferAnswerSm`** — one initial-INVITE offer/answer relay, owned by `OfferAnswerExchange` for
   the duration of setup only: `Idle → AwaitingAnswer → RelayingAnswer → AwaitingAck → Committed`,
   or `RolledBack` / `Failed`, then `Done`. It publishes exactly one `ExchangeOutcome` to setup.
-- **`DialogSm`** — the confirmed-dialog phase: `Active → Reinviting → Active` for re-INVITEs
-  (answered locally on the offering leg, never forwarded to the other leg; a colliding re-INVITE
-  gets 491) and `Active → Terminating → Terminated → DialogDone` for BYE and errors. There is no
-  offer/answer exchange in this phase.
+- **`DialogSm`** — the confirmed-dialog phase: `Active → Reinviting → Active` for re-INVITEs and
+  UPDATEs (answered locally on the offering leg, never forwarded to the other leg; they share one
+  call-wide lock, so a colliding re-INVITE gets 491 and a colliding UPDATE gets PJSIP's automatic
+  488), `Active → Referring → Active` for REFER (a REFER while `Reinviting`/`Referring` gets 491;
+  a BYE mid-REFER goes through `ReferringWhileTerminating`), and
+  `Active → Terminating → Terminated → DialogDone` for BYE and errors. There is no offer/answer
+  exchange in this phase. An UPDATE can also arrive before setup finishes, once the early answer is
+  out (#211); `MessageRouter::on_rx_offer` then drives this machine ahead of `Established`.
 - **`OptionsSm`** — stateless OPTIONS responder; `MessageRouter` keeps one runner and resets it per
   request.
 
@@ -143,16 +160,38 @@ action.**
 `OfferAnswerActions` binds each leg's socket (`MediaBridge::bind_leg_a()`/`bind_leg_b()`), sets
 each remote endpoint as that leg's SDP answer arrives, configures both legs' codecs
 (`configure_legs()`, which is what transcodes when the two legs differ) and starts relaying
-(`start_bridge_loop()`). `ReinviteHandler` retargets a leg and reconfigures codecs live on a
-re-INVITE. From `start_bridge_loop()` on, the relay runs on the `io_context` thread.
+(`start_bridge_loop()`). Mid-dialog offers (re-INVITE and UPDATE) go through
+`negotiate_mid_dialog_offer()`, which retargets a leg and reconfigures codecs live. An offerless
+re-INVITE's answer arrives in the ACK and `ReinviteHandler::on_media_update` applies its endpoint,
+codec/DTMF and direction the same way. `CallSession::apply_media_direction()` hands each leg's SDP
+direction to `MediaBridge::set_leg_media_flow()`, which gates relay per direction (hold). From
+`start_bridge_loop()` on, the relay runs on the `io_context` thread.
+
+### Transfers
+
+Two different things reach the engine as "a transfer":
+- **A real REFER** (RFC 3515/5589), e.g. from SIP phones registered to the engine: `ReferHandler`
+  relays it (see Known Limitations). A successful REFER does not itself end the transferor's call
+  -- per RFC 5589 the parties end it with a BYE, so the original `CallSession` lives until that BYE.
+  The transferred call is a separate session with its own `MediaBridge`.
+- **CUCM never sends REFER on a trunk.** It joins two trunk calls with offerless re-INVITEs or
+  UPDATEs that name the other party's media. The engine anchors media, so that address is its own
+  relay port of the other call, and the two sessions end up chained (each caller leg relays into
+  the other). Both stay alive, correctly, until the transferred call ends -- they are carrying it,
+  so don't free them early. The engine logs `transfer: ... relayed through call [...]` when it sees
+  this. Removing the double relay hop would need a media shortcut between the two sessions; it
+  doesn't exist yet.
 
 ### Test coverage
 
 Unit tests (`ctest`) cover the four machines with mocked actions (`src/sip/sm/tests/`), `Sdp`,
-`extract_utils`, `RoutesManager`, `ReinviteHandler::media_changed`, and the RTP/transcoding classes
-(`src/net/rtp/tests/`). `PjsipStack`, `MessageRouter`, and the per-call adapters and handlers have
-**no** unit coverage — verify changes there with `just test-b2bua` (live SIPp calls, see
-`engine/tests/integration/b2bua/README.md`) or add tests.
+`extract_utils`, `RoutesManager`, the pure helpers in `mid_dialog_offer` (`media_changed`,
+`caller_codec_changed`), and the RTP/transcoding classes (`src/net/rtp/tests/`). `PjsipStack`,
+`MessageRouter`, and the per-call adapters and handlers have **no** unit coverage — verify changes
+there with `just test-b2bua` (live SIPp calls, see `engine/tests/integration/b2bua/README.md`) or
+add tests. Flows SIPp can't script, such as two concurrent calls or a callee that rejects, use the
+hand-built UDP callers (`_RawCaller`/`_RawUas`) in `test_b2bua.py`; they assert on the engine's own
+log, so they skip under `--live-engine`.
 
 ## Control-plane
 
