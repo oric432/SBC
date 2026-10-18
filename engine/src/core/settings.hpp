@@ -23,6 +23,7 @@ constexpr int kRetryIntervalSeconds = 5;
 constexpr int kMinExpiresSeconds = 60;
 constexpr int kMaxExpiresSeconds = 120;
 constexpr int kBindingSweepIntervalSeconds = 60;
+constexpr int kMaxHoldDurationSeconds = 0;
 } // namespace SettingsDefaults
 
 struct LoggingSettings {
@@ -49,7 +50,7 @@ struct SipSettings {
     // Ends an established call after this many seconds without RTP from either
     // leg. Paused while either leg's media is held. Set to 0 to disable detection.
     int rtp_inactivity_timeout_s = SettingsDefaults::kRtpInactivityTimeoutSeconds;
-    int max_hold_duration_s = 0;
+    int max_hold_duration_s = SettingsDefaults::kMaxHoldDurationSeconds;
 };
 
 struct ControlPlaneSettings {

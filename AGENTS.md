@@ -29,7 +29,7 @@ Partially supported -- know these before touching the area:
   dialog is left alone (#292).
 - **Hold/resume**: handled as re-INVITE/UPDATE direction changes (`sendonly`/`recvonly`/
   `inactive`/`0.0.0.0`), which gate the relay per leg and pause RTP-inactivity detection while the
-  call is held. A held call is never timed out (#285).
+  call is held. A held call can be timed out depending on the configuration, see PjsipConfig `max_hold_duration_s`.
 
 REGISTER (#104) has its own caveats, since it's the first thing in this project that authenticates
 anything:
