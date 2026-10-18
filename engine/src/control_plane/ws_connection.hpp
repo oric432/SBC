@@ -61,7 +61,7 @@ public:
 
 private:
     void on_open();
-    void on_message(std::string_view message, glz::ws_opcode opcode);
+    void on_message(std::string_view message, glz::ws_opcode opcode) const;
     void on_close();
     void on_error(std::error_code err);
     void fail(WsStage stage, boost::system::error_code err);

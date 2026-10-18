@@ -17,7 +17,15 @@ std::shared_ptr<Asio::io_context> shared_context(const Asio::any_io_executor& ex
 }
 
 boost::system::error_code to_boost_error(const std::error_code& err) {
-    return {err.value(), boost::system::generic_category()};
+    if (err.category() == std::system_category()) {
+        return {err.value(), boost::system::system_category()};
+    }
+
+    if (err.category() == std::generic_category()) {
+        return {err.value(), boost::system::generic_category()};
+    }
+    // No direct Boost counterpart; preserve the original std category.
+    return boost::system::error_code{err};
 }
 } // namespace
 
@@ -85,7 +93,7 @@ void WsConnection::on_open() {
     handlers_.on_open();
 }
 
-void WsConnection::on_message(std::string_view message, glz::ws_opcode opcode) {
+void WsConnection::on_message(std::string_view message, glz::ws_opcode opcode) const {
     if (closed_) {
         return;
     }
