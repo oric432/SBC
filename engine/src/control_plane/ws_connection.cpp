@@ -4,6 +4,7 @@
 #include <boost/asio/error.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
+#include <glaze/json/lazy.hpp>
 
 namespace SbcEngine {
 
@@ -14,6 +15,16 @@ std::shared_ptr<Asio::io_context> shared_context(const Asio::any_io_executor& ex
     auto& context = static_cast<Asio::io_context&>(executor.context()); // NOLINT
     // SbcApp owns the context; Glaze only shares access to it.
     return {&context, [](Asio::io_context*) {}};
+}
+
+bool is_ack(std::string_view message) {
+    auto document = glz::lazy_json(message);
+    if (!document || !document->is_object()) {
+        return false;
+    }
+
+    const auto type = (*document)["type"].get<std::string_view>();
+    return type && *type == Protocols::WsMessageType::kAck;
 }
 
 } // namespace
@@ -95,20 +106,20 @@ void WsConnection::on_open() {
 }
 
 void WsConnection::on_message(std::string_view message, glz::ws_opcode opcode) const {
-    if (closed_) {
+    if (closed_ || opcode != glz::ws_opcode::text) {
         return;
     }
-    if (opcode == glz::ws_opcode::text) {
-        handlers_.on_message(std::string(message));
+
+    if (is_ack(message)) {
+        handlers_.on_write_complete();
+        return;
     }
+
+    handlers_.on_message(std::string(message));
 }
 
 void WsConnection::write(std::string_view payload) {
-    client_.send(payload, [weak = weak_from_this()](std::error_code err) {
-        if (const auto self = weak.lock()) {
-            self->on_write(err);
-        }
-    });
+    client_.send(payload);
 }
 
 void WsConnection::on_close() {
@@ -120,18 +131,6 @@ void WsConnection::on_close() {
 
 void WsConnection::on_error(std::error_code err) {
     fail(open_ ? WsStage::kSession : WsStage::kConnect, to_boost_error(err));
-}
-
-void WsConnection::on_write(std::error_code err) {
-    if (closed_) {
-        return;
-    }
-    if (err) {
-        on_error(err);
-        return;
-    }
-
-    handlers_.on_write_complete();
 }
 
 void WsConnection::fail(WsStage stage, boost::system::error_code err) {

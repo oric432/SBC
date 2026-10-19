@@ -26,7 +26,7 @@ struct WsHandlers {
     // The handshake finished; write() is allowed from here on.
     std::function<void()> on_open;
     std::function<void(const std::string&)> on_message;
-    // Glaze finished writing the message to the local socket.
+    // The control plane confirmed that it processed the current message.
     std::function<void()> on_write_complete;
     // The connection is dead. Fires at most once, and never after cancel().
     std::function<void(WsStage, boost::system::error_code)> on_failure;
@@ -63,7 +63,6 @@ private:
     void on_message(std::string_view message, glz::ws_opcode opcode) const;
     void on_close();
     void on_error(std::error_code err);
-    void on_write(std::error_code err);
     void fail(WsStage stage, boost::system::error_code err);
 
     boost::asio::any_io_executor executor_;

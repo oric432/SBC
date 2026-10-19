@@ -68,12 +68,11 @@ TEST_CASE("WsConnection opens, exchanges messages, and reports server close", "[
     std::thread server_thread([&] {
         glz::http_server server;
         auto websocket = std::make_shared<glz::websocket_server>();
-        websocket->on_open([](auto connection, const glz::request&) { connection->send_text("server"); });
-        websocket->on_message([](auto connection, std::string_view message, glz::ws_opcode opcode) {
+        websocket->on_open(
+            [](auto connection, const glz::request&) { connection->send_text(R"({"type":"snapshot"})"); });
+        websocket->on_message([](auto connection, std::string_view, glz::ws_opcode opcode) {
             if (opcode == glz::ws_opcode::text) {
-                connection->send_text("echo:" + std::string(message), [connection](std::error_code) {
-                    connection->close();
-                });
+                connection->send_text(R"({"type":"ack"})", [connection](std::error_code) { connection->close(); });
             }
         });
         server.websocket("/", websocket);
@@ -108,7 +107,7 @@ TEST_CASE("WsConnection opens, exchanges messages, and reports server close", "[
 
     CHECK(recorder.opens_ == 1);
     CHECK(recorder.writes_ == 1);
-    CHECK(recorder.messages_ == std::vector<std::string>{"server", "echo:client"});
+    CHECK(recorder.messages_ == std::vector<std::string>{R"({"type":"snapshot"})"});
     CHECK(recorder.failures_ == 1);
     CHECK(recorder.stage_ == WsStage::kSession);
     CHECK(recorder.error_ == Asio::error::connection_reset);
@@ -186,7 +185,7 @@ TEST_CASE("WsConnection fires no handler after cancel", "[ws_connection]") {
     CHECK(recorder.opens_ == 0);
 }
 
-TEST_CASE("WsConnection reports a disconnected write without completing it", "[ws_connection]") {
+TEST_CASE("WsConnection does not acknowledge a disconnected write", "[ws_connection]") {
     Asio::io_context ioc;
     Recorder recorder;
     auto connection = std::make_shared<WsConnection>(
@@ -198,9 +197,7 @@ TEST_CASE("WsConnection reports a disconnected write without completing it", "[w
     connection->write("payload");
 
     CHECK(recorder.writes_ == 0);
-    CHECK(recorder.failures_ == 1);
-    CHECK(recorder.stage_ == WsStage::kConnect);
-    CHECK(recorder.error_ == boost::system::errc::make_error_code(boost::system::errc::not_connected));
+    CHECK(recorder.failures_ == 0);
 }
 
 TEST_CASE("WsStage has a readable name", "[ws_connection]") {
