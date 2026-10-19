@@ -6,6 +6,13 @@ import { SipRouteSnapshot } from './sipRoutes';
 
 export type WsMessageType = 'snapshot' | 'registration' | 'call_started' | 'call_updated' | 'call_terminated';
 
+// Control plane -> engine confirmation that the current inbound message was
+// processed successfully. Engine messages are processed serially, so the ACK
+// applies to the one message currently awaiting confirmation.
+export interface AckDto {
+  type: 'ack';
+}
+
 // Every timestamp is the engine's own clock (ISO-8601 UTC), never the time an
 // event arrived here.
 export interface CallStarted {
