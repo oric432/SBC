@@ -32,12 +32,9 @@ struct ControlPlaneClientConfig {
     std::chrono::seconds retry_interval_;
 };
 
-// Maintains the engine's one persistent connection to the control plane,
-// replacing the old one-shot HTTP route fetch (RoutesManager). On every
-// successful connect -- the first one and every reconnect -- the control
-// plane's first message is a full snapshot (routes and SIP users), so the
-// engine never has to reconcile a delta against a version it might have
-// missed.
+// Maintains the engine's one persistent connection to the control plane, replacing
+// the old one-shot HTTP route fetch. Every successful connect starts with a full
+// snapshot (routes and SIP users), so missed deltas never need reconciliation.
 //
 // start()/stop()/flush()/wait_for_first_snapshot() and the send_*() methods
 // may be called from any thread; everything else runs on the executor this

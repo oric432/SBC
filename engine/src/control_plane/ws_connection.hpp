@@ -30,11 +30,8 @@ struct WsHandlers {
     std::function<void(WsStage, boost::system::error_code)> on_failure;
 };
 
-// One Glaze websocket connection attempt through its read/write session. A
-// failed or cancelled connection is never reused: the
-// owner makes a new one, so a completion belonging to an old attempt can
-// never reach the new one. Everything runs on the executor it was built with;
-// must be created with std::make_shared.
+// One Glaze websocket connection attempt; failed or cancelled attempts are never reused.
+// Everything runs on the construction executor; create instances with std::make_shared.
 class WsConnection : public std::enable_shared_from_this<WsConnection> {
 public:
     WsConnection(
