@@ -10,6 +10,7 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/error_code.hpp>
 #include <glaze/net/websocket_client.hpp>
+#include <system_error>
 
 #include "ws_utils.hpp"
 
@@ -23,7 +24,7 @@ struct WsHandlers {
     // The handshake finished; write() is allowed from here on.
     std::function<void()> on_open;
     std::function<void(const std::string&)> on_message;
-    // Glaze accepted the message into its internal write queue.
+    // Glaze finished writing the message to the local socket.
     std::function<void()> on_write_complete;
     // The connection is dead. Fires at most once, and never after cancel().
     std::function<void(WsStage, boost::system::error_code)> on_failure;
@@ -50,9 +51,8 @@ public:
 
     void start();
 
-    // Only call once open. on_write_complete reports handoff to Glaze's
-    // internal write queue, because its public API has no wire-write callback.
-    void write(std::string payload);
+    // Only call once open and from the connection's executor.
+    void write(std::string_view payload);
 
     // Closes the socket. Idempotent; no handler fires afterward.
     void cancel();
@@ -64,6 +64,7 @@ private:
     void on_message(std::string_view message, glz::ws_opcode opcode) const;
     void on_close();
     void on_error(std::error_code err);
+    void on_write(std::error_code err);
     void fail(WsStage stage, boost::system::error_code err);
 
     boost::asio::any_io_executor executor_;

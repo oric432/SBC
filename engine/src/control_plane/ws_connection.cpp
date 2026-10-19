@@ -25,7 +25,7 @@ boost::system::error_code to_boost_error(const std::error_code& err) {
         return {err.value(), boost::system::generic_category()};
     }
     // No direct Boost counterpart; preserve the original std category.
-    return boost::system::error_code{err};
+    return {err};
 }
 } // namespace
 
@@ -102,11 +102,10 @@ void WsConnection::on_message(std::string_view message, glz::ws_opcode opcode) c
     }
 }
 
-void WsConnection::write(std::string payload) {
-    Asio::post(executor_, [self = shared_from_this(), payload = std::move(payload)] {
-        if (!self->closed_) {
-            self->client_.send(payload);
-            self->handlers_.on_write_complete();
+void WsConnection::write(std::string_view payload) {
+    client_.send(payload, [weak = weak_from_this()](std::error_code err) {
+        if (const auto self = weak.lock()) {
+            self->on_write(err);
         }
     });
 }
@@ -120,6 +119,18 @@ void WsConnection::on_close() {
 
 void WsConnection::on_error(std::error_code err) {
     fail(open_ ? WsStage::kSession : WsStage::kConnect, to_boost_error(err));
+}
+
+void WsConnection::on_write(std::error_code err) {
+    if (closed_) {
+        return;
+    }
+    if (err) {
+        on_error(err);
+        return;
+    }
+
+    handlers_.on_write_complete();
 }
 
 void WsConnection::fail(WsStage stage, boost::system::error_code err) {

@@ -79,7 +79,7 @@ TEST_CASE("WsConnection fires no handler after cancel", "[ws_connection]") {
     CHECK(recorder.opens_ == 0);
 }
 
-TEST_CASE("WsConnection posts writes without blocking the caller", "[ws_connection]") {
+TEST_CASE("WsConnection reports a disconnected write without completing it", "[ws_connection]") {
     Asio::io_context ioc;
     Recorder recorder;
     auto connection = std::make_shared<WsConnection>(
@@ -91,8 +91,9 @@ TEST_CASE("WsConnection posts writes without blocking the caller", "[ws_connecti
     connection->write("payload");
 
     CHECK(recorder.writes_ == 0);
-    REQUIRE(ioc.poll_one() == 1);
-    CHECK(recorder.writes_ == 1);
+    CHECK(recorder.failures_ == 1);
+    CHECK(recorder.stage_ == WsStage::kConnect);
+    CHECK(recorder.error_ == boost::system::errc::make_error_code(boost::system::errc::not_connected));
 }
 
 TEST_CASE("WsStage has a readable name", "[ws_connection]") {
