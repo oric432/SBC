@@ -132,33 +132,35 @@ void ControlPlaneClient::on_message(const std::string& raw) {
 }
 
 void ControlPlaneClient::on_failure(WsStage stage, boost::system::error_code err) {
-    connection_.reset();
-    outbound_queue_.abort();
-    // A countdown armed by this connection's own on_open() must not be left
-    // running against the reconnect -- if retry_interval_ is longer than its
-    // remaining budget it would fire and fail startup before the reconnect
-    // gets a chance.
-    first_snapshot_.disarm();
-    // A pending flush() is waiting for the queue to drain, not for this
-    // specific connection -- schedule_reconnect() below may still deliver
-    // what's left before flush()'s own timeout does, so only give up here
-    // if there's nothing left to deliver.
-    if (outbound_queue_.empty()) {
-        resolve_flush_waiter();
-    }
+    Asio::post(executor_, [self = shared_from_this(), stage, err] {
+        self->connection_.reset();
+        self->outbound_queue_.abort();
+        // A countdown armed by this connection's own on_open() must not be left
+        // running against the reconnect -- if retry_interval_ is longer than its
+        // remaining budget it would fire and fail startup before the reconnect
+        // gets a chance.
+        self->first_snapshot_.disarm();
+        // A pending flush() is waiting for the queue to drain, not for this
+        // specific connection -- schedule_reconnect() below may still deliver
+        // what's left before flush()'s own timeout does, so only give up here
+        // if there's nothing left to deliver.
+        if (self->outbound_queue_.empty()) {
+            self->resolve_flush_waiter();
+        }
 
-    if (stage != WsStage::kSession) {
-        handle_setup_failure(stage, err);
-        return;
-    }
-    if (stopped_) {
-        return;
-    }
-    Log::app()->warn(
-        "control-plane websocket disconnected ({}); reconnecting in {}s",
-        err.message(),
-        config_.retry_interval_.count());
-    schedule_reconnect();
+        if (stage != WsStage::kSession) {
+            self->handle_setup_failure(stage, err);
+            return;
+        }
+        if (self->stopped_) {
+            return;
+        }
+        Log::app()->warn(
+            "control-plane websocket disconnected ({}); reconnecting in {}s",
+            err.message(),
+            self->config_.retry_interval_.count());
+        self->schedule_reconnect();
+    });
 }
 
 void ControlPlaneClient::handle_setup_failure(WsStage stage, boost::system::error_code err) {
