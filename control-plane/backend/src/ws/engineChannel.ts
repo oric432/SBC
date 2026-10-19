@@ -6,7 +6,7 @@ import { applyCallStarted, applyCallTerminated, applyCallUpdated } from '../cont
 import { applyRegistrationEvent } from '../controllers/registrationsController';
 import { getRouteSnapshot } from '../controllers/routesController';
 import { getUsersSnapshot } from '../controllers/sipUsersController';
-import type { WsEnvelope } from '../types/controlPlaneWs';
+import type { AckDto, WsEnvelope } from '../types/controlPlaneWs';
 import { logger } from '../utils/logger';
 
 // The engine connects here instead of polling /api/b2bua/routes: on connect
@@ -78,7 +78,7 @@ const inboundTaskFor = (envelope: WsEnvelope): (() => Promise<void>) | undefined
   }
 };
 
-const handleEngineMessage = (raw: RawData): void => {
+const handleEngineMessage = (socket: WebSocket, raw: RawData): void => {
   let envelope: WsEnvelope;
   try {
     envelope = JSON.parse(raw.toString()) as WsEnvelope;
@@ -95,11 +95,23 @@ const handleEngineMessage = (raw: RawData): void => {
 
   // Through the same chain for every type, so a call_terminated can never
   // apply before its own call_started.
-  enqueueInbound(() =>
-    task().catch((err: unknown) => {
+  enqueueInbound(async () => {
+    try {
+      await task();
+    } catch (err: unknown) {
       logger.error(`failed to apply ${envelope.type} message: ${(err as Error).message}`);
-    }),
-  );
+      return;
+    }
+
+    if (socket.readyState === WebSocket.OPEN) {
+      const ack: AckDto = { type: 'ack' };
+      socket.send(JSON.stringify(ack), (err) => {
+        if (err) {
+          logger.error(`failed to acknowledge ${envelope.type} message: ${err.message}`);
+        }
+      });
+    }
+  });
 };
 
 export const attachEngineChannel = (server: Server): void => {
@@ -110,7 +122,7 @@ export const attachEngineChannel = (server: Server): void => {
 
     enqueueOutbound(() => sendSnapshotTo([socket]));
 
-    socket.on('message', handleEngineMessage);
+    socket.on('message', (raw) => handleEngineMessage(socket, raw));
     socket.on('close', () => logger.info('engine websocket disconnected'));
     socket.on('error', (err) => logger.error(`engine websocket error: ${err.message}`));
   });
