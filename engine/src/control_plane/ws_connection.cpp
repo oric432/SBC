@@ -145,6 +145,8 @@ void WsConnection::cancel() {
     closed_ = true;
     open_ = false;
     connect_timer_.cancel();
+    // Glaze cannot cancel resolve/connect until its WebSocket connection exists;
+    // closed_ suppresses callbacks until client_ destruction cancels pending setup.
     client_.close();
 }
 
