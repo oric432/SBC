@@ -72,7 +72,8 @@ TEST_CASE("WsConnection opens, exchanges messages, and reports server close", "[
             [](auto connection, const glz::request&) { connection->send_text(R"({"type":"snapshot"})"); });
         websocket->on_message([](auto connection, std::string_view, glz::ws_opcode opcode) {
             if (opcode == glz::ws_opcode::text) {
-                connection->send_text(R"({"type":"ack"})", [connection](std::error_code) { connection->close(); });
+                connection->send_text(R"({"type":"ack"})");
+                connection->close();
             }
         });
         server.websocket("/", websocket);
