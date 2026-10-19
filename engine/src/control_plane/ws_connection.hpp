@@ -20,6 +20,8 @@ enum class WsStage : std::uint8_t { kConnect, kSession };
 
 [[nodiscard]] std::string_view to_string(WsStage stage);
 
+[[nodiscard]] boost::system::error_code to_boost_error(const std::error_code& err);
+
 struct WsHandlers {
     // The handshake finished; write() is allowed from here on.
     std::function<void()> on_open;

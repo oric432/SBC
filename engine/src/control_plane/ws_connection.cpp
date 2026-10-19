@@ -16,6 +16,8 @@ std::shared_ptr<Asio::io_context> shared_context(const Asio::any_io_executor& ex
     return {&context, [](Asio::io_context*) {}};
 }
 
+} // namespace
+
 boost::system::error_code to_boost_error(const std::error_code& err) {
     if (err.category() == std::system_category()) {
         return {err.value(), boost::system::system_category()};
@@ -27,7 +29,6 @@ boost::system::error_code to_boost_error(const std::error_code& err) {
     // No direct Boost counterpart; preserve the original std category.
     return {err};
 }
-} // namespace
 
 std::string_view to_string(WsStage stage) {
     switch (stage) {
