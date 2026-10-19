@@ -70,12 +70,11 @@ public:
     [[nodiscard]] VoidResult wait_for_first_snapshot() { return first_snapshot_.wait(); }
 
     // Blocks the calling thread (never call this from the executor) until
-    // every queued event has been handed to the websocket transport or
-    // `timeout` elapses -- a
-    // disconnect during the wait does not give up early, since a reconnect
-    // may still deliver what's queued before the timeout does. For clean
-    // shutdown, so the final call_terminated events aren't discarded by
-    // stop() closing the socket right behind them. One caller at a time.
+    // every queued event has completed its local websocket write, or
+    // `timeout` elapses. A timeout means remaining events may be dropped;
+    // peer receipt is not guaranteed. A disconnect during the wait does not
+    // give up early, since a reconnect may still deliver what's queued before
+    // the timeout does. One caller at a time.
     void flush(std::chrono::milliseconds timeout);
 
     // Stops reconnecting and closes the connection. Safe to call more than
