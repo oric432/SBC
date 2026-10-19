@@ -16,8 +16,6 @@ target_link_libraries(control_plane PUBLIC
     third_party::glaze
 )
 target_precompile_headers(control_plane PRIVATE ${CMAKE_SOURCE_DIR}/src/core/pch.hpp)
-target_compile_definitions(control_plane PRIVATE GLZ_USE_BOOST_ASIO)
-
 if(BUILD_TESTS)
     add_executable(control_plane_tests
         tests/test_first_snapshot_latch.cpp
