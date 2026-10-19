@@ -23,9 +23,11 @@ public:
     // Marks the front as in flight and returns it, or nullptr if the queue is
     // empty or a write is already in flight. Valid until complete().
     [[nodiscard]] const std::string* start_next();
-    // The in-flight message was accepted by the transport: drop it.
+    // The in-flight message completed its local websocket write: remove it.
     void complete();
-    // The in-flight handoff was aborted: keep it at the front for resend.
+    // The in-flight handoff failed: clear the in-flight marker but keep the
+    // message at the front so a reconnect can retry it. No-op when no write
+    // was active
     void abort();
 
     // Drops every best-effort message except one already in flight.
