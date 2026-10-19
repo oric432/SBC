@@ -13,7 +13,6 @@
 #include <pjsip.h>
 #include <pjsip_ua.h>
 
-#include "sip/call/call_manager.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/engine_stores.hpp"
 #include "sip/sm/leg.hpp"
