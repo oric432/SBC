@@ -2,11 +2,13 @@
 
 #include <chrono>
 #include <cstring>
+#include <memory>
 #include <thread>
 
 #include <pjlib-util.h>
 #include <pjsip.h>
 
+#include "mock_sbc_actions.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
@@ -428,6 +430,7 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
     RoutesStore routes;
     UsersStore users;
     BindingStore bindings;
+    MockSetupActions setup_actions;
     CallManager manager;
     const ScopedPool pool;
     auto request = parse_rdata(pool.get(), kInviteWithSdp);
@@ -440,6 +443,21 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
 
     using namespace std::chrono_literals;
     constexpr auto wait_past_timeout = 1100ms;
+
+    SECTION("hold before establishment does not start a deadline") {
+        REQUIRE_FALSE(session->setup_sm().is_established());
+        session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
+        std::this_thread::sleep_for(wait_past_timeout);
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
+
+    // Mock signaling actions so the real setup machine can establish without SIP traffic.
+    std::destroy_at(&session->setup_sm());
+    std::construct_at(&session->setup_sm(), setup_actions, session->call_id());
+    REQUIRE(session->setup_sm().process_event(Setup::Requested{}));
+    REQUIRE(session->setup_sm().process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
+    REQUIRE(session->setup_sm().is_established());
+    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
     CHECK_FALSE(session->hold_timeout_expired());
     session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
     CHECK_FALSE(session->hold_timeout_expired());
