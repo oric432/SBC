@@ -161,7 +161,7 @@ void CallSession::record_media_direction(Leg which, Sdp::MediaDirection directio
     leg(which).media_direction_ = direction;
     const bool is_held = media_is_held();
 
-    if (!was_held && is_held && setup_sm_.is_established()) {
+    if (!hold_started_at_ && is_held && setup_sm_.is_established()) {
         hold_started_at_ = std::chrono::steady_clock::now();
     }
     else if (was_held && !is_held) {
