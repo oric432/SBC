@@ -17,6 +17,8 @@ from .scenarios import SCENARIOS
 
 _log = logging.getLogger("integration.b2bua")
 
+_HOLD_TIMEOUT_SETTINGS = {"sip": {"max_hold_duration_s": 3}, "logging": {"level": "trace"}}
+
 
 def _assert_replaces_translated_to_callee_dialog(message_trace: str) -> None:
     invite = re.search(r"INVITE sip:.*? SIP/2\.0(?P<headers>.*?)(?:\r?\n){2}", message_trace, re.DOTALL)
@@ -321,7 +323,7 @@ def _assert_hold_timeout_removed(sbc_engine, caller_xml: Path) -> None:
     assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
 
 
-@pytest.mark.parametrize("sbc_engine", [3], indirect=True, ids=["3s-hold-limit"])
+@pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["3s-hold-limit"])
 @pytest.mark.parametrize("direction", ["sendonly", "inactive"])
 def test_b2bua_hold_timeout_terminates_and_removes_call(sbc_engine, render_scenario, run_sipp_pair, direction):
     caller_xml = render_scenario(
@@ -337,7 +339,7 @@ def test_b2bua_hold_timeout_terminates_and_removes_call(sbc_engine, render_scena
     _assert_hold_timeout_removed(sbc_engine, caller_xml)
 
 
-@pytest.mark.parametrize("sbc_engine", [3], indirect=True, ids=["3s-hold-limit"])
+@pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["3s-hold-limit"])
 def test_b2bua_hold_timeout_resets_after_resume(sbc_engine, render_scenario, run_sipp_pair):
     caller_xml = render_scenario(
         "reinvite_same_sdp_caller.xml.j2",
