@@ -15,6 +15,7 @@
 #include <glaze/net/websocket_connection.hpp>
 
 #include "control_plane/ws_connection.hpp"
+#include "control_plane/control_plane_client.hpp"
 
 namespace SbcEngine {
 
@@ -155,6 +156,57 @@ TEST_CASE("WsConnection forwards a failed acknowledgement", "[ws_connection]") {
     server_thread.join();
 
     CHECK(recorder.messages_ == std::vector<std::string>{R"({"type":"ack","success":false})"});
+}
+
+TEST_CASE("ControlPlaneClient reconnects when an acknowledgement times out", "[control_plane_client]") {
+    const auto port = std::stoi(unused_port());
+    std::atomic<bool> server_ready = false;
+    std::atomic<bool> stop_server = false;
+    std::atomic<int> connections = 0;
+    std::thread server_thread([&] {
+        glz::http_server server;
+        auto websocket = std::make_shared<glz::websocket_server>();
+        websocket->on_open([&connections](auto connection, const glz::request&) {
+            ++connections;
+            connection->send_text(R"({"type":"snapshot","seq":1})");
+        });
+        server.websocket("/", websocket);
+        server.bind(static_cast<std::uint16_t>(port));
+        server.start();
+        server_ready = true;
+        while (!stop_server) {
+            std::this_thread::yield();
+        }
+        server.stop();
+    });
+    while (!server_ready) {
+        std::this_thread::yield();
+    }
+
+    Asio::io_context ioc;
+    RoutesStore routes_store;
+    UsersStore users_store;
+    auto client = std::make_shared<ControlPlaneClient>(
+        ioc.get_executor(),
+        ControlPlaneClientConfig{
+            .endpoint_ = {.host_ = "127.0.0.1", .port_ = std::to_string(port), .target_ = "/"},
+            .connect_timeout_ = kConnectTimeout,
+            .retry_interval_ = std::chrono::seconds{0},
+            .ack_timeout_ = std::chrono::milliseconds{100}},
+        &routes_store,
+        &users_store);
+    client->start();
+    client->send_call_started(Protocols::CallStarted{});
+    Asio::steady_timer stop_timer{ioc, std::chrono::seconds{1}};
+    stop_timer.async_wait([&](boost::system::error_code) {
+        client->stop();
+        ioc.stop();
+    });
+    ioc.run();
+    stop_server = true;
+    server_thread.join();
+
+    CHECK(connections >= 2);
 }
 
 TEST_CASE("WsConnection reports a handshake timeout", "[ws_connection]") {

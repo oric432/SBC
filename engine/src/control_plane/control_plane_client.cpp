@@ -35,6 +35,7 @@ ControlPlaneClient::ControlPlaneClient(
     , routes_store_(routes_store)
     , users_store_(users_store)
     , retry_timer_(executor_)
+    , ack_timer_(executor_)
     , first_snapshot_(executor_, kFirstSnapshotTimeout)
     , outbound_queue_(kMaxOutboundQueueSize) {}
 
@@ -137,6 +138,7 @@ void ControlPlaneClient::on_message(const std::string& raw) {
 
 void ControlPlaneClient::on_failure(WsStage stage, boost::system::error_code err) {
     Asio::post(executor_, [self = shared_from_this(), stage, err] {
+        self->ack_timer_.cancel();
         self->connection_.reset();
         self->outbound_queue_.abort();
         // A countdown armed by this connection's own on_open() must not be left
@@ -262,10 +264,26 @@ void ControlPlaneClient::write_next() {
     }
     if (const std::string* next = outbound_queue_.start_next()) {
         connection_->write(*next);
+        ack_timer_.expires_after(config_.ack_timeout_);
+        ack_timer_.async_wait([self = shared_from_this()](boost::system::error_code err) {
+            if (!err) {
+                self->on_ack_timeout();
+            }
+        });
     }
 }
 
+void ControlPlaneClient::on_ack_timeout() {
+    if (!connected()) {
+        return;
+    }
+    Log::app()->warn("control-plane acknowledgement timed out; reconnecting");
+    connection_->cancel();
+    on_failure(WsStage::kSession, Asio::error::timed_out);
+}
+
 void ControlPlaneClient::on_write_complete(bool success) {
+    ack_timer_.cancel();
     if (!success) {
         Log::app()->error("control plane failed to apply an outbound event");
     }
@@ -303,6 +321,7 @@ void ControlPlaneClient::stop() {
     }
     Asio::post(executor_, [self = shared_from_this()] {
         self->retry_timer_.cancel();
+        self->ack_timer_.cancel();
         self->first_snapshot_.disarm();
         if (self->connection_) {
             self->connection_->cancel();

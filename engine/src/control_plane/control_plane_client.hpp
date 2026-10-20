@@ -6,7 +6,6 @@
 #include <future>
 #include <memory>
 #include <string>
-#include <string_view>
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/error_code.hpp>
@@ -27,9 +26,12 @@ class WsConnection;
 enum class WsStage : std::uint8_t;
 
 struct ControlPlaneClientConfig {
+    static constexpr std::chrono::milliseconds kDefaultAckTimeout{10000};
+
     WsUrlParts endpoint_;
     std::chrono::seconds connect_timeout_;
     std::chrono::seconds retry_interval_;
+    std::chrono::milliseconds ack_timeout_{kDefaultAckTimeout};
 };
 
 // Maintains the engine's one persistent connection to the control plane, replacing
@@ -106,6 +108,7 @@ private:
     void enqueue(Protocols::WsEnvelope envelope, bool best_effort);
     void do_enqueue(Protocols::WsEnvelope envelope, bool best_effort);
     void write_next();
+    void on_ack_timeout();
     void resolve_flush_waiter();
     [[nodiscard]] bool connected() const;
 
@@ -114,6 +117,7 @@ private:
     RoutesStore* routes_store_;
     UsersStore* users_store_;
     boost::asio::steady_timer retry_timer_;
+    boost::asio::steady_timer ack_timer_;
     FirstSnapshotLatch first_snapshot_;
     OutboundQueue outbound_queue_;
     // Replaced on every connect attempt; null between a failure and the next

@@ -72,7 +72,11 @@ def _ws_text_frame(payload: bytes) -> bytes:
     """A minimal, unmasked RFC 6455 text frame (server->client frames are
     never masked). No fragmentation: every message here is small enough to
     fit in one frame."""
-    header = bytearray([0x81])  # FIN=1, opcode=1 (text)
+    return _ws_frame(payload, opcode=0x1)
+
+
+def _ws_frame(payload: bytes, opcode: int) -> bytes:
+    header = bytearray([0x80 | opcode])
     length = len(payload)
     if length < 126:
         header.append(length)
@@ -90,12 +94,12 @@ class RoutesStubServer:
     (`/ws/engine`, see control-plane/backend/src/ws/engineChannel.ts).
 
     Performs the RFC 6455 handshake by hand (no extra Python dependency for
-    what's otherwise a two-step protocol: accept, then send one frame) and
+    what's otherwise a small protocol) and
     sends whatever snapshot was last set via `set_routes` as that connection's
     first message, matching the `WsEnvelope{type: "snapshot", routes_snapshot}`
     contract ControlPlaneClient parses (see src/protocols/ControlPlaneWs.hpp).
-    Nothing in this suite mutates routes after the engine connects, so unlike
-    the real control plane this stub never pushes a second message.
+    Nothing in this suite mutates routes after the engine connects. The stub
+    acknowledges engine events but does not push another control-plane event.
     """
 
     def __init__(self) -> None:
@@ -105,6 +109,45 @@ class RoutesStubServer:
         stub = self
 
         class Handler(socketserver.BaseRequestHandler):
+            def _recv_exact(self, size: int) -> bytes | None:
+                data = bytearray()
+                while len(data) < size:
+                    chunk = self.request.recv(size - len(data))
+                    if not chunk:
+                        return None
+                    data.extend(chunk)
+                return bytes(data)
+
+            def _read_ws_frame(self) -> tuple[int, bytes] | None:
+                header = self._recv_exact(2)
+                if header is None:
+                    return None
+
+                opcode = header[0] & 0x0F
+                masked = bool(header[1] & 0x80)
+                payload_size = header[1] & 0x7F
+                if payload_size == 126:
+                    extended_size = self._recv_exact(2)
+                    if extended_size is None:
+                        return None
+                    payload_size = int.from_bytes(extended_size, "big")
+                elif payload_size == 127:
+                    extended_size = self._recv_exact(8)
+                    if extended_size is None:
+                        return None
+                    payload_size = int.from_bytes(extended_size, "big")
+
+                mask = self._recv_exact(4) if masked else None
+                if mask is None:
+                    return None
+
+                payload = self._recv_exact(payload_size)
+                if payload is None:
+                    return None
+                return opcode, bytes(
+                    byte ^ mask[index % len(mask)] for index, byte in enumerate(payload)
+                )
+
             def handle(self) -> None:
                 request = self._read_http_request()
                 if request is None:
@@ -156,17 +199,37 @@ class RoutesStubServer:
                 }
                 self.request.sendall(_ws_text_frame(json.dumps(envelope).encode()))
 
-                # Nothing else is ever sent on this connection; just keep it
-                # open (the client's idle_timeout is disabled for
-                # role_type::client, see stream_base::timeout::suggested) so
-                # the read blocks here until the engine closes it at teardown.
-                # No timeout here (unlike the handshake read above) -- a
-                # timed-out recv() would otherwise look just like the engine
-                # closing the connection and tear this one down every 5s.
                 self.request.settimeout(None)
                 try:
-                    while self.request.recv(4096):
-                        pass
+                    while frame := self._read_ws_frame():
+                        opcode, payload = frame
+                        if opcode == 0x8:
+                            self.request.sendall(_ws_frame(payload, opcode=0x8))
+                            break
+                        if opcode == 0x9:
+                            self.request.sendall(_ws_frame(payload, opcode=0xA))
+                            continue
+                        if opcode != 0x1:
+                            continue
+
+                        try:
+                            envelope = json.loads(payload)
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            continue
+
+                        message_type = envelope.get("type")
+                        if message_type not in {
+                            "registration",
+                            "call_started",
+                            "call_updated",
+                            "call_terminated",
+                        } or not envelope.get(message_type):
+                            continue
+
+                        ack = json.dumps(
+                            {"type": "ack", "success": True}, separators=(",", ":")
+                        ).encode()
+                        self.request.sendall(_ws_text_frame(ack))
                 except OSError:
                     pass
 
