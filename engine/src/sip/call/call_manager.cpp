@@ -134,19 +134,37 @@ void CallManager::process_pending_rtp_inactivity() {
             }
 
             auto& dialog = session->dialog_sm();
-            if (dialog.is_active() || dialog.is_reinviting() || dialog.is_referring()) {
+            if (dialog.can_terminate()) {
                 Log::call()->warn("[{}] removing session because the RTP inactivity timeout expired", call_id);
-                dialog.process_event(CallError{});
+                dialog.process_event(CallError{TerminationReason::kRtpInactivity});
             }
         }
     });
+}
+
+void CallManager::process_pending_hold_timeouts() {
+    for (auto iter = sessions_.begin(); iter != sessions_.end();) {
+        auto& session = *iter->second;
+        // Advance before dispatch, which may erase this session via schedule_remove().
+        ++iter;
+
+        if (!session.setup_sm().is_established() || !session.hold_timeout_expired()) {
+            continue;
+        }
+
+        auto& dialog = session.dialog_sm();
+        if (dialog.can_terminate()) {
+            Log::call()->warn("[{}] ending call because the hold timeout expired", session.call_id());
+            dialog.process_event(CallError{TerminationReason::kHoldTimeout});
+        }
+    }
 }
 
 void CallManager::terminate_established_calls() {
     for (auto& [call_id, session] : sessions_) {
         (void)call_id;
         auto& dialog = session->dialog_sm();
-        if (dialog.is_active() || dialog.is_reinviting() || dialog.is_referring()) {
+        if (dialog.can_terminate()) {
             dialog.process_event(CallError{});
         }
     }

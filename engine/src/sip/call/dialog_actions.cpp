@@ -10,6 +10,16 @@
 namespace SbcEngine {
 
 namespace {
+const char* termination_reason_text(TerminationReason reason) {
+    switch (reason) {
+    case TerminationReason::kEngineRequested: return "call ended by the engine";
+    case TerminationReason::kHoldTimeout: return "hold timeout expired";
+    case TerminationReason::kRtpInactivity: return "RTP inactivity timeout expired";
+    case TerminationReason::kMediaNegotiationFailed: return "media negotiation failed";
+    }
+    return "call ended by the engine";
+}
+
 constexpr const char* kSessionTimerExpiredCause = "No session refresh received.";
 bool is_session_timer_expiry(const pjsip_inv_session* inv) {
     return inv->cause == PJSIP_SC_REQUEST_TIMEOUT && pj_stricmp2(&inv->cause_text, kSessionTimerExpiredCause) == 0;
@@ -43,14 +53,14 @@ void DialogActions::refer_busy(Leg leg) {
     refer_.busy();
 }
 
-void DialogActions::terminate_call() {
+void DialogActions::terminate_call(TerminationReason reason) {
     // Reported here, not just in cleanup(): at shutdown the SIP loop is
     // already stopped, so the BYE responses that would drive cleanup() never
     // get processed. A call that was never answered (shutdown mid-setup, or
     // an early-dialog UPDATE failing) isn't a success.
     session_.report_call_terminated(
         session_.setup_sm().is_established() ? Protocols::CallStatus::kSuccess : Protocols::CallStatus::kFailed,
-        "call ended by the engine");
+        termination_reason_text(reason));
     reinvite_.reset();
     Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TIMEOUT);
     Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TIMEOUT);

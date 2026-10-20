@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sip/call/pj_context.hpp"
 #include "sip/engine_stores.hpp"
 #include "sip/registrar/registrar_actions.hpp"
 #include "sip/sm/options_actions.hpp"
@@ -23,7 +24,8 @@ public:
         , request_actions_(ctx, manager, stores, std::move(executor))
         , options_actions_(ctx)
         , options_sm_(options_actions_, "")
-        , registrar_actions_(ctx, stores.users_, stores.bindings_, registrar_config) {}
+        , registrar_actions_(ctx, stores.users_, stores.bindings_, registrar_config)
+        , ctx_(ctx) {}
 
     // Pass-through: RegistrarActions is constructed before ControlPlaneClient
     // exists (see its own doc comment), so the sink is wired up separately,
@@ -59,5 +61,6 @@ private:
     OptionsActions options_actions_;
     OptionsSmRunner options_sm_;
     RegistrarActions registrar_actions_;
+    PjContext* ctx_;
 };
 } // namespace SbcEngine

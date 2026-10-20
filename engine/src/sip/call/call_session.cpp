@@ -57,6 +57,7 @@ CallSession::CallSession(
 }
 
 CallSession::~CallSession() {
+    hold_started_at_.reset();
     release_mod_data(inv_caller());
     release_mod_data(inv_callee());
     exchange_.reset();
@@ -127,6 +128,7 @@ void CallSession::report_call_terminated(std::string_view status, std::optional<
         return;
     }
     terminated_reported_ = true;
+    hold_started_at_.reset();
     if (ctx_->call_events_ == nullptr) {
         return;
     }
@@ -157,7 +159,13 @@ Leg CallSession::leg_for(const pjsip_inv_session* inv) const {
 void CallSession::record_media_direction(Leg which, Sdp::MediaDirection direction) {
     const bool was_held = media_is_held();
     leg(which).media_direction_ = direction;
-    if (was_held && !media_is_held()) {
+    const bool is_held = media_is_held();
+
+    if (!hold_started_at_ && is_held && setup_sm_.is_established()) {
+        hold_started_at_ = std::chrono::steady_clock::now();
+    }
+    else if (was_held && !is_held) {
+        hold_started_at_.reset();
         media_bridge_->reset_inactivity_baseline();
     }
 }
@@ -180,6 +188,19 @@ bool CallSession::rtp_inactivity_expired(
     std::chrono::steady_clock::time_point now,
     std::chrono::steady_clock::duration timeout) const {
     return !media_is_held() && now - media_bridge_->last_packet_time() >= timeout;
+}
+
+bool CallSession::hold_timeout_expired() {
+    if (ctx_->config_.max_hold_duration_s_ <= 0) {
+        return false;
+    }
+
+    if (!hold_started_at_.has_value()) {
+        return false;
+    }
+
+    return std::chrono::steady_clock::now() - *hold_started_at_ >=
+           std::chrono::seconds(ctx_->config_.max_hold_duration_s_);
 }
 
 void CallSession::apply_media_direction(Leg leg, Sdp::MediaDirection direction) {

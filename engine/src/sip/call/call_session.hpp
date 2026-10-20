@@ -108,6 +108,7 @@ public:
     [[nodiscard]] CallLeg& leg(Leg which) { return legs_.at(static_cast<std::size_t>(which)); }
     [[nodiscard]] const CallLeg& leg(Leg which) const { return legs_.at(static_cast<std::size_t>(which)); }
     [[nodiscard]] bool media_is_held() const;
+    [[nodiscard]] bool hold_timeout_expired();
     [[nodiscard]] bool rtp_inactivity_expired(
         std::chrono::steady_clock::time_point now,
         std::chrono::steady_clock::duration timeout) const;
@@ -150,6 +151,8 @@ public:
     void apply_media_direction(Leg leg, Sdp::MediaDirection direction);
 
 private:
+    friend struct CallSessionTestAccess;
+
     void send_call_updated();
     void claim_mod_data(pjsip_inv_session* inv) {
         if (inv != nullptr && ctx_->module_id_ >= 0) {
@@ -206,6 +209,8 @@ private:
 
     std::optional<std::chrono::steady_clock::time_point> answered_at_;
     bool terminated_reported_ = false;
+
+    std::optional<std::chrono::steady_clock::time_point> hold_started_at_;
 };
 
 } // namespace SbcEngine

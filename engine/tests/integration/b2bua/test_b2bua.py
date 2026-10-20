@@ -17,6 +17,14 @@ from .scenarios import SCENARIOS
 
 _log = logging.getLogger("integration.b2bua")
 
+_HOLD_TIMEOUT_SETTINGS = {"sip": {"max_hold_duration_s": 5}, "logging": {"level": "trace"}}
+# The termination event precedes removal; trace logs also prove cleanup and destruction.
+_HOLD_TIMEOUT_LOG_MESSAGES = {
+    "timeout": "ending call because the hold timeout expired",
+    "cleanup": "dialog cleanup complete",
+    "destroyed": "CallSession destroyed, releasing pool",
+}
+
 
 def _assert_replaces_translated_to_callee_dialog(message_trace: str) -> None:
     invite = re.search(r"INVITE sip:.*? SIP/2\.0(?P<headers>.*?)(?:\r?\n){2}", message_trace, re.DOTALL)
@@ -298,6 +306,60 @@ def test_b2bua_reinvite_hold_directions(
 
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
     _log.info("scenario '%s' passed", scenario_name)
+
+
+def _assert_hold_timeout_removed(sbc_engine, caller_xml: Path) -> None:
+    messages = caller_xml.with_suffix(".messages.log").read_text()
+    match = re.search(r"^Call-ID:\s*(\S+)", messages, re.MULTILINE)
+    assert match is not None, messages
+    call_id = match.group(1)
+    expected = {stage: f"[{call_id}] {message}" for stage, message in _HOLD_TIMEOUT_LOG_MESSAGES.items()}
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        lines = sbc_engine.log_lines[sbc_engine.log_start :]
+        if any(expected["destroyed"] in line for line in lines):
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"session {call_id} was not removed and destroyed:\n{sbc_engine.log_tail()}")
+
+    assert sum(expected["timeout"] in line for line in lines) == 1, sbc_engine.log_tail()
+    assert any(expected["cleanup"] in line for line in lines), sbc_engine.log_tail()
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+@pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["5s-hold-limit"])
+@pytest.mark.parametrize("direction", ["sendonly", "inactive"])
+def test_b2bua_hold_timeout_terminates_and_removes_call(sbc_engine, render_scenario, run_sipp_pair, direction):
+    caller_xml = render_scenario(
+        "hold_timeout_caller.xml.j2",
+        scenario_name="hold_timeout",
+        media_steps=[{"direction": direction, "pause_ms": 0}],
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name="hold_timeout")
+
+    run_sipp_pair(caller_xml, callee_xml, trace=True)
+    _assert_hold_timeout_removed(sbc_engine, caller_xml)
+
+
+@pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["5s-hold-limit"])
+def test_b2bua_hold_timeout_resets_after_resume(sbc_engine, render_scenario, run_sipp_pair):
+    # Each 3s hold leaves 2s headroom; the 6s resume crosses the old deadline and total hold exceeds 5s.
+    caller_xml = render_scenario(
+        "hold_timeout_caller.xml.j2",
+        scenario_name="hold_timeout_resume",
+        media_steps=[
+            {"direction": "sendonly", "pause_ms": 3000},
+            {"direction": "sendrecv", "pause_ms": 6000},
+            {"direction": "sendonly", "pause_ms": 3000},
+            {"direction": "sendonly", "pause_ms": 0},
+        ],
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name="hold_timeout_resume")
+
+    # Successful re-INVITEs prove the same dialog survived the old deadline and cumulative hold limit.
+    run_sipp_pair(caller_xml, callee_xml, trace=True)
+    _assert_hold_timeout_removed(sbc_engine, caller_xml)
 
 
 def test_b2bua_caller_prack(sbc_engine, render_scenario, run_sipp_pair):
