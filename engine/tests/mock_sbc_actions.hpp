@@ -78,6 +78,7 @@ public:
     std::vector<std::string> calls_;
     ExchangeOutcome start_result_ = ExchangeOutcome::kPending;
     bool refer_start_result_ = true;
+    std::optional<TerminationReason> termination_reason_;
 
     void forward_bye_to_other_leg(Leg /*leg*/) override { calls_.emplace_back("forward_bye_to_other_leg"); }
 
@@ -112,7 +113,10 @@ public:
         calls_.push_back(std::string("refer_busy:") + (leg == Leg::kCaller ? "caller" : "callee"));
     }
 
-    void terminate_call() override { calls_.emplace_back("terminate_call"); }
+    void terminate_call(TerminationReason reason) override {
+        calls_.emplace_back("terminate_call");
+        termination_reason_ = reason;
+    }
 
     void cleanup() override { calls_.emplace_back("cleanup"); }
 

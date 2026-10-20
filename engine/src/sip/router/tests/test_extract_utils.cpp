@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <cstring>
 
 #include <pjlib-util.h>
@@ -13,6 +14,14 @@
 #include "sip/route_table/routes_store.hpp"
 
 namespace SbcEngine {
+
+struct CallSessionTestAccess {
+    static void establish(CallSession& session) { session.setup_sm_.set_state_for_test_only<Setup::Established>(); }
+
+    static std::optional<std::chrono::steady_clock::time_point>& hold_started_at(CallSession& session) {
+        return session.hold_started_at_;
+    }
+};
 
 namespace {
 
@@ -416,6 +425,91 @@ TEST_CASE("CallSession pauses RTP inactivity during hold and restarts it on resu
 
     manager.schedule_remove("hold-inactivity");
     manager.purge_scheduled();
+}
+
+TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on termination", "[call_session][hold]") {
+    boost::asio::io_context ioc;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    constexpr int kHoldLimitSeconds = 60;
+    context.config_.max_hold_duration_s_ = kHoldLimitSeconds;
+    RoutesStore routes;
+    UsersStore users;
+    BindingStore bindings;
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* session = manager.create_session(
+        "hold-timeout",
+        &context,
+        EngineStores{.routes_ = &routes, .users_ = &users, .bindings_ = &bindings},
+        ioc.get_executor(),
+        &request);
+
+    using namespace std::chrono_literals;
+    auto& hold_started_at = CallSessionTestAccess::hold_started_at(*session);
+    const auto expired_start = std::chrono::steady_clock::now() - 2min;
+
+    REQUIRE_FALSE(session->setup_sm().is_established());
+    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
+    CHECK_FALSE(hold_started_at.has_value());
+    CHECK_FALSE(session->hold_timeout_expired());
+
+    CallSessionTestAccess::establish(*session);
+    REQUIRE(session->setup_sm().is_established());
+    CHECK(session->media_is_held());
+    CHECK_FALSE(session->hold_timeout_expired());
+    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
+    REQUIRE(hold_started_at.has_value());
+    CHECK_FALSE(session->hold_timeout_expired());
+
+    SECTION("expiry persists until resume and a new hold gets a fresh deadline") {
+        hold_started_at = expired_start;
+        CHECK(session->hold_timeout_expired());
+        CHECK(session->hold_timeout_expired());
+
+        session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kInactive);
+        CHECK(session->hold_timeout_expired());
+        session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
+        CHECK(session->hold_timeout_expired());
+        session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendRecv);
+        CHECK_FALSE(hold_started_at.has_value());
+        CHECK_FALSE(session->hold_timeout_expired());
+
+        session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendOnly);
+        REQUIRE(hold_started_at.has_value());
+        CHECK(*hold_started_at > expired_start);
+        CHECK_FALSE(session->hold_timeout_expired());
+        hold_started_at = expired_start;
+        CHECK(session->hold_timeout_expired());
+        session->report_call_terminated(Protocols::CallStatus::kSuccess, std::nullopt);
+        CHECK_FALSE(hold_started_at.has_value());
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
+
+    SECTION("termination cancels a hold before its deadline") {
+        session->report_call_terminated(Protocols::CallStatus::kSuccess, std::nullopt);
+        CHECK_FALSE(hold_started_at.has_value());
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
+
+    SECTION("resuming before expiry cancels the deadline") {
+        session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
+        CHECK_FALSE(hold_started_at.has_value());
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
+
+    SECTION("a zero limit disables expiry for a held call") {
+        context.config_.max_hold_duration_s_ = 0;
+        hold_started_at = expired_start;
+        CHECK(session->media_is_held());
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
+
+    manager.schedule_remove("hold-timeout");
+    manager.purge_scheduled();
+    ioc.restart();
+    ioc.run();
 }
 
 } // namespace SbcEngine
