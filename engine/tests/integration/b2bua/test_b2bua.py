@@ -332,11 +332,9 @@ def _assert_hold_timeout_removed(sbc_engine, caller_xml: Path) -> None:
 @pytest.mark.parametrize("direction", ["sendonly", "inactive"])
 def test_b2bua_hold_timeout_terminates_and_removes_call(sbc_engine, render_scenario, run_sipp_pair, direction):
     caller_xml = render_scenario(
-        "reinvite_same_sdp_caller.xml.j2",
+        "hold_timeout_caller.xml.j2",
         scenario_name="hold_timeout",
-        initial_pause_ms=100,
         media_steps=[{"direction": direction, "pause_ms": 0}],
-        expect_engine_bye=True,
     )
     callee_xml = render_scenario("callee.xml.j2", scenario_name="hold_timeout")
 
@@ -347,16 +345,14 @@ def test_b2bua_hold_timeout_terminates_and_removes_call(sbc_engine, render_scena
 @pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["3s-hold-limit"])
 def test_b2bua_hold_timeout_resets_after_resume(sbc_engine, render_scenario, run_sipp_pair):
     caller_xml = render_scenario(
-        "reinvite_same_sdp_caller.xml.j2",
+        "hold_timeout_caller.xml.j2",
         scenario_name="hold_timeout_resume",
-        initial_pause_ms=100,
         media_steps=[
             {"direction": "sendonly", "pause_ms": 1500},
             {"direction": "sendrecv", "pause_ms": 3500},
             {"direction": "sendonly", "pause_ms": 2000},
             {"direction": "sendonly", "pause_ms": 0},
         ],
-        expect_engine_bye=True,
     )
     callee_xml = render_scenario("callee.xml.j2", scenario_name="hold_timeout_resume")
 
