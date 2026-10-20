@@ -104,7 +104,7 @@
   {% if step.pause_ms %}<pause milliseconds="{{ step.pause_ms }}"/>{% endif %}
   {% endfor %}
 
-  <recv request="BYE" timeout="6000" crlf="true"></recv>
+  <recv request="BYE" timeout="10000" crlf="true"></recv>
   <send>
     <![CDATA[
       SIP/2.0 200 OK

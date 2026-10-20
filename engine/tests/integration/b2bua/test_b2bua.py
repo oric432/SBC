@@ -17,7 +17,7 @@ from .scenarios import SCENARIOS
 
 _log = logging.getLogger("integration.b2bua")
 
-_HOLD_TIMEOUT_SETTINGS = {"sip": {"max_hold_duration_s": 3}, "logging": {"level": "trace"}}
+_HOLD_TIMEOUT_SETTINGS = {"sip": {"max_hold_duration_s": 5}, "logging": {"level": "trace"}}
 # The termination event precedes removal; trace logs also prove cleanup and destruction.
 _HOLD_TIMEOUT_LOG_MESSAGES = {
     "timeout": "ending call because the hold timeout expired",
@@ -328,7 +328,7 @@ def _assert_hold_timeout_removed(sbc_engine, caller_xml: Path) -> None:
     assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
 
 
-@pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["3s-hold-limit"])
+@pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["5s-hold-limit"])
 @pytest.mark.parametrize("direction", ["sendonly", "inactive"])
 def test_b2bua_hold_timeout_terminates_and_removes_call(sbc_engine, render_scenario, run_sipp_pair, direction):
     caller_xml = render_scenario(
@@ -342,15 +342,16 @@ def test_b2bua_hold_timeout_terminates_and_removes_call(sbc_engine, render_scena
     _assert_hold_timeout_removed(sbc_engine, caller_xml)
 
 
-@pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["3s-hold-limit"])
+@pytest.mark.parametrize("sbc_engine", [_HOLD_TIMEOUT_SETTINGS], indirect=True, ids=["5s-hold-limit"])
 def test_b2bua_hold_timeout_resets_after_resume(sbc_engine, render_scenario, run_sipp_pair):
+    # Each 3s hold leaves 2s headroom; the 6s resume crosses the old deadline and total hold exceeds 5s.
     caller_xml = render_scenario(
         "hold_timeout_caller.xml.j2",
         scenario_name="hold_timeout_resume",
         media_steps=[
-            {"direction": "sendonly", "pause_ms": 1500},
-            {"direction": "sendrecv", "pause_ms": 3500},
-            {"direction": "sendonly", "pause_ms": 2000},
+            {"direction": "sendonly", "pause_ms": 3000},
+            {"direction": "sendrecv", "pause_ms": 6000},
+            {"direction": "sendonly", "pause_ms": 3000},
             {"direction": "sendonly", "pause_ms": 0},
         ],
     )
