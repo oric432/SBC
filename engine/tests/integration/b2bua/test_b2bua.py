@@ -18,6 +18,12 @@ from .scenarios import SCENARIOS
 _log = logging.getLogger("integration.b2bua")
 
 _HOLD_TIMEOUT_SETTINGS = {"sip": {"max_hold_duration_s": 3}, "logging": {"level": "trace"}}
+# The termination event precedes removal; trace logs also prove cleanup and destruction.
+_HOLD_TIMEOUT_LOG_MESSAGES = {
+    "timeout": "ending call because the hold timeout expired",
+    "cleanup": "dialog cleanup complete",
+    "destroyed": "CallSession destroyed, releasing pool",
+}
 
 
 def _assert_replaces_translated_to_callee_dialog(message_trace: str) -> None:
@@ -307,19 +313,18 @@ def _assert_hold_timeout_removed(sbc_engine, caller_xml: Path) -> None:
     match = re.search(r"^Call-ID:\s*(\S+)", messages, re.MULTILINE)
     assert match is not None, messages
     call_id = match.group(1)
-    destroyed = f"[{call_id}] CallSession destroyed, releasing pool"
+    expected = {stage: f"[{call_id}] {message}" for stage, message in _HOLD_TIMEOUT_LOG_MESSAGES.items()}
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         lines = sbc_engine.log_lines[sbc_engine.log_start :]
-        if any(destroyed in line for line in lines):
+        if any(expected["destroyed"] in line for line in lines):
             break
         time.sleep(0.05)
     else:
         pytest.fail(f"session {call_id} was not removed and destroyed:\n{sbc_engine.log_tail()}")
 
-    timeout = f"[{call_id}] ending call because the hold timeout expired"
-    assert sum(timeout in line for line in lines) == 1, sbc_engine.log_tail()
-    assert any(f"[{call_id}] dialog cleanup complete" in line for line in lines), sbc_engine.log_tail()
+    assert sum(expected["timeout"] in line for line in lines) == 1, sbc_engine.log_tail()
+    assert any(expected["cleanup"] in line for line in lines), sbc_engine.log_tail()
     assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
 
 
