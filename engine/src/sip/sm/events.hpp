@@ -66,7 +66,11 @@ struct ReferCompleted {
     ReferOutcome outcome_;
 };
 
-struct CallError {};
+enum class TerminationReason : std::uint8_t { kEngineRequested, kHoldTimeout, kRtpInactivity, kMediaNegotiationFailed };
+
+struct CallError {
+    TerminationReason reason_ = TerminationReason::kEngineRequested;
+};
 
 struct CallEnded {};
 

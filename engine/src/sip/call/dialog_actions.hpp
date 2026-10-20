@@ -41,7 +41,7 @@ public:
     void refer_completed(ReferOutcome outcome) override;
     void refer_busy(Leg leg) override;
 
-    void terminate_call() override;
+    void terminate_call(TerminationReason reason) override;
     void cleanup() override;
 
 private:

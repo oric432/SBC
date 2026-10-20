@@ -38,7 +38,7 @@ public:
     virtual void refer_completed(ReferOutcome outcome) = 0;
     virtual void refer_busy(Leg leg) = 0;
 
-    virtual void terminate_call() = 0;
+    virtual void terminate_call(TerminationReason reason) = 0;
 };
 
 } // namespace SbcEngine

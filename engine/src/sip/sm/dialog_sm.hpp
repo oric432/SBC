@@ -74,7 +74,13 @@ struct DialogSm {
 
         auto failed = [](const Dialog::ExchangeFinished& event) { return event.outcome_ == ExchangeOutcome::kFailed; };
 
-        auto handle_call_error = [](Actions& actions) { actions.terminate_call(); };
+        auto handle_call_error = [](Actions& actions, const CallError& event) {
+            actions.terminate_call(event.reason_);
+        };
+
+        auto handle_exchange_failure = [](Actions& actions) {
+            actions.terminate_call(TerminationReason::kMediaNegotiationFailed);
+        };
 
         auto handle_call_ended = [](DialogSelfFireQueue cleanup_event) { cleanup_event(Cleanup{}); };
 
@@ -95,7 +101,7 @@ struct DialogSm {
              Sml::state<Reinviting>            + (Sml::event<ReferReceived>                                                         / handle_refer_busy)          = Sml::state<Reinviting>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[committed]                                  = Sml::state<Active>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[rolled_back]                                = Sml::state<Active>,
-             Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[failed] / handle_call_error                 = Sml::state<Terminating>,
+             Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[failed] / handle_exchange_failure           = Sml::state<Terminating>,
              Sml::state<Reinviting>            + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
              // Referring state
