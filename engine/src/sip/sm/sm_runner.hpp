@@ -36,6 +36,12 @@ public:
     void reset(std::string_view call_id);
 
 private:
+    friend struct CallSessionTestAccess;
+
+    // Test-only: bypasses transitions and their actions; never use in production flows.
+    template <typename State>
+    void set_state_for_test_only();
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
