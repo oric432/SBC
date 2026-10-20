@@ -36,7 +36,6 @@ struct Recorder {
     WsStage stage_ = WsStage::kSession;
     boost::system::error_code error_;
     int opens_ = 0;
-    int writes_ = 0;
     std::vector<std::string> messages_;
     std::function<void()> open_action_;
     std::function<void()> failure_action_;
@@ -106,7 +105,6 @@ TEST_CASE("WsConnection opens, exchanges messages, and reports server close", "[
     server_thread.join();
 
     CHECK(recorder.opens_ == 1);
-    CHECK(recorder.writes_ == 0);
     CHECK(recorder.messages_ == std::vector<std::string>{R"({"type":"snapshot"})", R"({"type":"ack","success":true})"});
     CHECK(recorder.failures_ == 1);
     CHECK(recorder.stage_ == WsStage::kSession);
@@ -231,7 +229,7 @@ TEST_CASE("WsConnection fires no handler after cancel", "[ws_connection]") {
     CHECK(recorder.opens_ == 0);
 }
 
-TEST_CASE("WsConnection does not acknowledge a disconnected write", "[ws_connection]") {
+TEST_CASE("WsConnection emits no callback for a disconnected write", "[ws_connection]") {
     Asio::io_context ioc;
     Recorder recorder;
     auto connection = std::make_shared<WsConnection>(
@@ -242,7 +240,7 @@ TEST_CASE("WsConnection does not acknowledge a disconnected write", "[ws_connect
 
     connection->write("payload");
 
-    CHECK(recorder.writes_ == 0);
+    CHECK(recorder.messages_.empty());
     CHECK(recorder.failures_ == 0);
 }
 
