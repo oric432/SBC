@@ -7,7 +7,6 @@
 #include "sip/router/extract_utils.hpp"
 #include "sip/sm/events.hpp"
 #include "sip/stack/inv_session.hpp"
-#include "core/utils/log.hpp"
 
 namespace SbcEngine {
 
@@ -182,6 +181,7 @@ void MessageRouter::process_register(pjsip_rx_data* request) {
 
 void MessageRouter::process_pending_media_events() {
     call_manager_->process_pending_rtp_inactivity();
+    // Scans for call timeouts only when enabled
     if (ctx_->config_.max_hold_duration_s_ > 0) {
         call_manager_->process_pending_hold_timeouts();
     }
