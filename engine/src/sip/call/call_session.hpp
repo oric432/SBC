@@ -151,6 +151,8 @@ public:
     void apply_media_direction(Leg leg, Sdp::MediaDirection direction);
 
 private:
+    friend struct CallSessionTestAccess;
+
     void send_call_updated();
     void claim_mod_data(pjsip_inv_session* inv) {
         if (inv != nullptr && ctx_->module_id_ >= 0) {

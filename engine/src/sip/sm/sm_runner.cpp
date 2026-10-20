@@ -18,7 +18,7 @@ namespace SbcEngine {
 
 template <typename MachineDef, typename Actions>
 struct SmRunner<MachineDef, Actions>::Impl {
-    using Machine = Sml::sm<MachineDef, Sml::logger<SmLogger>, Sml::process_queue<std::queue>>;
+    using Machine = Sml::sm<MachineDef, Sml::logger<SmLogger>, Sml::process_queue<std::queue>, Sml::testing>;
 
     Impl(Actions& actions, std::string_view machine, std::string_view call_id)
         : actions_(&actions)
@@ -57,6 +57,13 @@ bool SmRunner<MachineDef, Actions>::is() const {
     return impl_->sm_.is(Sml::state<State>);
 }
 
+// Test-only: sets fixture state without running transition actions.
+template <typename MachineDef, typename Actions>
+template <typename State>
+void SmRunner<MachineDef, Actions>::set_state_for_test_only() {
+    impl_->sm_.set_current_states(Sml::state<State>);
+}
+
 template <typename MachineDef, typename Actions>
 bool SmRunner<MachineDef, Actions>::is_processing() const {
     return impl_->processing_;
@@ -81,6 +88,7 @@ template bool SetupRunner::process_event(const Setup::CancellationCompleted&);
 template bool SetupRunner::is<Setup::Done>() const;
 template bool SetupRunner::is<Setup::Established>() const;
 template bool SetupRunner::is<Setup::Cancelling>() const;
+template void SetupRunner::set_state_for_test_only<Setup::Established>();
 
 using DialogRunner = SmRunner<DialogSm<IDialogActions>, IDialogActions>;
 template class SmRunner<DialogSm<IDialogActions>, IDialogActions>;

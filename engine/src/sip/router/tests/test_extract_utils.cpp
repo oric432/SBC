@@ -2,13 +2,10 @@
 
 #include <chrono>
 #include <cstring>
-#include <memory>
-#include <thread>
 
 #include <pjlib-util.h>
 #include <pjsip.h>
 
-#include "mock_sbc_actions.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
@@ -17,6 +14,14 @@
 #include "sip/route_table/routes_store.hpp"
 
 namespace SbcEngine {
+
+struct CallSessionTestAccess {
+    static void establish(CallSession& session) { session.setup_sm_.set_state_for_test_only<Setup::Established>(); }
+
+    static std::optional<std::chrono::steady_clock::time_point>& hold_started_at(CallSession& session) {
+        return session.hold_started_at_;
+    }
+};
 
 namespace {
 
@@ -426,11 +431,11 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
     boost::asio::io_context ioc;
     PjContext context;
     context.endpt_ = kPjEndpoint.get();
-    context.config_.max_hold_duration_s_ = 1;
+    constexpr int kHoldLimitSeconds = 60;
+    context.config_.max_hold_duration_s_ = kHoldLimitSeconds;
     RoutesStore routes;
     UsersStore users;
     BindingStore bindings;
-    MockSetupActions setup_actions;
     CallManager manager;
     const ScopedPool pool;
     auto request = parse_rdata(pool.get(), kInviteWithSdp);
@@ -442,27 +447,24 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
         &request);
 
     using namespace std::chrono_literals;
-    constexpr auto wait_past_timeout = 1100ms;
+    auto& hold_started_at = CallSessionTestAccess::hold_started_at(*session);
+    const auto expired_start = std::chrono::steady_clock::now() - 2min;
 
     REQUIRE_FALSE(session->setup_sm().is_established());
     session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
-    std::this_thread::sleep_for(wait_past_timeout);
+    CHECK_FALSE(hold_started_at.has_value());
     CHECK_FALSE(session->hold_timeout_expired());
 
-    // Mock signaling actions so the real setup machine can establish without SIP traffic.
-    std::destroy_at(&session->setup_sm());
-    std::construct_at(&session->setup_sm(), setup_actions, session->call_id());
-    REQUIRE(session->setup_sm().process_event(Setup::Requested{}));
-    REQUIRE(session->setup_sm().process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
+    CallSessionTestAccess::establish(*session);
     REQUIRE(session->setup_sm().is_established());
     CHECK(session->media_is_held());
     CHECK_FALSE(session->hold_timeout_expired());
     session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
+    REQUIRE(hold_started_at.has_value());
     CHECK_FALSE(session->hold_timeout_expired());
 
     SECTION("expiry persists until resume and a new hold gets a fresh deadline") {
-        // Expiry is measured on the SIP thread, without running the Asio executor.
-        std::this_thread::sleep_for(wait_past_timeout);
+        hold_started_at = expired_start;
         CHECK(session->hold_timeout_expired());
         CHECK(session->hold_timeout_expired());
 
@@ -471,25 +473,36 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
         session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
         CHECK(session->hold_timeout_expired());
         session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendRecv);
+        CHECK_FALSE(hold_started_at.has_value());
         CHECK_FALSE(session->hold_timeout_expired());
 
         session->apply_media_direction(Leg::kCallee, Sdp::MediaDirection::kSendOnly);
+        REQUIRE(hold_started_at.has_value());
+        CHECK(*hold_started_at > expired_start);
         CHECK_FALSE(session->hold_timeout_expired());
-        std::this_thread::sleep_for(wait_past_timeout);
+        hold_started_at = expired_start;
         CHECK(session->hold_timeout_expired());
         session->report_call_terminated(Protocols::CallStatus::kSuccess, std::nullopt);
+        CHECK_FALSE(hold_started_at.has_value());
         CHECK_FALSE(session->hold_timeout_expired());
     }
 
     SECTION("termination cancels a hold before its deadline") {
         session->report_call_terminated(Protocols::CallStatus::kSuccess, std::nullopt);
-        std::this_thread::sleep_for(wait_past_timeout);
+        CHECK_FALSE(hold_started_at.has_value());
         CHECK_FALSE(session->hold_timeout_expired());
     }
 
     SECTION("resuming before expiry cancels the deadline") {
         session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
-        std::this_thread::sleep_for(wait_past_timeout);
+        CHECK_FALSE(hold_started_at.has_value());
+        CHECK_FALSE(session->hold_timeout_expired());
+    }
+
+    SECTION("a zero limit disables expiry for a held call") {
+        context.config_.max_hold_duration_s_ = 0;
+        hold_started_at = expired_start;
+        CHECK(session->media_is_held());
         CHECK_FALSE(session->hold_timeout_expired());
     }
 
