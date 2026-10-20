@@ -94,7 +94,7 @@ private:
     void do_connect();
     void on_open();
     void on_message(const std::string& raw);
-    void on_write_complete();
+    void on_write_complete(bool success);
     // A connection that opened before dying is always just retried; one that
     // never got that far is handled by handle_setup_failure().
     void on_failure(WsStage stage, boost::system::error_code err);

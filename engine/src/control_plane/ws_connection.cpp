@@ -17,14 +17,14 @@ std::shared_ptr<Asio::io_context> shared_context(const Asio::any_io_executor& ex
     return {&context, [](Asio::io_context*) {}};
 }
 
-bool is_ack(std::string_view message) {
+std::optional<Protocols::WsAck> parse_ack(std::string_view message) {
     auto document = glz::lazy_json(message);
     if (!document || !document->is_object()) {
-        return false;
+        return std::nullopt;
     }
 
-    const auto type = (*document)["type"].get<std::string_view>();
-    return type && *type == Protocols::WsMessageType::kAck;
+    const auto success = (*document)["success"].get<bool>();
+    return success ? std::optional{Protocols::WsAck{.success = *success}} : std::nullopt;
 }
 
 } // namespace
@@ -110,8 +110,8 @@ void WsConnection::on_message(std::string_view message, glz::ws_opcode opcode) c
         return;
     }
 
-    if (is_ack(message)) {
-        handlers_.on_write_complete();
+    if (const auto ack = parse_ack(message)) {
+        handlers_.on_write_complete(ack->success);
         return;
     }
 

@@ -19,8 +19,6 @@ namespace WsMessageType {
 // the first message on every connect or reconnect, and again whenever
 // either table changes.
 constexpr std::string_view kSnapshot = "snapshot";
-// Control plane -> engine: confirms that the current outbound event was applied.
-constexpr std::string_view kAck = "ack";
 // Engine -> control plane: one registration mirror update.
 constexpr std::string_view kRegistration = "registration";
 // Engine -> control plane: call lifecycle events. Unlike a registration
@@ -30,6 +28,10 @@ constexpr std::string_view kCallStarted = "call_started";
 constexpr std::string_view kCallUpdated = "call_updated";
 constexpr std::string_view kCallTerminated = "call_terminated";
 } // namespace WsMessageType
+
+struct WsAck {
+    bool success;
+};
 
 // Tagged envelope for every message on the control-plane websocket channel.
 // Exactly one payload field is populated per `type`. Adding a message type
@@ -57,7 +59,7 @@ struct WsEnvelope {
     std::optional<std::int64_t> seq;
 
     struct glaze_json_schema {
-        glz::schema type{.description = R"(Message discriminator: "snapshot", "ack", "registration", "call_started", "call_updated" or "call_terminated")"};
+        glz::schema type{.description = R"(Message discriminator: "snapshot", "registration", "call_started", "call_updated" or "call_terminated")"};
         glz::schema routes_snapshot{.description = "Full route table, part of a \"snapshot\" message"};
         glz::schema users_snapshot{.description = "Full SIP user table, part of a \"snapshot\" message"};
         glz::schema registration{.description = "One registration mirror update, sent as a \"registration\" message"};

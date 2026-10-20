@@ -96,15 +96,16 @@ const handleEngineMessage = (socket: WebSocket, raw: RawData): void => {
   // Through the same chain for every type, so a call_terminated can never
   // apply before its own call_started.
   enqueueInbound(async () => {
+    let success = true;
     try {
       await task();
     } catch (err: unknown) {
       logger.error(`failed to apply ${envelope.type} message: ${(err as Error).message}`);
-      return;
+      success = false;
     }
 
     if (socket.readyState === WebSocket.OPEN) {
-      const ack: AckDto = { type: 'ack' };
+      const ack: AckDto = { success };
       socket.send(JSON.stringify(ack), (err) => {
         if (err) {
           logger.error(`failed to acknowledge ${envelope.type} message: ${err.message}`);

@@ -40,6 +40,7 @@ struct Recorder {
     std::vector<std::string> messages_;
     std::function<void()> open_action_;
     std::function<void()> failure_action_;
+    std::vector<bool> write_results_;
 
     WsHandlers handlers() {
         return WsHandlers{
@@ -49,7 +50,11 @@ struct Recorder {
                     if (open_action_) open_action_();
                 },
             .on_message = [this](const std::string& message) { messages_.push_back(message); },
-            .on_write_complete = [this] { ++writes_; },
+            .on_write_complete =
+                [this](bool success) {
+                    ++writes_;
+                    write_results_.push_back(success);
+                },
             .on_failure =
                 [this](WsStage failed_stage, boost::system::error_code err) {
                     ++failures_;
@@ -72,7 +77,7 @@ TEST_CASE("WsConnection opens, exchanges messages, and reports server close", "[
             [](auto connection, const glz::request&) { connection->send_text(R"({"type":"snapshot"})"); });
         websocket->on_message([](auto connection, std::string_view, glz::ws_opcode opcode) {
             if (opcode == glz::ws_opcode::text) {
-                connection->send_text(R"({"type":"ack"})");
+                connection->send_text(R"({"success":true})");
                 connection->close();
             }
         });
@@ -108,10 +113,58 @@ TEST_CASE("WsConnection opens, exchanges messages, and reports server close", "[
 
     CHECK(recorder.opens_ == 1);
     CHECK(recorder.writes_ == 1);
+    CHECK(recorder.write_results_ == std::vector{true});
     CHECK(recorder.messages_ == std::vector<std::string>{R"({"type":"snapshot"})"});
     CHECK(recorder.failures_ == 1);
     CHECK(recorder.stage_ == WsStage::kSession);
     CHECK(recorder.error_ == Asio::error::connection_reset);
+}
+
+TEST_CASE("WsConnection completes a write when the control plane reports failure", "[ws_connection]") {
+    const auto port = std::stoi(unused_port());
+    std::atomic<bool> server_ready = false;
+    std::atomic<bool> stop_server = false;
+    std::thread server_thread([&] {
+        glz::http_server server;
+        auto websocket = std::make_shared<glz::websocket_server>();
+        websocket->on_message([](auto connection, std::string_view, glz::ws_opcode opcode) {
+            if (opcode == glz::ws_opcode::text) {
+                connection->send_text(R"({"success":false})");
+                connection->close();
+            }
+        });
+        server.websocket("/", websocket);
+        server.bind(static_cast<std::uint16_t>(port));
+        server.start();
+        server_ready = true;
+        while (!stop_server) {
+            std::this_thread::yield();
+        }
+        server.stop();
+    });
+    while (!server_ready) {
+        std::this_thread::yield();
+    }
+
+    Asio::io_context ioc;
+    Recorder recorder;
+    auto connection = std::make_shared<WsConnection>(
+        ioc.get_executor(),
+        WsUrlParts{.host_ = "127.0.0.1", .port_ = std::to_string(port), .target_ = "/"},
+        kConnectTimeout,
+        recorder.handlers());
+    recorder.open_action_ = [connection] { connection->write("client"); };
+    recorder.failure_action_ = [&ioc] { ioc.stop(); };
+    connection->start();
+    ioc.run();
+    connection.reset();
+    ioc.restart();
+    ioc.run();
+    stop_server = true;
+    server_thread.join();
+
+    CHECK(recorder.writes_ == 1);
+    CHECK(recorder.write_results_ == std::vector{false});
 }
 
 TEST_CASE("WsConnection reports a handshake timeout", "[ws_connection]") {

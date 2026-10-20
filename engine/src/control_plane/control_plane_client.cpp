@@ -261,7 +261,10 @@ void ControlPlaneClient::write_next() {
     }
 }
 
-void ControlPlaneClient::on_write_complete() {
+void ControlPlaneClient::on_write_complete(bool success) {
+    if (!success) {
+        Log::app()->error("control plane failed to apply an outbound event");
+    }
     outbound_queue_.complete();
     if (outbound_queue_.empty()) {
         resolve_flush_waiter();
