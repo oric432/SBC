@@ -444,12 +444,10 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
     using namespace std::chrono_literals;
     constexpr auto wait_past_timeout = 1100ms;
 
-    SECTION("hold before establishment does not start a deadline") {
-        REQUIRE_FALSE(session->setup_sm().is_established());
-        session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
-        std::this_thread::sleep_for(wait_past_timeout);
-        CHECK_FALSE(session->hold_timeout_expired());
-    }
+    REQUIRE_FALSE(session->setup_sm().is_established());
+    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
+    std::this_thread::sleep_for(wait_past_timeout);
+    CHECK_FALSE(session->hold_timeout_expired());
 
     // Mock signaling actions so the real setup machine can establish without SIP traffic.
     std::destroy_at(&session->setup_sm());
@@ -457,7 +455,7 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
     REQUIRE(session->setup_sm().process_event(Setup::Requested{}));
     REQUIRE(session->setup_sm().process_event(Setup::ExchangeFinished{ExchangeOutcome::kCommitted}));
     REQUIRE(session->setup_sm().is_established());
-    session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendRecv);
+    CHECK(session->media_is_held());
     CHECK_FALSE(session->hold_timeout_expired());
     session->apply_media_direction(Leg::kCaller, Sdp::MediaDirection::kSendOnly);
     CHECK_FALSE(session->hold_timeout_expired());
