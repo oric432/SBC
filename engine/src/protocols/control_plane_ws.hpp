@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 #include <glaze/glaze.hpp>
 #include "call_event.hpp"
 #include "sip_registrar.hpp"
@@ -74,6 +75,14 @@ struct WsEnvelope {
     };
 };
 
+using WsIncomingMessage = std::variant<WsEnvelope, WsAck>;
+
 } // namespace SbcEngine::Protocols
+
+template <>
+struct glz::meta<SbcEngine::Protocols::WsIncomingMessage> {
+    static constexpr std::string_view tag = "type";
+    static constexpr auto ids = std::array{"snapshot", "ack"};
+};
 
 // NOLINTEND(readability-identifier-naming)

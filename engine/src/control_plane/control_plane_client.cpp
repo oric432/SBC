@@ -75,7 +75,6 @@ void ControlPlaneClient::do_connect() {
         WsHandlers{
             .on_open = bind(&ControlPlaneClient::on_open),
             .on_message = bind(&ControlPlaneClient::on_message),
-            .on_write_complete = bind(&ControlPlaneClient::on_write_complete),
             .on_failure = bind(&ControlPlaneClient::on_failure)});
     connection_->start();
 }
@@ -87,13 +86,18 @@ void ControlPlaneClient::on_open() {
 }
 
 void ControlPlaneClient::on_message(const std::string& raw) {
-    auto envelope_result = parse_envelope(raw);
-    if (!envelope_result) {
-        Log::app()->error("control-plane websocket: {}", envelope_result.error());
+    auto message_result = parse_incoming_message(raw);
+    if (!message_result) {
+        Log::app()->error("control-plane websocket: {}", message_result.error());
         return;
     }
 
-    const auto& envelope = *envelope_result;
+    if (const auto* ack = std::get_if<Protocols::WsAck>(&*message_result)) {
+        on_write_complete(ack->success);
+        return;
+    }
+
+    const auto& envelope = std::get<Protocols::WsEnvelope>(*message_result);
     // Absent seq (the engine -> control-plane direction never sets it) means
     // unsequenced -- accept unconditionally. Otherwise drop anything at or
     // below the last applied seq: two snapshot fetches triggered by

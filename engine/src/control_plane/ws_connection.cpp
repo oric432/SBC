@@ -4,7 +4,6 @@
 #include <boost/asio/error.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
-#include <glaze/json/lazy.hpp>
 
 namespace SbcEngine {
 
@@ -15,20 +14,6 @@ std::shared_ptr<Asio::io_context> shared_context(const Asio::any_io_executor& ex
     auto& context = static_cast<Asio::io_context&>(executor.context()); // NOLINT
     // SbcApp owns the context; Glaze only shares access to it.
     return {&context, [](Asio::io_context*) {}};
-}
-
-std::optional<Protocols::WsAck> parse_ack(std::string_view message) {
-    auto document = glz::lazy_json(message);
-    if (!document || !document->is_object()) {
-        return std::nullopt;
-    }
-
-    const auto type = (*document)["type"].get<std::string_view>();
-    if (!type || *type != Protocols::WsMessageType::kAck) {
-        return std::nullopt;
-    }
-    const auto success = (*document)["success"].get<bool>();
-    return success ? std::optional{Protocols::WsAck{.type = std::string(*type), .success = *success}} : std::nullopt;
 }
 
 } // namespace
@@ -111,11 +96,6 @@ void WsConnection::on_open() {
 
 void WsConnection::on_message(std::string_view message, glz::ws_opcode opcode) const {
     if (closed_ || opcode != glz::ws_opcode::text) {
-        return;
-    }
-
-    if (const auto ack = parse_ack(message)) {
-        handlers_.on_write_complete(ack->success);
         return;
     }
 

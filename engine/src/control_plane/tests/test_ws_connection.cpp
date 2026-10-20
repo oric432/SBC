@@ -40,7 +40,6 @@ struct Recorder {
     std::vector<std::string> messages_;
     std::function<void()> open_action_;
     std::function<void()> failure_action_;
-    std::vector<bool> write_results_;
 
     WsHandlers handlers() {
         return WsHandlers{
@@ -50,11 +49,6 @@ struct Recorder {
                     if (open_action_) open_action_();
                 },
             .on_message = [this](const std::string& message) { messages_.push_back(message); },
-            .on_write_complete =
-                [this](bool success) {
-                    ++writes_;
-                    write_results_.push_back(success);
-                },
             .on_failure =
                 [this](WsStage failed_stage, boost::system::error_code err) {
                     ++failures_;
@@ -112,15 +106,14 @@ TEST_CASE("WsConnection opens, exchanges messages, and reports server close", "[
     server_thread.join();
 
     CHECK(recorder.opens_ == 1);
-    CHECK(recorder.writes_ == 1);
-    CHECK(recorder.write_results_ == std::vector{true});
-    CHECK(recorder.messages_ == std::vector<std::string>{R"({"type":"snapshot"})"});
+    CHECK(recorder.writes_ == 0);
+    CHECK(recorder.messages_ == std::vector<std::string>{R"({"type":"snapshot"})", R"({"type":"ack","success":true})"});
     CHECK(recorder.failures_ == 1);
     CHECK(recorder.stage_ == WsStage::kSession);
     CHECK(recorder.error_ == Asio::error::connection_reset);
 }
 
-TEST_CASE("WsConnection completes a write when the control plane reports failure", "[ws_connection]") {
+TEST_CASE("WsConnection forwards a failed acknowledgement", "[ws_connection]") {
     const auto port = std::stoi(unused_port());
     std::atomic<bool> server_ready = false;
     std::atomic<bool> stop_server = false;
@@ -163,8 +156,7 @@ TEST_CASE("WsConnection completes a write when the control plane reports failure
     stop_server = true;
     server_thread.join();
 
-    CHECK(recorder.writes_ == 1);
-    CHECK(recorder.write_results_ == std::vector{false});
+    CHECK(recorder.messages_ == std::vector<std::string>{R"({"type":"ack","success":false})"});
 }
 
 TEST_CASE("WsConnection reports a handshake timeout", "[ws_connection]") {

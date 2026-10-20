@@ -26,8 +26,6 @@ struct WsHandlers {
     // The handshake finished; write() is allowed from here on.
     std::function<void()> on_open;
     std::function<void(const std::string&)> on_message;
-    // The control plane finished processing the current message.
-    std::function<void(bool)> on_write_complete;
     // The connection is dead. Fires at most once, and never after cancel().
     std::function<void(WsStage, boost::system::error_code)> on_failure;
 };
