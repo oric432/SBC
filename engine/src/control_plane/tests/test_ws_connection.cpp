@@ -77,7 +77,7 @@ TEST_CASE("WsConnection opens, exchanges messages, and reports server close", "[
             [](auto connection, const glz::request&) { connection->send_text(R"({"type":"snapshot"})"); });
         websocket->on_message([](auto connection, std::string_view, glz::ws_opcode opcode) {
             if (opcode == glz::ws_opcode::text) {
-                connection->send_text(R"({"success":true})");
+                connection->send_text(R"({"type":"ack","success":true})");
                 connection->close();
             }
         });
@@ -129,7 +129,7 @@ TEST_CASE("WsConnection completes a write when the control plane reports failure
         auto websocket = std::make_shared<glz::websocket_server>();
         websocket->on_message([](auto connection, std::string_view, glz::ws_opcode opcode) {
             if (opcode == glz::ws_opcode::text) {
-                connection->send_text(R"({"success":false})");
+                connection->send_text(R"({"type":"ack","success":false})");
                 connection->close();
             }
         });

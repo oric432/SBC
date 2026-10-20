@@ -23,8 +23,12 @@ std::optional<Protocols::WsAck> parse_ack(std::string_view message) {
         return std::nullopt;
     }
 
+    const auto type = (*document)["type"].get<std::string_view>();
+    if (!type || *type != Protocols::WsMessageType::kAck) {
+        return std::nullopt;
+    }
     const auto success = (*document)["success"].get<bool>();
-    return success ? std::optional{Protocols::WsAck{.success = *success}} : std::nullopt;
+    return success ? std::optional{Protocols::WsAck{.type = std::string(*type), .success = *success}} : std::nullopt;
 }
 
 } // namespace

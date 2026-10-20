@@ -4,12 +4,13 @@
 import { RegistrationEvent, SipUserSnapshot } from './sipRegistrar';
 import { SipRouteSnapshot } from './sipRoutes';
 
-export type WsMessageType = 'snapshot' | 'registration' | 'call_started' | 'call_updated' | 'call_terminated';
+export type WsMessageType = 'snapshot' | 'ack' | 'registration' | 'call_started' | 'call_updated' | 'call_terminated';
 
 // Control plane -> engine result for the current inbound message. Engine
 // messages are processed serially, so the ACK applies to the one message
 // currently awaiting confirmation.
 export interface AckDto {
+  type: 'ack';
   success: boolean;
 }
 

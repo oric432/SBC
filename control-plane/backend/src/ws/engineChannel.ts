@@ -105,7 +105,7 @@ const handleEngineMessage = (socket: WebSocket, raw: RawData): void => {
     }
 
     if (socket.readyState === WebSocket.OPEN) {
-      const ack: AckDto = { success };
+      const ack: AckDto = { type: 'ack', success };
       socket.send(JSON.stringify(ack), (err) => {
         if (err) {
           logger.error(`failed to acknowledge ${envelope.type} message: ${err.message}`);
