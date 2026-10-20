@@ -295,10 +295,10 @@ def sip_users() -> list[SipUserFixture]:
 
 @pytest.fixture(scope="session")
 def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_routes, sip_users):
-    hold_timeout_s = getattr(request, "param", None)
+    settings_overrides = getattr(request, "param", {})
     if request.config.getoption("--live-engine"):
-        if hold_timeout_s is not None:
-            pytest.skip("hold timeout tests require an owned engine with controlled settings and captured logs")
+        if settings_overrides:
+            pytest.skip("settings overrides require an owned engine with controlled settings and captured logs")
         _log.info(
             "--live-engine set: assuming SbcEngine + Backend are already running "
             "on port %d; skipping engine startup and route/user seeding "
@@ -313,13 +313,18 @@ def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_
     routes_stub_server.set_users(sip_users)
 
     work_dir = tmp_path_factory.mktemp("sbc_engine")
-    hold_settings = "" if hold_timeout_s is None else f"max_hold_duration_s = {hold_timeout_s}\n"
-    logging_settings = "" if hold_timeout_s is None else '[logging]\nlevel = "trace"\n\n'
+    settings = {
+        "sip": {"address": "127.0.0.1", "port": sip_port},
+        "control_plane": {"ws_url": routes_stub_server.url},
+        "registrar": {"min_expires_s": 60, "max_expires_s": 120},
+    }
+    for section, overrides in settings_overrides.items():
+        settings.setdefault(section, {}).update(overrides)
     (work_dir / "settings.toml").write_text(
-        logging_settings
-        + f'[sip]\naddress = "127.0.0.1"\nport = {sip_port}\n{hold_settings}\n'
-        f'[control_plane]\nws_url = "{routes_stub_server.url}"\n\n'
-        f'[registrar]\nmin_expires_s = 60\nmax_expires_s = 120\n'
+        "\n".join(
+            f"[{section}]\n" + "".join(f"{key} = {json.dumps(value, ensure_ascii=False)}\n" for key, value in values.items())
+            for section, values in settings.items()
+        )
     )
 
     _log.info("starting SbcEngine...")

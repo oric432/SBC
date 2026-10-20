@@ -22,6 +22,13 @@ it with an actual protocol client (SIPp for SIP/RTP), as opposed to
   (the one reliable "ready" signal, since SIP itself is UDP), and tears it
   down at the end of the session. Exposes `.log_lines` / `.has_error_logs()`
   / `.log_tail()` for tests that want to assert on engine-side behavior.
+- Pass section-level settings overrides through indirect parametrization, e.g.
+  `@pytest.mark.parametrize("sbc_engine", [{"sip": {"max_hold_duration_s": 3}, "logging": {"level": "trace"}}], indirect=True)`.
+  Overrides merge into the defaults; values are TOML-compatible strings,
+  numbers, or booleans. Trace logging must be requested explicitly when log
+  assertions need it. Reuse the same overrides object across tests to share
+  a fixture configuration. Changing configurations restarts the engine;
+  tests requesting overrides skip under `--live-engine`.
 - `initial_routes` - override this fixture in a suite's own `conftest.py` to
   seed the routes the stub serves before the engine starts.
 
