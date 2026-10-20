@@ -191,6 +191,10 @@ bool CallSession::rtp_inactivity_expired(
 }
 
 bool CallSession::hold_timeout_expired() {
+    if (ctx_->config_.max_hold_duration_s_ <= 0) {
+        return false;
+    }
+
     if (!hold_started_at_.has_value()) {
         return false;
     }
