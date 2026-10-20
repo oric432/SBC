@@ -14,7 +14,8 @@ import { logger } from '../utils/logger';
 // pushes another one on any mutation to either table so a running engine
 // picks up changes without a restart. The engine pushes "registration"
 // messages the other way, applied to the sip_registrations mirror table, and
-// "call_started"/"call_updated"/"call_terminated" messages, applied to calls.
+// "call_started"/"call_updated"/"call_terminated" messages, applied to calls;
+// each produces an ack carrying its processing result.
 export const ENGINE_WS_PATH = '/ws/engine';
 
 let wss: WebSocketServer | undefined;

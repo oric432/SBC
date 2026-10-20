@@ -41,7 +41,8 @@ struct WsAck {
 // Exactly one payload field is populated per `type`. Adding a message type
 // means one more `type` value and one more optional field here -- readers
 // that don't know a type yet just leave its field unset, so the envelope
-// never needs a version bump.
+// never needs a version bump. The engine sends one event at a time and waits
+// for its ack before sending the next event.
 struct WsEnvelope {
     std::string type;
     std::optional<SipRouteSnapshot> routes_snapshot;
@@ -50,14 +51,14 @@ struct WsEnvelope {
     std::optional<CallStarted> call_started;
     std::optional<CallUpdated> call_updated;
     std::optional<CallTerminated> call_terminated;
-    // Monotonically increasing per backend process, stamped on every
-    // control-plane -> engine message so ControlPlaneClient can drop one
+    // Monotonically increasing per backend process, stamped on every snapshot
+    // so ControlPlaneClient can drop one
     // that arrives out of order (see its on_read()). int64_t rather than
     // int32: a 32-bit counter is reachable by a long-running backend process
     // (JS numbers don't overflow at 2^31, but glaze rejects an out-of-range
     // int32 outright, failing the whole envelope's parse rather than just
     // this field). Optional because the engine -> control-plane registration
-    // direction doesn't sequence -- glaze's default skip_null_members omits
+    // direction and acks don't sequence -- glaze's default skip_null_members omits
     // it on write rather than writing "seq: null". Absent on read means
     // unsequenced, i.e. accepted unconditionally.
     std::optional<std::int64_t> seq;
@@ -71,7 +72,7 @@ struct WsEnvelope {
         glz::schema call_updated{.description = "A call's route/codec became known or changed, sent as a \"call_updated\" message"};
         glz::schema call_terminated{.description = "A call ended, sent as a \"call_terminated\" message"};
         glz::schema seq{
-            .description = "Monotonically increasing sequence number, set on control-plane -> engine messages only"};
+            .description = "Monotonically increasing sequence number, set on snapshot messages only"};
     };
 };
 

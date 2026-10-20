@@ -6,9 +6,9 @@ import { SipRouteSnapshot } from './sipRoutes';
 
 export type WsMessageType = 'snapshot' | 'ack' | 'registration' | 'call_started' | 'call_updated' | 'call_terminated';
 
-// Control plane -> engine result for the current inbound message. Engine
-// messages are processed serially, so the ACK applies to the one message
-// currently awaiting confirmation.
+// Control plane -> engine result for the current inbound message. `success`
+// says whether its handler completed without throwing. Engine messages are
+// processed serially, with exactly one awaiting acknowledgement at a time.
 export interface AckDto {
   type: 'ack';
   success: boolean;
@@ -50,9 +50,8 @@ export interface WsEnvelope {
   call_started?: CallStarted;
   call_updated?: CallUpdated;
   call_terminated?: CallTerminated;
-  // Monotonically increasing per backend process, stamped on every
-  // control-plane -> engine message so ControlPlaneClient::on_read() can
-  // drop one that arrives out of order. Never set on the engine ->
-  // control-plane registration direction.
+  // Monotonically increasing per backend process, stamped on snapshots so
+  // ControlPlaneClient can drop one that arrives out of order. Acks are not
+  // sequenced because the engine handles them before snapshot ordering.
   seq?: number;
 }
