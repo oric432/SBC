@@ -259,22 +259,23 @@ void ControlPlaneClient::do_enqueue(Protocols::WsEnvelope envelope, bool best_ef
 }
 
 void ControlPlaneClient::write_next() {
+    const auto generation = ++ack_timer_generation_;
     if (!connected()) {
         return;
     }
     if (const std::string* next = outbound_queue_.start_next()) {
         connection_->write(*next);
         ack_timer_.expires_after(config_.ack_timeout_);
-        ack_timer_.async_wait([self = shared_from_this()](boost::system::error_code err) {
+        ack_timer_.async_wait([self = shared_from_this(), generation](boost::system::error_code err) {
             if (!err) {
-                self->on_ack_timeout();
+                self->on_ack_timeout(generation);
             }
         });
     }
 }
 
-void ControlPlaneClient::on_ack_timeout() {
-    if (!connected()) {
+void ControlPlaneClient::on_ack_timeout(std::uint64_t generation) {
+    if (generation != ack_timer_generation_ || !connected()) {
         return;
     }
     Log::app()->warn("control-plane acknowledgement timed out; reconnecting");

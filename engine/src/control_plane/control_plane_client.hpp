@@ -108,7 +108,7 @@ private:
     void enqueue(Protocols::WsEnvelope envelope, bool best_effort);
     void do_enqueue(Protocols::WsEnvelope envelope, bool best_effort);
     void write_next();
-    void on_ack_timeout();
+    void on_ack_timeout(std::uint64_t generation);
     void resolve_flush_waiter();
     [[nodiscard]] bool connected() const;
 
@@ -118,6 +118,7 @@ private:
     UsersStore* users_store_;
     boost::asio::steady_timer retry_timer_;
     boost::asio::steady_timer ack_timer_;
+    std::uint64_t ack_timer_generation_{0};
     FirstSnapshotLatch first_snapshot_;
     OutboundQueue outbound_queue_;
     // Replaced on every connect attempt; null between a failure and the next
