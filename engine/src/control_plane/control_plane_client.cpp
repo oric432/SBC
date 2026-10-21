@@ -35,6 +35,7 @@ ControlPlaneClient::ControlPlaneClient(
     , routes_store_(routes_store)
     , users_store_(users_store)
     , retry_timer_(executor_)
+    , ack_timer_(executor_)
     , first_snapshot_(executor_, kFirstSnapshotTimeout)
     , outbound_queue_(kMaxOutboundQueueSize) {}
 
@@ -75,7 +76,6 @@ void ControlPlaneClient::do_connect() {
         WsHandlers{
             .on_open = bind(&ControlPlaneClient::on_open),
             .on_message = bind(&ControlPlaneClient::on_message),
-            .on_write_complete = bind(&ControlPlaneClient::on_write_complete),
             .on_failure = bind(&ControlPlaneClient::on_failure)});
     connection_->start();
 }
@@ -87,13 +87,18 @@ void ControlPlaneClient::on_open() {
 }
 
 void ControlPlaneClient::on_message(const std::string& raw) {
-    auto envelope_result = parse_envelope(raw);
-    if (!envelope_result) {
-        Log::app()->error("control-plane websocket: {}", envelope_result.error());
+    auto message_result = parse_incoming_message(raw);
+    if (!message_result) {
+        Log::app()->error("control-plane websocket: {}", message_result.error());
         return;
     }
 
-    const auto& envelope = *envelope_result;
+    if (const auto* ack = std::get_if<Protocols::WsAck>(&*message_result)) {
+        on_write_complete(ack->success);
+        return;
+    }
+
+    const auto& envelope = std::get<Protocols::WsEnvelope>(*message_result);
     // Absent seq (the engine -> control-plane direction never sets it) means
     // unsequenced -- accept unconditionally. Otherwise drop anything at or
     // below the last applied seq: two snapshot fetches triggered by
@@ -132,33 +137,36 @@ void ControlPlaneClient::on_message(const std::string& raw) {
 }
 
 void ControlPlaneClient::on_failure(WsStage stage, boost::system::error_code err) {
-    connection_.reset();
-    outbound_queue_.abort();
-    // A countdown armed by this connection's own on_open() must not be left
-    // running against the reconnect -- if retry_interval_ is longer than its
-    // remaining budget it would fire and fail startup before the reconnect
-    // gets a chance.
-    first_snapshot_.disarm();
-    // A pending flush() is waiting for the queue to drain, not for this
-    // specific connection -- schedule_reconnect() below may still deliver
-    // what's left before flush()'s own timeout does, so only give up here
-    // if there's nothing left to deliver.
-    if (outbound_queue_.empty()) {
-        resolve_flush_waiter();
-    }
+    Asio::post(executor_, [self = shared_from_this(), stage, err] {
+        self->ack_timer_.cancel();
+        self->connection_.reset();
+        self->outbound_queue_.abort();
+        // A countdown armed by this connection's own on_open() must not be left
+        // running against the reconnect -- if retry_interval_ is longer than its
+        // remaining budget it would fire and fail startup before the reconnect
+        // gets a chance.
+        self->first_snapshot_.disarm();
+        // A pending flush() is waiting for the queue to drain, not for this
+        // specific connection -- schedule_reconnect() below may still deliver
+        // what's left before flush()'s own timeout does, so only give up here
+        // if there's nothing left to deliver.
+        if (self->outbound_queue_.empty()) {
+            self->resolve_flush_waiter();
+        }
 
-    if (stage != WsStage::kSession) {
-        handle_setup_failure(stage, err);
-        return;
-    }
-    if (stopped_) {
-        return;
-    }
-    Log::app()->warn(
-        "control-plane websocket disconnected ({}); reconnecting in {}s",
-        err.message(),
-        config_.retry_interval_.count());
-    schedule_reconnect();
+        if (stage != WsStage::kSession) {
+            self->handle_setup_failure(stage, err);
+            return;
+        }
+        if (self->stopped_) {
+            return;
+        }
+        Log::app()->warn(
+            "control-plane websocket disconnected ({}); reconnecting in {}s",
+            err.message(),
+            self->config_.retry_interval_.count());
+        self->schedule_reconnect();
+    });
 }
 
 void ControlPlaneClient::handle_setup_failure(WsStage stage, boost::system::error_code err) {
@@ -251,15 +259,35 @@ void ControlPlaneClient::do_enqueue(Protocols::WsEnvelope envelope, bool best_ef
 }
 
 void ControlPlaneClient::write_next() {
+    const auto generation = ++ack_timer_generation_;
     if (!connected()) {
         return;
     }
     if (const std::string* next = outbound_queue_.start_next()) {
         connection_->write(*next);
+        ack_timer_.expires_after(config_.ack_timeout_);
+        ack_timer_.async_wait([self = shared_from_this(), generation](boost::system::error_code err) {
+            if (!err) {
+                self->on_ack_timeout(generation);
+            }
+        });
     }
 }
 
-void ControlPlaneClient::on_write_complete() {
+void ControlPlaneClient::on_ack_timeout(std::uint64_t generation) {
+    if (generation != ack_timer_generation_ || !connected()) {
+        return;
+    }
+    Log::app()->warn("control-plane acknowledgement timed out; reconnecting");
+    connection_->cancel();
+    on_failure(WsStage::kSession, Asio::error::timed_out);
+}
+
+void ControlPlaneClient::on_write_complete(bool success) {
+    ack_timer_.cancel();
+    if (!success) {
+        Log::app()->error("control plane failed to apply an outbound event");
+    }
     outbound_queue_.complete();
     if (outbound_queue_.empty()) {
         resolve_flush_waiter();
@@ -294,6 +322,7 @@ void ControlPlaneClient::stop() {
     }
     Asio::post(executor_, [self = shared_from_this()] {
         self->retry_timer_.cancel();
+        self->ack_timer_.cancel();
         self->first_snapshot_.disarm();
         if (self->connection_) {
             self->connection_->cancel();

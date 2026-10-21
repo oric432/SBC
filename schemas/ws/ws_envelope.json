@@ -259,11 +259,11 @@
                "type": "null"
             }
          ],
-         "description": "Monotonically increasing sequence number, set on control-plane -> engine messages only"
+         "description": "Monotonically increasing sequence number, set on snapshot messages only"
       },
       "type": {
          "type": "string",
-         "description": "Message discriminator: \"snapshot\", \"registration\", \"call_started\", \"call_updated\" or \"call_terminated\""
+         "description": "Message discriminator: \"snapshot\", \"ack\", \"registration\", \"call_started\", \"call_updated\" or \"call_terminated\""
       },
       "users_snapshot": {
          "anyOf": [

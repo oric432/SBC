@@ -19,6 +19,7 @@ struct WsUrlParts {
 Result<WsUrlParts> parse_ws_url(std::string_view url);
 
 Result<Protocols::WsEnvelope> parse_envelope(std::string_view raw);
+Result<Protocols::WsIncomingMessage> parse_incoming_message(std::string_view raw);
 Result<std::string> serialize_envelope(const Protocols::WsEnvelope& envelope);
 
 // One overload per engine -> control plane message type: sets `type` and the

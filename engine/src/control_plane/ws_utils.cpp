@@ -36,6 +36,15 @@ Result<Protocols::WsEnvelope> parse_envelope(std::string_view raw) {
     return envelope;
 }
 
+Result<Protocols::WsIncomingMessage> parse_incoming_message(std::string_view raw) {
+    Protocols::WsIncomingMessage message;
+    const auto errc = glz::read_json(message, raw);
+    if (errc) {
+        return std::unexpected(Error("failed to parse websocket message: {}", glz::format_error(errc, raw)));
+    }
+    return message;
+}
+
 Result<std::string> serialize_envelope(const Protocols::WsEnvelope& envelope) {
     const auto json = glz::write_json(envelope);
     if (!json) {

@@ -80,6 +80,22 @@ TEST_CASE("parse_envelope leaves seq unset when absent") {
     CHECK_FALSE(result->seq.has_value());
 }
 
+TEST_CASE("parse_incoming_message parses snapshots and acknowledgement outcomes") {
+    const auto snapshot = parse_incoming_message(R"({"type":"snapshot","seq":7})");
+    const auto success = parse_incoming_message(R"({"type":"ack","success":true})");
+    const auto failure = parse_incoming_message(R"({"type":"ack","success":false})");
+
+    REQUIRE(snapshot.has_value());
+    REQUIRE(std::holds_alternative<Protocols::WsEnvelope>(*snapshot));
+    CHECK(std::get<Protocols::WsEnvelope>(*snapshot).seq == 7);
+    REQUIRE(success.has_value());
+    REQUIRE(std::holds_alternative<Protocols::WsAck>(*success));
+    CHECK(std::get<Protocols::WsAck>(*success).success);
+    REQUIRE(failure.has_value());
+    REQUIRE(std::holds_alternative<Protocols::WsAck>(*failure));
+    CHECK_FALSE(std::get<Protocols::WsAck>(*failure).success);
+}
+
 TEST_CASE("parse_envelope parses a seq value beyond int32 range") {
     // A long-running backend's counter isn't bounded at 2^31 (see WsEnvelope::seq's
     // own doc comment) -- seq has to be wide enough that this doesn't fail the
