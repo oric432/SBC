@@ -39,10 +39,10 @@ struct WsAck {
 
 // Tagged envelope for every message on the control-plane websocket channel.
 // Exactly one payload field is populated per `type`. Adding a message type
-// means one more `type` value and one more optional field here -- readers
-// that don't know a type yet just leave its field unset, so the envelope
-// never needs a version bump. The engine sends one event at a time and waits
-// for its ack before sending the next event.
+// means one more `type` value and one more optional field here. Incoming
+// messages are parsed through WsIncomingMessage below, so an unknown type
+// fails to parse until it is added to that tagged variant. The engine sends
+// one event at a time and waits for its ack before sending the next event.
 struct WsEnvelope {
     std::string type;
     std::optional<SipRouteSnapshot> routes_snapshot;
