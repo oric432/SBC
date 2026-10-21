@@ -6,9 +6,7 @@
 
 namespace SbcEngine {
 
-// FIFO of serialized messages waiting to be written to the control plane, one
-// write in flight at a time. The message being written stays queued until it
-// succeeds, so one that was lost with its connection is resent as-is.
+// FIFO of serialized messages awaiting backend acknowledgement, one in flight at a time.
 class OutboundQueue {
 public:
     explicit OutboundQueue(std::size_t max_size)
@@ -23,10 +21,9 @@ public:
     // Marks the front as in flight and returns it, or nullptr if the queue is
     // empty or a write is already in flight. Valid until complete().
     [[nodiscard]] const std::string* start_next();
-    // The in-flight write succeeded: drop it.
+    // The backend acknowledged the in-flight message: remove it.
     void complete();
-    // The in-flight write died with its connection: it stays at the front,
-    // no longer in flight, to be resent.
+    // The connection failed before acknowledgement: retain the message for retry.
     void abort();
 
     // Drops every best-effort message except one already in flight.

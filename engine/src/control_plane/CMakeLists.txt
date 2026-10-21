@@ -13,11 +13,9 @@ target_link_libraries(control_plane PUBLIC
     protocols
     third_party::boost_asio
     third_party::boost_system
-    third_party::boost_beast
     third_party::glaze
 )
 target_precompile_headers(control_plane PRIVATE ${CMAKE_SOURCE_DIR}/src/core/pch.hpp)
-
 if(BUILD_TESTS)
     add_executable(control_plane_tests
         tests/test_first_snapshot_latch.cpp

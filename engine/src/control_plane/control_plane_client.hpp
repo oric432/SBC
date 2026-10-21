@@ -6,7 +6,6 @@
 #include <future>
 #include <memory>
 #include <string>
-#include <string_view>
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/error_code.hpp>
@@ -27,17 +26,17 @@ class WsConnection;
 enum class WsStage : std::uint8_t;
 
 struct ControlPlaneClientConfig {
+    static constexpr std::chrono::milliseconds kDefaultAckTimeout{10000};
+
     WsUrlParts endpoint_;
     std::chrono::seconds connect_timeout_;
     std::chrono::seconds retry_interval_;
+    std::chrono::milliseconds ack_timeout_{kDefaultAckTimeout};
 };
 
-// Maintains the engine's one persistent connection to the control plane,
-// replacing the old one-shot HTTP route fetch (RoutesManager). On every
-// successful connect -- the first one and every reconnect -- the control
-// plane's first message is a full snapshot (routes and SIP users), so the
-// engine never has to reconcile a delta against a version it might have
-// missed.
+// Maintains the engine's one persistent connection to the control plane, replacing
+// the old one-shot HTTP route fetch. Every successful connect starts with a full
+// snapshot (routes and SIP users), so missed deltas never need reconciliation.
 //
 // start()/stop()/flush()/wait_for_first_snapshot() and the send_*() methods
 // may be called from any thread; everything else runs on the executor this
@@ -69,12 +68,10 @@ public:
     // split matters.
     [[nodiscard]] VoidResult wait_for_first_snapshot() { return first_snapshot_.wait(); }
 
-    // Blocks the calling thread (never call this from the executor) until
-    // every queued event has been written or `timeout` elapses -- a
-    // disconnect during the wait does not give up early, since a reconnect
-    // may still deliver what's queued before the timeout does. For clean
-    // shutdown, so the final call_terminated events aren't discarded by
-    // stop() closing the socket right behind them. One caller at a time.
+    // Blocks the calling thread (never call this from the executor) until the
+    // backend has acknowledged every queued event, or `timeout` elapses. A
+    // disconnect during the wait does not give up early, since a reconnect may
+    // still deliver what's queued before the timeout does. One caller at a time.
     void flush(std::chrono::milliseconds timeout);
 
     // Stops reconnecting and closes the connection. Safe to call more than
@@ -97,7 +94,7 @@ private:
     void do_connect();
     void on_open();
     void on_message(const std::string& raw);
-    void on_write_complete();
+    void on_write_complete(bool success);
     // A connection that opened before dying is always just retried; one that
     // never got that far is handled by handle_setup_failure().
     void on_failure(WsStage stage, boost::system::error_code err);
@@ -111,6 +108,7 @@ private:
     void enqueue(Protocols::WsEnvelope envelope, bool best_effort);
     void do_enqueue(Protocols::WsEnvelope envelope, bool best_effort);
     void write_next();
+    void on_ack_timeout(std::uint64_t generation);
     void resolve_flush_waiter();
     [[nodiscard]] bool connected() const;
 
@@ -119,6 +117,8 @@ private:
     RoutesStore* routes_store_;
     UsersStore* users_store_;
     boost::asio::steady_timer retry_timer_;
+    boost::asio::steady_timer ack_timer_;
+    std::uint64_t ack_timer_generation_{0};
     FirstSnapshotLatch first_snapshot_;
     OutboundQueue outbound_queue_;
     // Replaced on every connect attempt; null between a failure and the next
