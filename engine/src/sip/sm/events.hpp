@@ -80,7 +80,9 @@ struct CallError {
     TerminationReason reason_ = TerminationReason::kEngineRequested;
 };
 
-struct CallEnded {};
+struct CallEnded {
+    TerminationReason reason_ = TerminationReason::kEngineRequested;
+};
 
 // Stateless/Simple Message SM Events
 struct MessageReceived {};
