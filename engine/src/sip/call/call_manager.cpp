@@ -71,9 +71,18 @@ CallSession* CallManager::find_by_dialog(pjsip_dialog* dialog) {
     return nullptr;
 }
 
-void CallManager::terminate_confirmed_replaced_session(const std::string& call_id) {
+void CallManager::terminate_replaced_session(const std::string& call_id, bool destination_is_uac) {
     CallSession* session = find_by_call_id(call_id);
-    if (session == nullptr || !session->setup_sm().is_established()) {
+    if (session == nullptr) {
+        return;
+    }
+
+    auto& setup = session->setup_sm();
+    if (!setup.is_established()) {
+        if (destination_is_uac) {
+            Log::call()->info("[{}] cancelling early call after successful replacement", call_id);
+            setup.process_event(Setup::CancelRequested{});
+        }
         return;
     }
 

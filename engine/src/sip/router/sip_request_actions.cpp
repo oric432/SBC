@@ -36,7 +36,8 @@ ReplacementTarget SipRequestActions::make_replacement_target(
         .call_id_ = {call_id.ptr, static_cast<std::size_t>(call_id.slen)},
         .to_tag_ = {to_tag.ptr, static_cast<std::size_t>(to_tag.slen)},
         .from_tag_ = {from_tag.ptr, static_cast<std::size_t>(from_tag.slen)},
-        .early_only_ = early_only};
+        .early_only_ = early_only,
+        .destination_is_uac_ = role == PJSIP_ROLE_UAC};
 }
 
 std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::resolve_replacement(

@@ -12,7 +12,6 @@
 namespace SbcEngine {
 class CallSession;
 class CallManager;
-struct SipRequestActionsTestAccess;
 
 struct ReplacementTarget {
     std::string replaced_session_id_;
@@ -20,6 +19,7 @@ struct ReplacementTarget {
     std::string to_tag_;
     std::string from_tag_;
     bool early_only_ = false;
+    bool destination_is_uac_ = false;
 };
 
 // SIP request admission and responses that do not belong to a live call.

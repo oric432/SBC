@@ -15,11 +15,13 @@
 #include "sip/registrar/binding_store.hpp"
 #include "sip/registrar/users_store.hpp"
 #include "sip/route_table/routes_store.hpp"
+#include "sm/setup_sm.hpp"
 
 namespace SbcEngine {
 
 struct CallSessionTestAccess {
     static void establish(CallSession& session) { session.setup_sm_.set_state_for_test_only<Setup::Established>(); }
+    static void negotiate(CallSession& session) { session.setup_sm_.set_state_for_test_only<Setup::Negotiating>(); }
 
     static std::optional<std::chrono::steady_clock::time_point>& hold_started_at(CallSession& session) {
         return session.hold_started_at_;
@@ -315,6 +317,7 @@ TEST_CASE("translated Replaces tags follow the destination dialog role", "[sip_r
         CHECK(target.to_tag_ == "remote-tag");
         CHECK(target.from_tag_ == "local-tag");
         CHECK(target.early_only_);
+        CHECK(target.destination_is_uac_);
     }
 
     SECTION("UAS dialog uses local To tag and remote From tag") {
@@ -323,6 +326,7 @@ TEST_CASE("translated Replaces tags follow the destination dialog role", "[sip_r
         CHECK(target.to_tag_ == "local-tag");
         CHECK(target.from_tag_ == "remote-tag");
         CHECK(target.early_only_);
+        CHECK_FALSE(target.destination_is_uac_);
     }
 }
 
@@ -339,7 +343,7 @@ TEST_CASE("outbound Replaces requires extension support", "[sip_request_actions]
     CHECK(pj_stricmp2(&require->values[0], "replaces") == 0);
 }
 
-TEST_CASE("replacement terminates only a confirmed old session", "[sip_request_actions][call_session]") {
+TEST_CASE("replacement terminates a confirmed or early UAC old session", "[sip_request_actions][call_session]") {
     boost::asio::io_context ioc;
     PjContext context;
     context.endpt_ = kPjEndpoint.get();
@@ -348,14 +352,22 @@ TEST_CASE("replacement terminates only a confirmed old session", "[sip_request_a
     auto request = parse_rdata(pool.get(), kInviteWithSdp);
     auto* old_session = manager.create_session("old-call", &context, EngineStores{}, ioc.get_executor(), &request);
 
-    SECTION("pending old session remains active") {
-        manager.terminate_confirmed_replaced_session("old-call");
+    SECTION("early UAS old session remains active") {
+        CallSessionTestAccess::negotiate(*old_session);
+        manager.terminate_replaced_session("old-call", false);
+        CHECK(manager.find_by_call_id("old-call") == old_session);
         CHECK(old_session->dialog_sm().is_active());
+    }
+
+    SECTION("early UAC old session is cancelled") {
+        CallSessionTestAccess::negotiate(*old_session);
+        manager.terminate_replaced_session("old-call", true);
+        CHECK(manager.find_by_call_id("old-call") == nullptr);
     }
 
     SECTION("confirmed old session enters BYE termination") {
         CallSessionTestAccess::establish(*old_session);
-        manager.terminate_confirmed_replaced_session("old-call");
+        manager.terminate_replaced_session("old-call", false);
         CHECK(old_session->dialog_sm().is_terminating());
     }
 

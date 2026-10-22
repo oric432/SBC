@@ -88,6 +88,7 @@ template bool SetupRunner::process_event(const Setup::CancellationCompleted&);
 template bool SetupRunner::is<Setup::Done>() const;
 template bool SetupRunner::is<Setup::Established>() const;
 template bool SetupRunner::is<Setup::Cancelling>() const;
+template void SetupRunner::set_state_for_test_only<Setup::Negotiating>();
 template void SetupRunner::set_state_for_test_only<Setup::Established>();
 
 using DialogRunner = SmRunner<DialogSm<IDialogActions>, IDialogActions>;
