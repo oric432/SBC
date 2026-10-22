@@ -71,6 +71,21 @@ CallSession* CallManager::find_by_dialog(pjsip_dialog* dialog) {
     return nullptr;
 }
 
+void CallManager::terminate_confirmed_replaced_session(const std::string& call_id) {
+    CallSession* session = find_by_call_id(call_id);
+    if (session == nullptr || !session->setup_sm().is_established()) {
+        return;
+    }
+
+    auto& dialog = session->dialog_sm();
+    if (!dialog.can_terminate()) {
+        return;
+    }
+
+    Log::call()->info("[{}] ending confirmed call after successful replacement", call_id);
+    dialog.process_event(CallReplaced{});
+}
+
 CallSession* CallManager::find_by_relay_port(unsigned short port, const CallSession* except) {
     for (auto& [call_id, session] : sessions_) {
         (void)call_id;

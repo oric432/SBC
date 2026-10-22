@@ -233,6 +233,9 @@ void SetupActions::establish_call() {
         callee_rtp ? std::format("{}:{}", callee_rtp->address().to_string(), callee_rtp->port()) : "unknown",
         callee_relay_port.value_or(0));
     session_.report_call_answered();
+    if (const auto& replacement = session_.replacement_target()) {
+        session_.call_manager()->terminate_confirmed_replaced_session(replacement->replaced_session_id_);
+    }
 }
 
 void SetupActions::terminate_call() {

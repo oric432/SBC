@@ -32,6 +32,7 @@ ReplacementTarget SipRequestActions::make_replacement_target(
     const pj_str_t& to_tag = role == PJSIP_ROLE_UAC ? remote_tag : local_tag;
     const pj_str_t& from_tag = role == PJSIP_ROLE_UAC ? local_tag : remote_tag;
     return {
+        .replaced_session_id_ = {},
         .call_id_ = {call_id.ptr, static_cast<std::size_t>(call_id.slen)},
         .to_tag_ = {to_tag.ptr, static_cast<std::size_t>(to_tag.slen)},
         .from_tag_ = {from_tag.ptr, static_cast<std::size_t>(from_tag.slen)},
@@ -165,6 +166,7 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
 
     ReplacementTarget target =
         make_replacement_target(call_id, local_tag, remote_tag, destination_invite->role, early_only);
+    target.replaced_session_id_ = session->call_id();
 
     pjsip_dlg_dec_lock(destination_dialog);
 

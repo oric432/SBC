@@ -15,6 +15,7 @@ class CallManager;
 struct SipRequestActionsTestAccess;
 
 struct ReplacementTarget {
+    std::string replaced_session_id_;
     std::string call_id_;
     std::string to_tag_;
     std::string from_tag_;

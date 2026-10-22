@@ -339,6 +339,30 @@ TEST_CASE("outbound Replaces requires extension support", "[sip_request_actions]
     CHECK(pj_stricmp2(&require->values[0], "replaces") == 0);
 }
 
+TEST_CASE("replacement terminates only a confirmed old session", "[sip_request_actions][call_session]") {
+    boost::asio::io_context ioc;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* old_session = manager.create_session("old-call", &context, EngineStores{}, ioc.get_executor(), &request);
+
+    SECTION("pending old session remains active") {
+        manager.terminate_confirmed_replaced_session("old-call");
+        CHECK(old_session->dialog_sm().is_active());
+    }
+
+    SECTION("confirmed old session enters BYE termination") {
+        CallSessionTestAccess::establish(*old_session);
+        manager.terminate_confirmed_replaced_session("old-call");
+        CHECK(old_session->dialog_sm().is_terminating());
+    }
+
+    manager.schedule_remove("old-call");
+    manager.purge_scheduled();
+}
+
 TEST_CASE("extract_uri_user extracts the user part of a sip URI", "[extract_utils]") {
     CHECK(extract_uri_user("sip:alice@10.0.0.1:5060") == "alice");
 }

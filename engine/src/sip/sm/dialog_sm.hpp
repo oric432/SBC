@@ -78,6 +78,8 @@ struct DialogSm {
             actions.terminate_call(event.reason_);
         };
 
+        auto handle_call_replaced = [](Actions& actions) { actions.terminate_call(TerminationReason::kReplaced); };
+
         auto handle_exchange_failure = [](Actions& actions) {
             actions.terminate_call(TerminationReason::kMediaNegotiationFailed);
         };
@@ -93,6 +95,7 @@ struct DialogSm {
              Sml::state<Active>                + (Sml::event<ReinviteReceived>                                                      / handle_reinvite)            = Sml::state<Reinviting>,
              Sml::state<Active>                + (Sml::event<UpdateReceived>                                                        / handle_update)              = Sml::state<Reinviting>,
              Sml::state<Active>                + (Sml::event<ReferReceived>                                                         / handle_refer)               = Sml::state<Referring>,
+             Sml::state<Active>                + (Sml::event<CallReplaced>                                                          / handle_call_replaced)       = Sml::state<Terminating>,
              Sml::state<Active>                + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
              // Reinviting state
@@ -102,12 +105,14 @@ struct DialogSm {
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[committed]                                  = Sml::state<Active>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[rolled_back]                                = Sml::state<Active>,
              Sml::state<Reinviting>            + Sml::event<Dialog::ExchangeFinished>[failed] / handle_exchange_failure           = Sml::state<Terminating>,
+             Sml::state<Reinviting>            + (Sml::event<CallReplaced>                                                          / handle_call_replaced)       = Sml::state<Terminating>,
              Sml::state<Reinviting>            + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
              // Referring state
              Sml::state<Referring>             + (Sml::event<ReferReceived>                                                         / handle_refer_busy)          = Sml::state<Referring>,
              Sml::state<Referring>             + (Sml::event<ReferCompleted>                                                        / handle_refer_completed)     = Sml::state<Active>,
              Sml::state<Referring>             + (Sml::event<ByeReceived>                                                           / handle_bye)                 = Sml::state<ReferringWhileTerminating>,
+             Sml::state<Referring>             + (Sml::event<CallReplaced>                                                          / handle_call_replaced)       = Sml::state<Terminating>,
              Sml::state<Referring>             + (Sml::event<CallError>                                                             / handle_call_error)          = Sml::state<Terminating>,
 
              // The original call is ending; leg callbacks abort the REFER once both legs disconnect.

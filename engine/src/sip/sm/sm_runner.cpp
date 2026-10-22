@@ -99,6 +99,7 @@ template bool DialogRunner::process_event(const ReferReceived&);
 template bool DialogRunner::process_event(const ReferCompleted&);
 template bool DialogRunner::process_event(const Dialog::ExchangeFinished&);
 template bool DialogRunner::process_event(const CallEnded&);
+template bool DialogRunner::process_event(const CallReplaced&);
 template bool DialogRunner::process_event(const CallError&);
 template bool DialogRunner::is<Active>() const;
 template bool DialogRunner::is<Reinviting>() const;
