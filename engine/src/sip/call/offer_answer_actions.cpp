@@ -1,8 +1,7 @@
 #include "offer_answer_actions.hpp"
 
 #include <array>
-#include <string_view>
-#include <vector>
+#include <pjsip-ua/sip_replaces.h>
 #include <pjsip_ua.h>
 
 #include "sip/call/call_session.hpp"
@@ -11,6 +10,30 @@
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
+void OfferAnswerActions::require_replaces(pjsip_msg* message, pj_pool_t* pool) {
+    static std::string replaces_s = "replaces";
+    const pj_str_t replaces = pj_str(replaces_s.data());
+    pjsip_require_hdr* require = nullptr;
+    auto* header = static_cast<pjsip_require_hdr*>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, nullptr));
+    while (header != nullptr) {
+        for (unsigned index = 0; index < header->count; ++index) {
+            if (pj_stricmp(&header->values[index], &replaces) == 0) { // NOLINT
+                return;
+            }
+        }
+        if (require == nullptr && header->count < PJSIP_GENERIC_ARRAY_MAX_COUNT) {
+            require = header;
+        }
+        header = static_cast<pjsip_require_hdr*>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, header->next));
+    }
+    if (require == nullptr) {
+        require = pjsip_require_hdr_create(pool);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
+        pjsip_msg_add_hdr(message, reinterpret_cast<pjsip_hdr*>(require));
+    }
+    require->values[require->count++] = replaces; // NOLINT
+}
+
 bool OfferAnswerActions::offer_usable(const std::string& sdp) const {
     return Sdp::is_valid_sdp(sdp);
 }
@@ -169,6 +192,17 @@ bool OfferAnswerActions::send_outbound_invite() {
         pjsip_max_fwd_hdr* new_hdr = pjsip_max_fwd_hdr_create(tdata->pool, outbound_max_fwd);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
         pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(new_hdr));
+    }
+
+    if (const auto& replacement = session_.replacement_target()) {
+        require_replaces(tdata->msg, tdata->pool);
+        pjsip_replaces_hdr* replaces = pjsip_replaces_hdr_create(tdata->pool);
+        pj_strdup2(tdata->pool, &replaces->call_id, replacement->call_id_.c_str());
+        pj_strdup2(tdata->pool, &replaces->to_tag, replacement->to_tag_.c_str());
+        pj_strdup2(tdata->pool, &replaces->from_tag, replacement->from_tag_.c_str());
+        replaces->early_only = replacement->early_only_ ? PJ_TRUE : PJ_FALSE;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
+        pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(replaces));
     }
 
     return Inv::send(inv, tdata);

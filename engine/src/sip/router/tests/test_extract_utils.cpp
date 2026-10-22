@@ -5,10 +5,13 @@
 
 #include <pjlib-util.h>
 #include <pjsip.h>
+#include <pjsip-ua/sip_replaces.h>
 
 #include "sip/router/extract_utils.hpp"
+#include "sip/router/sip_request_actions.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/call/offer_answer_actions.hpp"
 #include "sip/registrar/binding_store.hpp"
 #include "sip/registrar/users_store.hpp"
 #include "sip/route_table/routes_store.hpp"
@@ -20,6 +23,28 @@ struct CallSessionTestAccess {
 
     static std::optional<std::chrono::steady_clock::time_point>& hold_started_at(CallSession& session) {
         return session.hold_started_at_;
+    }
+};
+
+struct SipRequestActionsTestAccess {
+    static std::optional<int> replacement_rejection_code(const pjsip_inv_session& invite, bool early_only) {
+        return SipRequestActions::replacement_rejection_code(&invite, early_only);
+    }
+
+    static ReplacementTarget make_replacement_target(pjsip_role_e role) {
+        std::string call_id_s = "destination-call";
+        std::string local_tag_s = "local-tag";
+        std::string remote_tag_s = "remote-tag";
+        const pj_str_t call_id = pj_str(call_id_s.data());
+        const pj_str_t local_tag = pj_str(local_tag_s.data());
+        const pj_str_t remote_tag = pj_str(remote_tag_s.data());
+        return SipRequestActions::make_replacement_target(call_id, local_tag, remote_tag, role, true);
+    }
+};
+
+struct OfferAnswerActionsTestAccess {
+    static void require_replaces(pjsip_msg* message, pj_pool_t* pool) {
+        OfferAnswerActions::require_replaces(message, pool);
     }
 };
 
@@ -41,6 +66,7 @@ public:
         pjlib_util_init();
         pj_caching_pool_init(&caching_pool_, &pj_pool_factory_default_policy, 0);
         pjsip_endpt_create(&caching_pool_.factory, "extract_utils_test", &endpt_);
+        pjsip_replaces_init_module(endpt_);
     }
     ~PjEndpoint() {
         if (endpt_ != nullptr) {
@@ -205,6 +231,112 @@ TEST_CASE("extract_from_display_name reads the From header's display name", "[ex
     const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithDisplayName);
     CHECK(extract_from_display_name(&rdata) == "Alice");
+}
+
+TEST_CASE("resolve_replacement propagates bad INVITE data", "[sip_request_actions]") {
+    boost::asio::io_context ioc;
+    CallManager manager;
+    SipRequestActions actions{nullptr, &manager, EngineStores{}, ioc.get_executor()};
+
+    CHECK_FALSE(actions.resolve_replacement(nullptr).has_value());
+}
+
+TEST_CASE("resolve_replacement returns no target when Replaces is absent", "[sip_request_actions]") {
+    boost::asio::io_context ioc;
+    CallManager manager;
+    SipRequestActions actions{nullptr, &manager, EngineStores{}, ioc.get_executor()};
+    const ScopedPool pool;
+    auto rdata = parse_rdata(pool.get(), kInviteNoBody);
+
+    const auto result = actions.resolve_replacement(&rdata);
+    REQUIRE(result.has_value());
+    CHECK_FALSE(result->has_value());
+}
+
+TEST_CASE("destination Replaces validation follows RFC 3891 state rules", "[sip_request_actions]") {
+    pjsip_inv_session invite{};
+
+    SECTION("disconnected dialogs are declined") {
+        invite.state = PJSIP_INV_STATE_DISCONNECTED;
+        invite.role = PJSIP_ROLE_UAC;
+        CHECK(SipRequestActionsTestAccess::replacement_rejection_code(invite, true) == PJSIP_SC_DECLINE);
+    }
+
+    SECTION("early-only rejects an established dialog as busy") {
+        invite.state = PJSIP_INV_STATE_CONNECTING;
+        invite.role = PJSIP_ROLE_UAC;
+        CHECK(SipRequestActionsTestAccess::replacement_rejection_code(invite, true) == PJSIP_SC_BUSY_HERE);
+    }
+
+    SECTION("confirmed dialogs are replaceable without early-only") {
+        invite.state = PJSIP_INV_STATE_CONFIRMED;
+        invite.role = PJSIP_ROLE_UAS;
+        CHECK_FALSE(SipRequestActionsTestAccess::replacement_rejection_code(invite, false).has_value());
+    }
+
+    SECTION("early UAC dialogs are replaceable") {
+        invite.state = PJSIP_INV_STATE_EARLY;
+        invite.role = PJSIP_ROLE_UAC;
+        CHECK_FALSE(SipRequestActionsTestAccess::replacement_rejection_code(invite, true).has_value());
+    }
+
+    SECTION("early UAS dialogs respect the PJSIP configuration") {
+        invite.state = PJSIP_INV_STATE_EARLY;
+        invite.role = PJSIP_ROLE_UAS;
+        const pj_bool_t original = pjsip_cfg()->endpt.accept_replace_in_early_state;
+
+        pjsip_cfg()->endpt.accept_replace_in_early_state = PJ_FALSE;
+        CHECK(
+            SipRequestActionsTestAccess::replacement_rejection_code(invite, false) == PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+
+        pjsip_cfg()->endpt.accept_replace_in_early_state = PJ_TRUE;
+        CHECK_FALSE(SipRequestActionsTestAccess::replacement_rejection_code(invite, false).has_value());
+
+        pjsip_cfg()->endpt.accept_replace_in_early_state = original;
+    }
+
+    SECTION("pre-early UAS dialogs do not qualify even when early replacement is enabled") {
+        invite.state = PJSIP_INV_STATE_INCOMING;
+        invite.role = PJSIP_ROLE_UAS;
+        const pj_bool_t original = pjsip_cfg()->endpt.accept_replace_in_early_state;
+        pjsip_cfg()->endpt.accept_replace_in_early_state = PJ_TRUE;
+
+        CHECK(
+            SipRequestActionsTestAccess::replacement_rejection_code(invite, false) == PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+
+        pjsip_cfg()->endpt.accept_replace_in_early_state = original;
+    }
+}
+
+TEST_CASE("translated Replaces tags follow the destination dialog role", "[sip_request_actions]") {
+    SECTION("UAC dialog uses remote To tag and local From tag") {
+        const auto target = SipRequestActionsTestAccess::make_replacement_target(PJSIP_ROLE_UAC);
+        CHECK(target.call_id_ == "destination-call");
+        CHECK(target.to_tag_ == "remote-tag");
+        CHECK(target.from_tag_ == "local-tag");
+        CHECK(target.early_only_);
+    }
+
+    SECTION("UAS dialog uses local To tag and remote From tag") {
+        const auto target = SipRequestActionsTestAccess::make_replacement_target(PJSIP_ROLE_UAS);
+        CHECK(target.call_id_ == "destination-call");
+        CHECK(target.to_tag_ == "local-tag");
+        CHECK(target.from_tag_ == "remote-tag");
+        CHECK(target.early_only_);
+    }
+}
+
+TEST_CASE("outbound Replaces requires extension support", "[sip_request_actions]") {
+    const ScopedPool pool;
+    pjsip_msg* message = pjsip_msg_create(pool.get(), PJSIP_REQUEST_MSG);
+
+    OfferAnswerActionsTestAccess::require_replaces(message, pool.get());
+    OfferAnswerActionsTestAccess::require_replaces(message, pool.get());
+
+    const auto* require = static_cast<const pjsip_require_hdr*>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, nullptr));
+    REQUIRE(require != nullptr);
+    REQUIRE(require->count == 1);
+    CHECK(pj_stricmp2(&require->values[0], "replaces") == 0);
 }
 
 TEST_CASE("extract_uri_user extracts the user part of a sip URI", "[extract_utils]") {

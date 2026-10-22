@@ -1,5 +1,6 @@
 #include "sip_request_actions.hpp"
 
+#include <pjsip-ua/sip_replaces.h>
 #include <pjsip_ua.h>
 
 #include "sip/call/call_manager.hpp"
@@ -8,7 +9,175 @@
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
+std::optional<int> SipRequestActions::replacement_rejection_code(const pjsip_inv_session* invite, bool early_only) {
+    if (invite->state >= PJSIP_INV_STATE_DISCONNECTED) {
+        return PJSIP_SC_DECLINE;
+    }
+    if (early_only && invite->state >= PJSIP_INV_STATE_CONNECTING) {
+        return PJSIP_SC_BUSY_HERE;
+    }
+    if (invite->state <= PJSIP_INV_STATE_EARLY && invite->role != PJSIP_ROLE_UAC &&
+        (invite->state != PJSIP_INV_STATE_EARLY || pjsip_cfg()->endpt.accept_replace_in_early_state == PJ_FALSE)) {
+        return PJSIP_SC_CALL_TSX_DOES_NOT_EXIST;
+    }
+    return std::nullopt;
+}
+
+ReplacementTarget SipRequestActions::make_replacement_target(
+    const pj_str_t& call_id,
+    const pj_str_t& local_tag,
+    const pj_str_t& remote_tag,
+    pjsip_role_e role,
+    bool early_only) {
+    const pj_str_t& to_tag = role == PJSIP_ROLE_UAC ? remote_tag : local_tag;
+    const pj_str_t& from_tag = role == PJSIP_ROLE_UAC ? local_tag : remote_tag;
+    return {
+        .call_id_ = {call_id.ptr, static_cast<std::size_t>(call_id.slen)},
+        .to_tag_ = {to_tag.ptr, static_cast<std::size_t>(to_tag.slen)},
+        .from_tag_ = {from_tag.ptr, static_cast<std::size_t>(from_tag.slen)},
+        .early_only_ = early_only};
+}
+
+std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::resolve_replacement(
+    pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
+        return std::unexpected("Invalid incoming SIP request");
+    }
+
+    pjsip_dialog* dialog = nullptr;
+    pjsip_tx_data* response = nullptr;
+
+    const pj_status_t status = pjsip_replaces_verify_request(rx_data, &dialog, PJ_TRUE, &response);
+
+    if (status != PJ_SUCCESS) {
+        if (response != nullptr) {
+            // Preserve the RFC 3891 Warning header added by the verifier; respond_stateless would omit it.
+            const pj_status_t send_status =
+                pjsip_endpt_send_response2(ctx_->endpt_, rx_data, response, nullptr, nullptr);
+
+            if (send_status != PJ_SUCCESS) {
+                return std::unexpected(
+                    std::format(
+                        "Replaces verification failed ({}); sending rejection failed ({})",
+                        status,
+                        send_status));
+            }
+        }
+        else {
+            respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
+        }
+
+        return std::unexpected(std::format("Replaces verification failed ({})", status));
+    }
+
+    // Normal INVITE without Replaces.
+    if (dialog == nullptr) {
+        return std::nullopt;
+    }
+
+    static std::string replaces_s = "Replaces";
+    static pj_str_t replaces_name = pj_str(replaces_s.data());
+    const auto* replaces = static_cast<const pjsip_replaces_hdr*>(
+        pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_name, nullptr));
+    if (replaces == nullptr) {
+        pjsip_dlg_dec_lock(dialog);
+        respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
+        return std::unexpected("Verified Replaces request has no parsed header");
+    }
+    const bool early_only = replaces->early_only == PJ_TRUE;
+
+    CallSession* session = call_manager_->find_by_dialog(dialog);
+
+    if (session == nullptr) {
+        pjsip_dlg_dec_lock(dialog);
+        respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+
+        return std::unexpected("No CallSession found for the Replaces dialog");
+    }
+
+    std::optional<Leg> leg;
+
+    if (session->leg(Leg::kCaller).dialog_ == dialog) {
+        leg = Leg::kCaller;
+    }
+    else if (session->leg(Leg::kCallee).dialog_ == dialog) {
+        leg = Leg::kCallee;
+    }
+
+    pjsip_dlg_dec_lock(dialog);
+
+    if (!leg.has_value()) {
+        respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+
+        return std::unexpected("Replaces dialog does not belong to either CallSession leg");
+    }
+
+    const auto& destination_leg = session->leg(other(*leg));
+    pjsip_dialog* destination_dialog = destination_leg.dialog_;
+
+    if (destination_dialog == nullptr) {
+        respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+
+        return std::unexpected("Destination dialog is missing");
+    }
+
+    pjsip_dlg_inc_lock(destination_dialog);
+
+    pjsip_inv_session* destination_invite = pjsip_dlg_get_inv_session(destination_dialog);
+    if (destination_invite == nullptr) {
+        pjsip_dlg_dec_lock(destination_dialog);
+        respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+        return std::unexpected("Destination dialog has no INVITE session");
+    }
+
+    if (destination_leg.disconnected_) {
+        pjsip_dlg_dec_lock(destination_dialog);
+        respond_stateless(rx_data, PJSIP_SC_DECLINE);
+        return std::unexpected("Destination INVITE session is disconnected");
+    }
+
+    if (const auto rejection_code = replacement_rejection_code(destination_invite, early_only)) {
+        const int invite_state = static_cast<int>(destination_invite->state);
+        pjsip_dlg_dec_lock(destination_dialog);
+        respond_stateless(rx_data, *rejection_code);
+        return std::unexpected(
+            std::format("Destination INVITE state {} cannot be replaced ({})", invite_state, *rejection_code));
+    }
+
+    if (destination_dialog->call_id == nullptr || destination_dialog->remote.info == nullptr ||
+        destination_dialog->local.info == nullptr) {
+        pjsip_dlg_dec_lock(destination_dialog);
+        respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+
+        return std::unexpected("Destination dialog has incomplete SIP identifiers");
+    }
+
+    const pj_str_t& call_id = destination_dialog->call_id->id;
+    const pj_str_t& local_tag = destination_dialog->local.info->tag;
+    const pj_str_t& remote_tag = destination_dialog->remote.info->tag;
+
+    if (call_id.slen <= 0 || local_tag.slen <= 0 || remote_tag.slen <= 0) {
+        pjsip_dlg_dec_lock(destination_dialog);
+        respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+
+        return std::unexpected("Destination dialog has empty Call-ID or tags");
+    }
+
+    ReplacementTarget target =
+        make_replacement_target(call_id, local_tag, remote_tag, destination_invite->role, early_only);
+
+    pjsip_dlg_dec_lock(destination_dialog);
+
+    return target;
+}
+
 CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
+    auto replacement_result = resolve_replacement(rx_data);
+    if (!replacement_result.has_value()) {
+        return nullptr;
+    }
+    std::optional<ReplacementTarget> replacement_target = std::move(replacement_result).value();
+
     std::string call_id = extract_call_id(rx_data);
     if (call_id.empty()) {
         respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);
@@ -19,6 +188,7 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
         // layer answers it, nothing to orchestrate.
         return nullptr;
     }
+
 
     // Let PJSIP vet transaction-level correctness before we orchestrate.
     // Enable RFC 4028 on the caller-facing leg. The timer module processes
@@ -88,9 +258,9 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
     }
     pjsip_dlg_dec_lock(dlg);
 
-    // CallSession extracts its own request-URI/offer SDP from rx_data at
-    // construction; nothing here needs to parse the message itself.
+    // Retain replacement context before MessageRouter starts the normal setup state machine.
     CallSession* session = call_manager_->create_session(call_id, ctx_, stores_, executor_, rx_data);
+    session->set_replacement_target(std::move(replacement_target));
     session->set_inv_caller(inv);
 
     Log::call()->info("[{}] invite: {} -> {}", call_id, session->caller_uri(), session->request_uri());
