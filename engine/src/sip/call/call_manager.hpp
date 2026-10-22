@@ -59,7 +59,7 @@ public:
     void purge_scheduled();
 
     // A single Asio timer requests periodic scans. The actual scan and all
-    // CallError transitions happen in process_pending_rtp_inactivity() on the
+    // CallEnded transitions happen in process_pending_rtp_inactivity() on the
     // SIP thread.
     void start_rtp_inactivity_timer(
         const boost::asio::any_io_executor& executor,

@@ -136,7 +136,7 @@ void CallManager::process_pending_rtp_inactivity() {
             auto& dialog = session->dialog_sm();
             if (dialog.can_terminate()) {
                 Log::call()->warn("[{}] removing session because the RTP inactivity timeout expired", call_id);
-                dialog.process_event(CallError{TerminationReason::kRtpInactivity});
+                dialog.process_event(CallEnded{TerminationReason::kRtpInactivity});
             }
         }
     });
@@ -155,7 +155,7 @@ void CallManager::process_pending_hold_timeouts() {
         auto& dialog = session.dialog_sm();
         if (dialog.can_terminate()) {
             Log::call()->warn("[{}] ending call because the hold timeout expired", session.call_id());
-            dialog.process_event(CallError{TerminationReason::kHoldTimeout});
+            dialog.process_event(CallEnded{TerminationReason::kHoldTimeout});
         }
     }
 }

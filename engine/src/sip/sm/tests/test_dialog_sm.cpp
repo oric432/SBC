@@ -330,8 +330,7 @@ TEST_CASE("DialogSm waits for the original call after an early refer result", "[
 }
 
 TEST_CASE("DialogSm call error terminates a pending refer", "[dialog_sm]") {
-    const auto event =
-        GENERATE(CallError{}, CallError{TerminationReason::kHoldTimeout}, CallError{TerminationReason::kRtpInactivity});
+    const auto event = GENERATE(CallError{}, CallError{TerminationReason::kMediaNegotiationFailed});
     MockDialogActions actions;
     TestMachine machine{actions};
 
@@ -350,8 +349,7 @@ TEST_CASE("DialogSm call error terminates a pending refer", "[dialog_sm]") {
 // Test: Unrecoverable error during active dialog (e.g., RTP failure, media error)
 // Verifies: Dialog SM terminates call on unexpected errors
 TEST_CASE("DialogSm call error", "[dialog_sm]") {
-    const auto event =
-        GENERATE(CallError{}, CallError{TerminationReason::kHoldTimeout}, CallError{TerminationReason::kRtpInactivity});
+    const auto event = GENERATE(CallError{}, CallError{TerminationReason::kMediaNegotiationFailed});
     MockDialogActions actions;
     TestMachine machine{actions};
 
@@ -371,12 +369,10 @@ TEST_CASE("DialogSm call error", "[dialog_sm]") {
     REQUIRE(actions.was_called("cleanup"));
 }
 
-// Test: Unrecoverable error while a re-INVITE/UPDATE is pending (e.g. shutdown,
-// RTP inactivity) must still terminate the call -- not be silently dropped for
+// Test: Unrecoverable error while a re-INVITE/UPDATE is pending must still terminate the call -- not be silently dropped for
 // lack of a matching transition.
 TEST_CASE("DialogSm call error while reinviting", "[dialog_sm]") {
-    const auto event =
-        GENERATE(CallError{}, CallError{TerminationReason::kHoldTimeout}, CallError{TerminationReason::kRtpInactivity});
+    const auto event = GENERATE(CallError{}, CallError{TerminationReason::kMediaNegotiationFailed});
     MockDialogActions actions;
     TestMachine machine{actions};
 
@@ -393,6 +389,30 @@ TEST_CASE("DialogSm call error while reinviting", "[dialog_sm]") {
     REQUIRE(machine.process_event(CallEnded{}));
     REQUIRE(machine.is(Sml::state<DialogDone>));
     REQUIRE(actions.was_called("cleanup"));
+}
+
+TEST_CASE("DialogSm policy timeout ends a live dialog", "[dialog_sm]") {
+    const auto reason = GENERATE(TerminationReason::kHoldTimeout, TerminationReason::kRtpInactivity);
+    const auto state = GENERATE(0, 1, 2);
+    MockDialogActions actions;
+    TestMachine machine{actions};
+    if (state == 1) {
+        machine.process_event(ReinviteReceived{kValidSdp});
+    }
+    else if (state == 2) {
+        machine.process_event(ReferReceived{});
+    }
+    actions.reset();
+    REQUIRE(machine.process_event(CallEnded{reason}));
+    REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("terminate_call"));
+    REQUIRE(actions.termination_reason_ == reason);
+    REQUIRE_FALSE(actions.was_called("cleanup"));
+    actions.reset();
+    REQUIRE(machine.process_event(CallEnded{}));
+    REQUIRE(machine.is(Sml::state<DialogDone>));
+    REQUIRE(actions.was_called("cleanup"));
+    REQUIRE_FALSE(actions.was_called("terminate_call"));
 }
 
 // NOLINTEND(cppcoreguidelines-avoid-do-while,readability-function-cognitive-complexity,misc-use-anonymous-namespace,cert-err58-cpp)
