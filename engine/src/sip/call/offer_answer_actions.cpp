@@ -195,6 +195,7 @@ bool OfferAnswerActions::send_outbound_invite() {
     }
 
     if (const auto& replacement = session_.replacement_target()) {
+        // Force unsupported peers to reject instead of ignoring Replaces and creating an extra call.
         require_replaces(tdata->msg, tdata->pool);
         pjsip_replaces_hdr* replaces = pjsip_replaces_hdr_create(tdata->pool);
         pj_strdup2(tdata->pool, &replaces->call_id, replacement->call_id_.c_str());
