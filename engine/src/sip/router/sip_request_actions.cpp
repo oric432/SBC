@@ -45,6 +45,10 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
     if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
         return std::unexpected("Invalid incoming SIP request");
     }
+    if (has_replaces_header(rx_data) && !replaces_has_single_dialog_tags(rx_data)) {
+        respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);
+        return std::unexpected("Replaces must contain exactly one to-tag and one from-tag");
+    }
 
     pjsip_dialog* dialog = nullptr;
     pjsip_tx_data* response = nullptr;

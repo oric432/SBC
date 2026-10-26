@@ -107,9 +107,9 @@ private:
     pj_pool_t* pool_;
 };
 
-// Parses a raw SIP message into a real rx_data the same way PJSIP's own
-// transport layer does: pjsip_parse_rdata populates msg_info.cid/max_fwd/etc
-// as it parses, which is exactly what the extract_* functions read.
+// Parses a raw SIP message into a real rx_data the same way PJSIP's transport
+// layer does. The transport sets msg_buf/len before pjsip_parse_rdata(), which
+// then populates msg_info.cid/max_fwd/etc.
 //
 // The parser stores header/body fields as pj_str_t views directly into the
 // buffer it was given (zero-copy), so that buffer must outlive the returned
@@ -120,6 +120,8 @@ pjsip_rx_data parse_rdata(pj_pool_t* pool, const std::string& raw) {
     rdata.tp_info.pool = pool;
     auto* buf = static_cast<char*>(pj_pool_alloc(pool, raw.size() + 1));
     std::memcpy(buf, raw.c_str(), raw.size() + 1);
+    rdata.msg_info.msg_buf = buf;
+    rdata.msg_info.len = static_cast<int>(raw.size());
     pjsip_parse_rdata(buf, raw.size(), &rdata);
     return rdata;
 }
@@ -200,6 +202,54 @@ TEST_CASE("has_replaces_header returns false when Replaces is absent", "[extract
     const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteNoBody);
     CHECK_FALSE(has_replaces_header(&rdata));
+}
+
+TEST_CASE("Replaces contains exactly one to-tag and one from-tag", "[extract_utils]") {
+    const auto make_invite = [](std::string_view replaces) {
+        return std::format(
+            "INVITE sip:bob@example.com SIP/2.0\r\n"
+            "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKtags\r\n"
+            "To: <sip:bob@example.com>\r\n"
+            "From: <sip:alice@example.com>;tag=abc\r\n"
+            "Call-ID: tags@127.0.0.1\r\n"
+            "CSeq: 1 INVITE\r\n"
+            "Replaces: {}\r\n"
+            "Content-Length: 0\r\n\r\n",
+            replaces);
+    };
+
+    const ScopedPool pool;
+
+    SECTION("accepts one tag of each kind") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;to-tag=one;from-tag=two"));
+        CHECK(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("matches tag names case-insensitively") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;TO-TAG=one;From-Tag=two"));
+        CHECK(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("rejects a missing to-tag") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;from-tag=two"));
+        CHECK_FALSE(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("rejects a missing from-tag") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;to-tag=one"));
+        CHECK_FALSE(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("rejects duplicate to-tag parameters") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;to-tag=one;from-tag=two;to-tag=three"));
+        CHECK_FALSE(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("rejects duplicate from-tag parameters") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;to-tag=one;from-tag=two;FROM-TAG=three"));
+        CHECK_FALSE(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("does not count tag-like text inside a quoted generic parameter") {
+        auto rdata = parse_rdata(
+            pool.get(),
+            make_invite("target;note=\"ignored;to-tag=fake;from-tag=fake\";to-tag=one;from-tag=two"));
+        CHECK(replaces_has_single_dialog_tags(&rdata));
+    }
 }
 
 TEST_CASE("extract_sdp returns empty for null rx_data", "[extract_utils]") {

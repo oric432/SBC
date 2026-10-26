@@ -17,6 +17,7 @@ namespace SbcEngine {
 // request-uri: routing lookup finds nothing, RouteFailed).
 std::string extract_method(pjsip_rx_data* rx_data);
 bool has_replaces_header(pjsip_rx_data* rx_data);
+bool replaces_has_single_dialog_tags(pjsip_rx_data* rx_data);
 std::string extract_sdp(pjsip_rx_data* rx_data);
 // 0 (not a valid SIP status code) on a malformed/absent rx_data or a request.
 int extract_status_code(pjsip_rx_data* rx_data);
