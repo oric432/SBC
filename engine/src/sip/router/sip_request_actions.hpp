@@ -41,6 +41,7 @@ public:
         pjsip_rx_data* rx_data);
     void handle_unmatched_dialog_request(pjsip_rx_data* rx_data);
     void handle_unmatched_ack(pjsip_rx_data* rx_data);
+    void reject_bad_request(pjsip_rx_data* rx_data);
     void reject_unsupported_method(pjsip_rx_data* rx_data);
     void reject_out_of_dialog_refer(pjsip_rx_data* rx_data);
 

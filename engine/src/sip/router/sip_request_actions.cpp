@@ -282,6 +282,10 @@ void SipRequestActions::handle_unmatched_ack([[maybe_unused]] pjsip_rx_data* rx_
     // An unmatched ACK is silently discarded; ACK never receives a response.
 }
 
+void SipRequestActions::reject_bad_request(pjsip_rx_data* rx_data) {
+    respond_stateless(rx_data, PJSIP_SC_BAD_REQUEST);
+}
+
 void SipRequestActions::reject_unsupported_method(pjsip_rx_data* rx_data) {
     respond_stateless(rx_data, PJSIP_SC_METHOD_NOT_ALLOWED);
 }

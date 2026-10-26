@@ -14,6 +14,15 @@ std::string extract_method(pjsip_rx_data* rx_data) {
     return {name.ptr, static_cast<std::size_t>(name.slen)};
 }
 
+bool has_replaces_header(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
+        return false;
+    }
+    static std::string replaces_name_string_s = "Replaces";
+    const pj_str_t replaces_name = pj_str(replaces_name_string_s.data());
+    return pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_name, nullptr) != nullptr;
+}
+
 std::string extract_sdp(pjsip_rx_data* rx_data) {
     if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
         return {};

@@ -156,6 +156,17 @@ constexpr const char* kInviteNoBody = "INVITE sip:bob@example.com SIP/2.0\r\n"
                                       "Content-Length: 0\r\n"
                                       "\r\n";
 
+constexpr const char* kByeWithReplaces = "BYE sip:bob@example.com SIP/2.0\r\n"
+                                         "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKabc123\r\n"
+                                         "Max-Forwards: 70\r\n"
+                                         "To: <sip:bob@example.com>;tag=def\r\n"
+                                         "From: <sip:alice@example.com>;tag=abc\r\n"
+                                         "Call-ID: abc123@127.0.0.1\r\n"
+                                         "CSeq: 2 BYE\r\n"
+                                         "Replaces: target@example.com;to-tag=target-to;from-tag=target-from\r\n"
+                                         "Content-Length: 0\r\n"
+                                         "\r\n";
+
 } // namespace
 
 TEST_CASE("extract_method returns empty for null rx_data", "[extract_utils]") {
@@ -171,6 +182,24 @@ TEST_CASE("extract_method reads the request method", "[extract_utils]") {
     const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
     CHECK(extract_method(&rdata) == "INVITE");
+}
+
+TEST_CASE("has_replaces_header is null-safe", "[extract_utils]") {
+    pjsip_rx_data rdata{};
+    CHECK_FALSE(has_replaces_header(nullptr));
+    CHECK_FALSE(has_replaces_header(&rdata));
+}
+
+TEST_CASE("has_replaces_header detects Replaces independently of the request method", "[extract_utils]") {
+    const ScopedPool pool;
+    auto rdata = parse_rdata(pool.get(), kByeWithReplaces);
+    CHECK(has_replaces_header(&rdata));
+}
+
+TEST_CASE("has_replaces_header returns false when Replaces is absent", "[extract_utils]") {
+    const ScopedPool pool;
+    auto rdata = parse_rdata(pool.get(), kInviteNoBody);
+    CHECK_FALSE(has_replaces_header(&rdata));
 }
 
 TEST_CASE("extract_sdp returns empty for null rx_data", "[extract_utils]") {
