@@ -19,7 +19,8 @@ struct ReplacementTarget {
     std::string to_tag_;
     std::string from_tag_;
     bool early_only_ = false;
-    bool destination_is_uac_ = false;
+    bool forward_replaces_ = true;
+    bool matched_dialog_is_uac_ = false;
 };
 
 // SIP request admission and responses that do not belong to a live call.

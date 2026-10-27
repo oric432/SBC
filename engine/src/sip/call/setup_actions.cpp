@@ -236,7 +236,7 @@ void SetupActions::establish_call() {
     if (const auto& replacement = session_.replacement_target()) {
         session_.call_manager()->terminate_replaced_session(
             replacement->replaced_session_id_,
-            replacement->destination_is_uac_);
+            replacement->matched_dialog_is_uac_);
     }
 }
 

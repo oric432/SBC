@@ -396,7 +396,8 @@ TEST_CASE("translated Replaces tags follow the destination dialog role", "[sip_r
         CHECK(target.to_tag_ == "remote-tag");
         CHECK(target.from_tag_ == "local-tag");
         CHECK(target.early_only_);
-        CHECK(target.destination_is_uac_);
+        CHECK(target.forward_replaces_);
+        CHECK_FALSE(target.matched_dialog_is_uac_);
     }
 
     SECTION("UAS dialog uses local To tag and remote From tag") {
@@ -405,7 +406,8 @@ TEST_CASE("translated Replaces tags follow the destination dialog role", "[sip_r
         CHECK(target.to_tag_ == "local-tag");
         CHECK(target.from_tag_ == "remote-tag");
         CHECK(target.early_only_);
-        CHECK_FALSE(target.destination_is_uac_);
+        CHECK(target.forward_replaces_);
+        CHECK_FALSE(target.matched_dialog_is_uac_);
     }
 }
 

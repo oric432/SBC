@@ -37,7 +37,8 @@ ReplacementTarget SipRequestActions::make_replacement_target(
         .to_tag_ = {to_tag.ptr, static_cast<std::size_t>(to_tag.slen)},
         .from_tag_ = {from_tag.ptr, static_cast<std::size_t>(from_tag.slen)},
         .early_only_ = early_only,
-        .destination_is_uac_ = role == PJSIP_ROLE_UAC};
+        .forward_replaces_ = true,
+        .matched_dialog_is_uac_ = false};
 }
 
 std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::resolve_replacement(
@@ -110,12 +111,28 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
         leg = Leg::kCallee;
     }
 
+    pjsip_inv_session* matched_invite = pjsip_dlg_get_inv_session(dialog);
+    const bool matched_dialog_is_uac = matched_invite != nullptr && matched_invite->role == PJSIP_ROLE_UAC;
+    const bool matched_early_uac =
+        matched_invite != nullptr && matched_invite->state == PJSIP_INV_STATE_EARLY && matched_dialog_is_uac;
+
     pjsip_dlg_dec_lock(dialog);
 
     if (!leg.has_value()) {
         respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
 
         return std::unexpected("Replaces dialog does not belong to either CallSession leg");
+    }
+
+    if (matched_early_uac) {
+        return ReplacementTarget{
+            .replaced_session_id_ = session->call_id(),
+            .call_id_ = {},
+            .to_tag_ = {},
+            .from_tag_ = {},
+            .early_only_ = early_only,
+            .forward_replaces_ = false,
+            .matched_dialog_is_uac_ = true};
     }
 
     const auto& destination_leg = session->leg(other(*leg));
@@ -172,6 +189,7 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
     ReplacementTarget target =
         make_replacement_target(call_id, local_tag, remote_tag, destination_invite->role, early_only);
     target.replaced_session_id_ = session->call_id();
+    target.matched_dialog_is_uac_ = matched_dialog_is_uac;
 
     pjsip_dlg_dec_lock(destination_dialog);
 

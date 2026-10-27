@@ -194,7 +194,7 @@ bool OfferAnswerActions::send_outbound_invite() {
         pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(new_hdr));
     }
 
-    if (const auto& replacement = session_.replacement_target()) {
+    if (const auto& replacement = session_.replacement_target(); replacement && replacement->forward_replaces_) {
         // Force unsupported peers to reject instead of ignoring Replaces and creating an extra call.
         require_replaces(tdata->msg, tdata->pool);
         pjsip_replaces_hdr* replaces = pjsip_replaces_hdr_create(tdata->pool);
