@@ -210,6 +210,7 @@ bool SetupActions::cancel_call() {
         session_.exchange()->stop();
         session_.release_exchange();
     }
+    Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TERMINATED);
     Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED);
     return session_.inv_callee() == nullptr || session_.inv_callee()->state == PJSIP_INV_STATE_DISCONNECTED;
 }

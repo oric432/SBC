@@ -51,10 +51,30 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
         return std::unexpected("Replaces must contain exactly one to-tag and one from-tag");
     }
 
-    pjsip_dialog* dialog = nullptr;
-    pjsip_tx_data* response = nullptr;
+    static std::string replaces_s = "Replaces";
+    pj_str_t replaces_name = pj_str(replaces_s.data());
+    const auto* replaces = static_cast<const pjsip_replaces_hdr*>(
+        pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_name, nullptr));
 
-    const pj_status_t status = pjsip_replaces_verify_request(rx_data, &dialog, PJ_TRUE, &response);
+    pjsip_dialog* dialog = nullptr;
+    bool matched_early_uac = false;
+    if (replaces != nullptr &&
+        pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_name, replaces->next) == nullptr) {
+        dialog = pjsip_ua_find_dialog(&replaces->call_id, &replaces->from_tag, &replaces->to_tag, PJ_TRUE);
+        if (dialog != nullptr) {
+            const pjsip_inv_session* invite = pjsip_dlg_get_inv_session(dialog);
+            matched_early_uac =
+                invite != nullptr && invite->role == PJSIP_ROLE_UAC && invite->state == PJSIP_INV_STATE_EARLY;
+            if (!matched_early_uac) {
+                pjsip_dlg_dec_lock(dialog);
+                dialog = nullptr;
+            }
+        }
+    }
+
+    pjsip_tx_data* response = nullptr;
+    const pj_status_t status =
+        matched_early_uac ? PJ_SUCCESS : pjsip_replaces_verify_request(rx_data, &dialog, PJ_TRUE, &response);
 
     if (status != PJ_SUCCESS) {
         if (response != nullptr) {
@@ -82,10 +102,6 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
         return std::nullopt;
     }
 
-    static std::string replaces_s = "Replaces";
-    static pj_str_t replaces_name = pj_str(replaces_s.data());
-    const auto* replaces = static_cast<const pjsip_replaces_hdr*>(
-        pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_name, nullptr));
     if (replaces == nullptr) {
         pjsip_dlg_dec_lock(dialog);
         respond_stateless(rx_data, PJSIP_SC_INTERNAL_SERVER_ERROR);
@@ -113,9 +129,6 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
 
     pjsip_inv_session* matched_invite = pjsip_dlg_get_inv_session(dialog);
     const bool matched_dialog_is_uac = matched_invite != nullptr && matched_invite->role == PJSIP_ROLE_UAC;
-    const bool matched_early_uac =
-        matched_invite != nullptr && matched_invite->state == PJSIP_INV_STATE_EARLY && matched_dialog_is_uac;
-
     pjsip_dlg_dec_lock(dialog);
 
     if (!leg.has_value()) {
