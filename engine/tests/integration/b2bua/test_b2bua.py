@@ -1036,6 +1036,13 @@ class _B2buaCall:
             f"from-tag={_sip_tag(self.outgoing_invite.text, 'From')}"
         )
 
+    @property
+    def callee_dialog_replaces_for_sbc(self) -> str:
+        return (
+            f"{self.outgoing_call_id};to-tag={_sip_tag(self.outgoing_invite.text, 'From')};"
+            f"from-tag={_sip_tag(self.outgoing_progress, 'To')}"
+        )
+
 
 def _start_raw_call(caller: _RawSipPeer, callee: _RawSipPeer, *, confirm: bool) -> _B2buaCall:
     incoming = caller.invite()
@@ -1068,23 +1075,6 @@ def _accept_replacement(
     assert _header_value(outbound.text, "Call-ID") != replacement.call_id
     assert _header_value(outbound.text, "Replaces") == expected_replaces
     assert "replaces" in _header_value(outbound.text, "Require").lower()
-    callee.reply(outbound, 200, to_tag=f"replacement-{uuid.uuid4().hex[:10]}", body=_raw_sdp(42002))
-    ack = callee.request("ACK", _header_value(outbound.text, "Call-ID"))
-    assert _sip_cseq(ack.text) == (_sip_cseq(outbound.text)[0], "ACK")
-    replacement.final = caller.response("INVITE", replacement.call_id, 200).text
-    caller.ack(replacement)
-    return outbound
-
-
-def _accept_local_early_replacement(
-    caller: _RawSipPeer,
-    callee: _RawSipPeer,
-    replacement: _InboundDialog,
-) -> _SipDatagram:
-    outbound = callee.request("INVITE")
-    assert _header_value(outbound.text, "Call-ID") != replacement.call_id
-    assert not re.search(r"^Replaces:", outbound.text, re.MULTILINE | re.IGNORECASE)
-    assert not re.search(r"^Require:.*\breplaces\b", outbound.text, re.MULTILINE | re.IGNORECASE)
     callee.reply(outbound, 200, to_tag=f"replacement-{uuid.uuid4().hex[:10]}", body=_raw_sdp(42002))
     ack = callee.request("ACK", _header_value(outbound.text, "Call-ID"))
     assert _sip_cseq(ack.text) == (_sip_cseq(outbound.text)[0], "ACK")
@@ -1149,13 +1139,18 @@ def test_b2bua_invite_replaces_confirmed_dialog_terminates_old_call_with_bye(sbc
     assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
 
 
-def test_b2bua_invite_replaces_early_uac_dialog_cancels_old_invite(sbc_engine, ports):
+def test_b2bua_invite_replaces_early_uac_dialog_forwards_replaces_and_cancels_old_invite(sbc_engine, ports):
     caller = _RawSipPeer(ports.sbc_port)
     callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
     try:
         old_call = _start_raw_call(caller, callee, confirm=False)
-        replacement = caller.invite(replaces=old_call.callee_facing_replaces, early_only=True)
-        replacement_outbound = _accept_local_early_replacement(caller, callee, replacement)
+        replacement = caller.invite(replaces=old_call.callee_dialog_replaces_for_sbc, early_only=True)
+        replacement_outbound = _accept_replacement(
+            caller,
+            callee,
+            replacement,
+            old_call.caller_facing_replaces,
+        )
 
         cancel = callee.request("CANCEL", old_call.outgoing_call_id)
         assert _sip_cseq(cancel.text) == (_sip_cseq(old_call.outgoing_invite.text)[0], "CANCEL")
@@ -1268,8 +1263,13 @@ def test_b2bua_invite_replaces_cancel_200_race_acks_then_byes_old_dialog(sbc_eng
     callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
     try:
         old_call = _start_raw_call(caller, callee, confirm=False)
-        replacement = caller.invite(replaces=old_call.callee_facing_replaces, early_only=True)
-        replacement_outbound = _accept_local_early_replacement(caller, callee, replacement)
+        replacement = caller.invite(replaces=old_call.callee_dialog_replaces_for_sbc, early_only=True)
+        replacement_outbound = _accept_replacement(
+            caller,
+            callee,
+            replacement,
+            old_call.caller_facing_replaces,
+        )
 
         cancel = callee.request("CANCEL", old_call.outgoing_call_id)
         assert _sip_cseq(cancel.text)[1] == "CANCEL"

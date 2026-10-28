@@ -33,14 +33,14 @@ struct SipRequestActionsTestAccess {
         return SipRequestActions::replacement_rejection_code(&invite, early_only);
     }
 
-    static ReplacementTarget make_replacement_target(pjsip_role_e role) {
+    static ReplacementTarget make_replacement_target() {
         std::string call_id_s = "destination-call";
         std::string local_tag_s = "local-tag";
         std::string remote_tag_s = "remote-tag";
         const pj_str_t call_id = pj_str(call_id_s.data());
         const pj_str_t local_tag = pj_str(local_tag_s.data());
         const pj_str_t remote_tag = pj_str(remote_tag_s.data());
-        return SipRequestActions::make_replacement_target(call_id, local_tag, remote_tag, role, true);
+        return SipRequestActions::make_replacement_target(call_id, local_tag, remote_tag, true);
     }
 };
 
@@ -355,60 +355,34 @@ TEST_CASE("destination Replaces validation follows RFC 3891 state rules", "[sip_
         CHECK_FALSE(SipRequestActionsTestAccess::replacement_rejection_code(invite, false).has_value());
     }
 
-    SECTION("early UAC dialogs are replaceable") {
+    SECTION("an early dialog originated by the destination peer is replaceable") {
         invite.state = PJSIP_INV_STATE_EARLY;
-        invite.role = PJSIP_ROLE_UAC;
+        invite.role = PJSIP_ROLE_UAS;
         CHECK_FALSE(SipRequestActionsTestAccess::replacement_rejection_code(invite, true).has_value());
     }
 
-    SECTION("early UAS dialogs respect the PJSIP configuration") {
+    SECTION("an early dialog originated by the SBC is not replaceable remotely") {
         invite.state = PJSIP_INV_STATE_EARLY;
-        invite.role = PJSIP_ROLE_UAS;
-        const pj_bool_t original = pjsip_cfg()->endpt.accept_replace_in_early_state;
-
-        pjsip_cfg()->endpt.accept_replace_in_early_state = PJ_FALSE;
+        invite.role = PJSIP_ROLE_UAC;
         CHECK(
             SipRequestActionsTestAccess::replacement_rejection_code(invite, false) == PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
-
-        pjsip_cfg()->endpt.accept_replace_in_early_state = PJ_TRUE;
-        CHECK_FALSE(SipRequestActionsTestAccess::replacement_rejection_code(invite, false).has_value());
-
-        pjsip_cfg()->endpt.accept_replace_in_early_state = original;
     }
 
-    SECTION("pre-early UAS dialogs do not qualify even when early replacement is enabled") {
+    SECTION("pre-early dialogs do not qualify") {
         invite.state = PJSIP_INV_STATE_INCOMING;
         invite.role = PJSIP_ROLE_UAS;
-        const pj_bool_t original = pjsip_cfg()->endpt.accept_replace_in_early_state;
-        pjsip_cfg()->endpt.accept_replace_in_early_state = PJ_TRUE;
-
         CHECK(
             SipRequestActionsTestAccess::replacement_rejection_code(invite, false) == PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
-
-        pjsip_cfg()->endpt.accept_replace_in_early_state = original;
     }
 }
 
-TEST_CASE("translated Replaces tags follow the destination dialog role", "[sip_request_actions]") {
-    SECTION("UAC dialog uses remote To tag and local From tag") {
-        const auto target = SipRequestActionsTestAccess::make_replacement_target(PJSIP_ROLE_UAC);
-        CHECK(target.call_id_ == "destination-call");
-        CHECK(target.to_tag_ == "remote-tag");
-        CHECK(target.from_tag_ == "local-tag");
-        CHECK(target.early_only_);
-        CHECK(target.forward_replaces_);
-        CHECK_FALSE(target.matched_dialog_is_uac_);
-    }
-
-    SECTION("UAS dialog uses local To tag and remote From tag") {
-        const auto target = SipRequestActionsTestAccess::make_replacement_target(PJSIP_ROLE_UAS);
-        CHECK(target.call_id_ == "destination-call");
-        CHECK(target.to_tag_ == "local-tag");
-        CHECK(target.from_tag_ == "remote-tag");
-        CHECK(target.early_only_);
-        CHECK(target.forward_replaces_);
-        CHECK_FALSE(target.matched_dialog_is_uac_);
-    }
+TEST_CASE("translated Replaces tags use the destination peer's dialog view", "[sip_request_actions]") {
+    const auto target = SipRequestActionsTestAccess::make_replacement_target();
+    CHECK(target.call_id_ == "destination-call");
+    CHECK(target.to_tag_ == "remote-tag");
+    CHECK(target.from_tag_ == "local-tag");
+    CHECK(target.early_only_);
+    CHECK_FALSE(target.matched_dialog_is_uac_);
 }
 
 TEST_CASE("outbound Replaces requires extension support", "[sip_request_actions]") {
