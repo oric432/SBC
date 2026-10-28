@@ -1146,6 +1146,45 @@ def test_b2bua_invite_replaces_confirmed_dialog_terminates_old_call_with_bye(sbc
     assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
 
 
+def test_b2bua_invite_replaces_destination_acceptance_ends_old_call_before_replacement_ack(sbc_engine, ports):
+    """RFC 3891 lets the destination end its old dialog after accepting the
+    replacement, before the incoming replacement INVITE has an ACK."""
+    caller = _RawSipPeer(ports.sbc_port)
+    callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
+    try:
+        old_call = _start_raw_call(caller, callee, confirm=True)
+        replacement = caller.invite(replaces=old_call.caller_facing_replaces)
+        outbound = callee.request("INVITE")
+        assert _header_value(outbound.text, "Replaces") == old_call.callee_facing_replaces
+        callee.reply(outbound, 200, to_tag=f"replacement-{uuid.uuid4().hex[:10]}", body=_raw_sdp(42002))
+        callee.request("ACK", _header_value(outbound.text, "Call-ID"))
+        replacement.final = caller.response("INVITE", replacement.call_id, 200).text
+
+        # A compliant destination ends the dialog Replaces named; deliberately
+        # do not ACK the replacement on its caller-facing leg.
+        old_bye = callee._build_request(
+            "BYE",
+            old_call.outgoing_call_id,
+            _sip_tag(old_call.outgoing_progress, "To"),
+            _sip_tag(old_call.outgoing_invite.text, "From"),
+            2,
+            f"z9hG4bK-{uuid.uuid4().hex[:12]}",
+            [],
+            "",
+        )
+        callee._sock.sendto(old_bye.encode(), callee._sbc)
+
+        caller_bye = caller.request("BYE", old_call.incoming.call_id)
+        caller.reply(caller_bye, 200)
+        callee.response("BYE", old_call.outgoing_call_id, 200)
+        callee.assert_no_request("BYE", _header_value(outbound.text, "Call-ID"))
+    finally:
+        caller.close()
+        callee.close()
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
 def test_b2bua_invite_replaces_early_uac_dialog_forwards_replaces_and_cancels_old_invite(sbc_engine, ports):
     caller = _RawSipPeer(ports.sbc_port)
     callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
