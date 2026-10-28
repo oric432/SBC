@@ -118,14 +118,18 @@ bool OfferAnswerActions::create_outbound_leg(const std::string& destination) {
     std::string local_uri_s = cfg.caller_facing_from_uri(session_.caller_display_name(), caller_user);
     std::string local_contact_s = cfg.own_contact_uri();
     std::string dest_s = destination;
+    std::string target_s = session_.replacement_target() ? session_.replacement_target()->target_uri_ : dest_s;
 
     const pj_str_t local_uri = pj_str(local_uri_s.data());
     const pj_str_t local_contact = pj_str(local_contact_s.data());
     const pj_str_t remote_uri = pj_str(dest_s.data());
+    const pj_str_t target_uri = pj_str(target_s.data());
 
     pjsip_dialog* dlg = nullptr;
+    // A replacement must target the peer that owns the old dialog. Keep the
+    // ordinary route-derived URI as the new dialog's logical remote identity.
     pj_status_t status =
-        pjsip_dlg_create_uac(pjsip_ua_instance(), &local_uri, &local_contact, &remote_uri, &remote_uri, &dlg);
+        pjsip_dlg_create_uac(pjsip_ua_instance(), &local_uri, &local_contact, &remote_uri, &target_uri, &dlg);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] pjsip_dlg_create_uac failed ({})", session_.call_id(), status);
         return false;

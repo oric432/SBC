@@ -37,10 +37,12 @@ struct SipRequestActionsTestAccess {
         std::string call_id_s = "destination-call";
         std::string local_tag_s = "local-tag";
         std::string remote_tag_s = "remote-tag";
+        std::string target_uri_s = "sip:destination@example.com:5070;transport=udp";
         const pj_str_t call_id = pj_str(call_id_s.data());
         const pj_str_t local_tag = pj_str(local_tag_s.data());
         const pj_str_t remote_tag = pj_str(remote_tag_s.data());
-        return SipRequestActions::make_replacement_target(call_id, local_tag, remote_tag, true);
+        const pj_str_t target_uri = pj_str(target_uri_s.data());
+        return SipRequestActions::make_replacement_target(call_id, local_tag, remote_tag, target_uri, true);
     }
 };
 
@@ -381,6 +383,7 @@ TEST_CASE("translated Replaces tags use the destination peer's dialog view", "[s
     CHECK(target.call_id_ == "destination-call");
     CHECK(target.to_tag_ == "remote-tag");
     CHECK(target.from_tag_ == "local-tag");
+    CHECK(target.target_uri_ == "sip:destination@example.com:5070;transport=udp");
     CHECK(target.early_only_);
     CHECK_FALSE(target.matched_dialog_is_uac_);
 }

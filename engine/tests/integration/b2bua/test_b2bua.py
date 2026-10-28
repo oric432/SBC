@@ -1030,6 +1030,10 @@ class _B2buaCall:
         return f"{self.incoming.call_id};to-tag={self.incoming.to_tag};from-tag={self.incoming.from_tag}"
 
     @property
+    def caller_dialog_replaces_for_peer(self) -> str:
+        return f"{self.incoming.call_id};to-tag={self.incoming.from_tag};from-tag={self.incoming.to_tag}"
+
+    @property
     def callee_facing_replaces(self) -> str:
         return (
             f"{self.outgoing_call_id};to-tag={_sip_tag(self.outgoing_progress, 'To')};"
@@ -1066,33 +1070,35 @@ def _start_raw_call(caller: _RawSipPeer, callee: _RawSipPeer, *, confirm: bool) 
 
 
 def _accept_replacement(
-    caller: _RawSipPeer,
-    callee: _RawSipPeer,
+    replacer: _RawSipPeer,
+    target: _RawSipPeer,
     replacement: _InboundDialog,
     expected_replaces: str,
+    expected_target_uri: str,
 ) -> _SipDatagram:
-    outbound = callee.request("INVITE")
+    outbound = target.request("INVITE")
     assert _header_value(outbound.text, "Call-ID") != replacement.call_id
+    assert outbound.text.split(" ", 2)[1] == expected_target_uri
     assert _header_value(outbound.text, "Replaces") == expected_replaces
     assert "replaces" in _header_value(outbound.text, "Require").lower()
-    callee.reply(outbound, 200, to_tag=f"replacement-{uuid.uuid4().hex[:10]}", body=_raw_sdp(42002))
-    ack = callee.request("ACK", _header_value(outbound.text, "Call-ID"))
+    target.reply(outbound, 200, to_tag=f"replacement-{uuid.uuid4().hex[:10]}", body=_raw_sdp(42002))
+    ack = target.request("ACK", _header_value(outbound.text, "Call-ID"))
     assert _sip_cseq(ack.text) == (_sip_cseq(outbound.text)[0], "ACK")
-    replacement.final = caller.response("INVITE", replacement.call_id, 200).text
-    caller.ack(replacement)
+    replacement.final = replacer.response("INVITE", replacement.call_id, 200).text
+    replacer.ack(replacement)
     return outbound
 
 
 def _end_call_from_caller(
     caller: _RawSipPeer,
-    callee: _RawSipPeer,
+    target: _RawSipPeer,
     incoming: _InboundDialog,
     outgoing_call_id: str,
 ) -> None:
     caller.bye(incoming)
-    outbound_bye = callee.request("BYE", outgoing_call_id)
+    outbound_bye = target.request("BYE", outgoing_call_id)
     assert _sip_cseq(outbound_bye.text)[1] == "BYE"
-    callee.reply(outbound_bye, 200)
+    target.reply(outbound_bye, 200)
     response = caller.response("BYE", incoming.call_id, 200)
     assert _sip_cseq(response.text)[1] == "BYE"
 
@@ -1123,6 +1129,7 @@ def test_b2bua_invite_replaces_confirmed_dialog_terminates_old_call_with_bye(sbc
             callee,
             replacement,
             old_call.callee_facing_replaces,
+            _header_value(old_call.outgoing_progress, "Contact").strip("<>"),
         )
 
         _answer_replacement_byes(caller, callee, old_call)
@@ -1147,9 +1154,10 @@ def test_b2bua_invite_replaces_early_uac_dialog_forwards_replaces_and_cancels_ol
         replacement = caller.invite(replaces=old_call.callee_dialog_replaces_for_sbc, early_only=True)
         replacement_outbound = _accept_replacement(
             caller,
-            callee,
+            caller,
             replacement,
-            old_call.caller_facing_replaces,
+            f"{old_call.caller_dialog_replaces_for_peer};early-only",
+            _header_value(old_call.incoming.invite, "Contact").strip("<>"),
         )
 
         cancel = callee.request("CANCEL", old_call.outgoing_call_id)
@@ -1168,7 +1176,7 @@ def test_b2bua_invite_replaces_early_uac_dialog_forwards_replaces_and_cancels_ol
 
         _end_call_from_caller(
             caller,
-            callee,
+            caller,
             replacement,
             _header_value(replacement_outbound.text, "Call-ID"),
         )
@@ -1266,9 +1274,10 @@ def test_b2bua_invite_replaces_cancel_200_race_acks_then_byes_old_dialog(sbc_eng
         replacement = caller.invite(replaces=old_call.callee_dialog_replaces_for_sbc, early_only=True)
         replacement_outbound = _accept_replacement(
             caller,
-            callee,
+            caller,
             replacement,
-            old_call.caller_facing_replaces,
+            f"{old_call.caller_dialog_replaces_for_peer};early-only",
+            _header_value(old_call.incoming.invite, "Contact").strip("<>"),
         )
 
         cancel = callee.request("CANCEL", old_call.outgoing_call_id)
@@ -1292,7 +1301,7 @@ def test_b2bua_invite_replaces_cancel_200_race_acks_then_byes_old_dialog(sbc_eng
         callee.assert_no_request("CANCEL", old_call.outgoing_call_id)
         _end_call_from_caller(
             caller,
-            callee,
+            caller,
             replacement,
             _header_value(replacement_outbound.text, "Call-ID"),
         )

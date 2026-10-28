@@ -1,5 +1,7 @@
 #include "sip_request_actions.hpp"
 
+#include <array>
+
 #include <pjsip-ua/sip_replaces.h>
 #include <pjsip_ua.h>
 
@@ -40,12 +42,14 @@ ReplacementTarget SipRequestActions::make_replacement_target(
     const pj_str_t& call_id,
     const pj_str_t& local_tag,
     const pj_str_t& remote_tag,
+    const pj_str_t& target_uri,
     bool early_only) {
     return {
         .replaced_session_id_ = {},
         .call_id_ = to_std_string(call_id),
         .to_tag_ = to_std_string(remote_tag),
         .from_tag_ = to_std_string(local_tag),
+        .target_uri_ = to_std_string(target_uri),
         .early_only_ = early_only,
         .matched_dialog_is_uac_ = false};
 }
@@ -166,7 +170,7 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
     }
 
     if (destination_dialog->call_id == nullptr || destination_dialog->remote.info == nullptr ||
-        destination_dialog->local.info == nullptr) {
+        destination_dialog->local.info == nullptr || destination_dialog->target == nullptr) {
         pjsip_dlg_dec_lock(destination_dialog);
         respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
         return std::unexpected("Destination dialog has incomplete SIP identifiers");
@@ -182,7 +186,18 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
         return std::unexpected("Destination dialog has empty Call-ID or tags");
     }
 
-    auto target = make_replacement_target(call_id, local_tag, remote_tag, early_only);
+    // Snapshot while locked: the old dialog can terminate before the new leg exists.
+    std::array<char, PJSIP_MAX_URL_SIZE> target_buffer{};
+    const pj_ssize_t target_length =
+        pjsip_uri_print(PJSIP_URI_IN_REQ_URI, destination_dialog->target, target_buffer.data(), target_buffer.size());
+    if (target_length <= 0) {
+        pjsip_dlg_dec_lock(destination_dialog);
+        respond_stateless(rx_data, PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+        return std::unexpected("Destination dialog has an unusable remote target");
+    }
+    const pj_str_t target_uri = {.ptr = target_buffer.data(), .slen = target_length};
+
+    auto target = make_replacement_target(call_id, local_tag, remote_tag, target_uri, early_only);
     target.replaced_session_id_ = session->call_id();
     target.matched_dialog_is_uac_ = matched_dialog_is_uac;
 

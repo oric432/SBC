@@ -18,6 +18,7 @@ struct ReplacementTarget {
     std::string call_id_;
     std::string to_tag_;
     std::string from_tag_;
+    std::string target_uri_;
     bool early_only_ = false;
     bool matched_dialog_is_uac_ = false;
 };
@@ -55,6 +56,7 @@ private:
         const pj_str_t& call_id,
         const pj_str_t& local_tag,
         const pj_str_t& remote_tag,
+        const pj_str_t& target_uri,
         bool early_only);
     void respond_stateless(pjsip_rx_data* rx_data, int code);
 
