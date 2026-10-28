@@ -88,6 +88,7 @@ template bool SetupRunner::process_event(const Setup::CancellationCompleted&);
 template bool SetupRunner::is<Setup::Done>() const;
 template bool SetupRunner::is<Setup::Established>() const;
 template bool SetupRunner::is<Setup::Cancelling>() const;
+template void SetupRunner::set_state_for_test_only<Setup::Negotiating>();
 template void SetupRunner::set_state_for_test_only<Setup::Established>();
 
 using DialogRunner = SmRunner<DialogSm<IDialogActions>, IDialogActions>;
@@ -99,6 +100,7 @@ template bool DialogRunner::process_event(const ReferReceived&);
 template bool DialogRunner::process_event(const ReferCompleted&);
 template bool DialogRunner::process_event(const Dialog::ExchangeFinished&);
 template bool DialogRunner::process_event(const CallEnded&);
+template bool DialogRunner::process_event(const CallReplaced&);
 template bool DialogRunner::process_event(const CallError&);
 template bool DialogRunner::is<Active>() const;
 template bool DialogRunner::is<Reinviting>() const;

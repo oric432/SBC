@@ -210,6 +210,7 @@ bool SetupActions::cancel_call() {
         session_.exchange()->stop();
         session_.release_exchange();
     }
+    Inv::end_session(session_.inv_caller(), PJSIP_SC_REQUEST_TERMINATED);
     Inv::end_session(session_.inv_callee(), PJSIP_SC_REQUEST_TERMINATED);
     return session_.inv_callee() == nullptr || session_.inv_callee()->state == PJSIP_INV_STATE_DISCONNECTED;
 }
@@ -233,6 +234,11 @@ void SetupActions::establish_call() {
         callee_rtp ? std::format("{}:{}", callee_rtp->address().to_string(), callee_rtp->port()) : "unknown",
         callee_relay_port.value_or(0));
     session_.report_call_answered();
+    if (const auto& replacement = session_.replacement_target()) {
+        session_.call_manager()->terminate_replaced_session(
+            replacement->replaced_session_id_,
+            replacement->matched_dialog_is_uac_);
+    }
 }
 
 void SetupActions::terminate_call() {

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <string>
+
 #include <boost/asio/any_io_executor.hpp>
 #include <pjsip.h>
 
@@ -9,6 +12,16 @@
 namespace SbcEngine {
 class CallSession;
 class CallManager;
+
+struct ReplacementTarget {
+    std::string replaced_session_id_;
+    std::string call_id_;
+    std::string to_tag_;
+    std::string from_tag_;
+    std::string target_uri_;
+    bool early_only_ = false;
+    bool matched_dialog_is_uac_ = false;
+};
 
 // SIP request admission and responses that do not belong to a live call.
 // Creates signaling legs, but leaves lifecycle activation to MessageRouter.
@@ -25,12 +38,26 @@ public:
         , executor_(std::move(executor)) {}
 
     CallSession* create_call(pjsip_rx_data* rx_data);
+    [[nodiscard]] std::expected<std::optional<ReplacementTarget>, std::string> resolve_replacement(
+        pjsip_rx_data* rx_data);
     void handle_unmatched_dialog_request(pjsip_rx_data* rx_data);
     void handle_unmatched_ack(pjsip_rx_data* rx_data);
+    void reject_bad_request(pjsip_rx_data* rx_data);
     void reject_unsupported_method(pjsip_rx_data* rx_data);
     void reject_out_of_dialog_refer(pjsip_rx_data* rx_data);
 
 private:
+    friend struct SipRequestActionsTestAccess;
+
+    [[nodiscard]] static std::optional<int> replacement_rejection_code(
+        const pjsip_inv_session* invite,
+        bool early_only);
+    [[nodiscard]] static ReplacementTarget make_replacement_target(
+        const pj_str_t& call_id,
+        const pj_str_t& local_tag,
+        const pj_str_t& remote_tag,
+        const pj_str_t& target_uri,
+        bool early_only);
     void respond_stateless(pjsip_rx_data* rx_data, int code);
 
     PjContext* ctx_;

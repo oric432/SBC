@@ -13,6 +13,7 @@ namespace {
 const char* termination_reason_text(TerminationReason reason) {
     switch (reason) {
     case TerminationReason::kEngineRequested: return "call ended by the engine";
+    case TerminationReason::kReplaced: return "call replaced by a new dialog";
     case TerminationReason::kHoldTimeout: return "hold timeout expired";
     case TerminationReason::kRtpInactivity: return "RTP inactivity timeout expired";
     case TerminationReason::kMediaNegotiationFailed: return "media negotiation failed";

@@ -22,6 +22,7 @@
 #include "sip/sm/dialog_sm_runner.hpp"
 #include "sip/sm/setup_sm_runner.hpp"
 #include "sip/call/offer_answer_exchange.hpp"
+#include "sip/router/sip_request_actions.hpp"
 #include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
@@ -127,6 +128,8 @@ public:
     [[nodiscard]] const std::string& caller_display_name() const { return caller_display_name_; }
     [[nodiscard]] const std::string& outbound_destination() const { return outbound_destination_; }
     void set_outbound_destination(std::string dest) { outbound_destination_ = std::move(dest); }
+    [[nodiscard]] const std::optional<ReplacementTarget>& replacement_target() const { return replacement_target_; }
+    void set_replacement_target(std::optional<ReplacementTarget> target) { replacement_target_ = std::move(target); }
 
     // rx_data of the request currently driving the setup SM's cascade: set at
     // construction from the inbound INVITE, cleared once that cascade settles
@@ -195,6 +198,7 @@ private:
     std::string caller_uri_;
     std::string caller_display_name_;
     std::string outbound_destination_;
+    std::optional<ReplacementTarget> replacement_target_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.
     SetupActions setup_actions_;

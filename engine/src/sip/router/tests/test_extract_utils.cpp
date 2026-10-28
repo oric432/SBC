@@ -5,21 +5,50 @@
 
 #include <pjlib-util.h>
 #include <pjsip.h>
+#include <pjsip-ua/sip_replaces.h>
 
 #include "sip/router/extract_utils.hpp"
+#include "sip/router/sip_request_actions.hpp"
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
+#include "sip/call/offer_answer_actions.hpp"
 #include "sip/registrar/binding_store.hpp"
 #include "sip/registrar/users_store.hpp"
 #include "sip/route_table/routes_store.hpp"
+#include "sm/setup_sm.hpp"
 
 namespace SbcEngine {
 
 struct CallSessionTestAccess {
     static void establish(CallSession& session) { session.setup_sm_.set_state_for_test_only<Setup::Established>(); }
+    static void negotiate(CallSession& session) { session.setup_sm_.set_state_for_test_only<Setup::Negotiating>(); }
 
     static std::optional<std::chrono::steady_clock::time_point>& hold_started_at(CallSession& session) {
         return session.hold_started_at_;
+    }
+};
+
+struct SipRequestActionsTestAccess {
+    static std::optional<int> replacement_rejection_code(const pjsip_inv_session& invite, bool early_only) {
+        return SipRequestActions::replacement_rejection_code(&invite, early_only);
+    }
+
+    static ReplacementTarget make_replacement_target() {
+        std::string call_id_s = "destination-call";
+        std::string local_tag_s = "local-tag";
+        std::string remote_tag_s = "remote-tag";
+        std::string target_uri_s = "sip:destination@example.com:5070;transport=udp";
+        const pj_str_t call_id = pj_str(call_id_s.data());
+        const pj_str_t local_tag = pj_str(local_tag_s.data());
+        const pj_str_t remote_tag = pj_str(remote_tag_s.data());
+        const pj_str_t target_uri = pj_str(target_uri_s.data());
+        return SipRequestActions::make_replacement_target(call_id, local_tag, remote_tag, target_uri, true);
+    }
+};
+
+struct OfferAnswerActionsTestAccess {
+    static void require_replaces(pjsip_msg* message, pj_pool_t* pool) {
+        OfferAnswerActions::require_replaces(message, pool);
     }
 };
 
@@ -41,6 +70,7 @@ public:
         pjlib_util_init();
         pj_caching_pool_init(&caching_pool_, &pj_pool_factory_default_policy, 0);
         pjsip_endpt_create(&caching_pool_.factory, "extract_utils_test", &endpt_);
+        pjsip_replaces_init_module(endpt_);
     }
     ~PjEndpoint() {
         if (endpt_ != nullptr) {
@@ -79,9 +109,9 @@ private:
     pj_pool_t* pool_;
 };
 
-// Parses a raw SIP message into a real rx_data the same way PJSIP's own
-// transport layer does: pjsip_parse_rdata populates msg_info.cid/max_fwd/etc
-// as it parses, which is exactly what the extract_* functions read.
+// Parses a raw SIP message into a real rx_data the same way PJSIP's transport
+// layer does. The transport sets msg_buf/len before pjsip_parse_rdata(), which
+// then populates msg_info.cid/max_fwd/etc.
 //
 // The parser stores header/body fields as pj_str_t views directly into the
 // buffer it was given (zero-copy), so that buffer must outlive the returned
@@ -92,6 +122,8 @@ pjsip_rx_data parse_rdata(pj_pool_t* pool, const std::string& raw) {
     rdata.tp_info.pool = pool;
     auto* buf = static_cast<char*>(pj_pool_alloc(pool, raw.size() + 1));
     std::memcpy(buf, raw.c_str(), raw.size() + 1);
+    rdata.msg_info.msg_buf = buf;
+    rdata.msg_info.len = static_cast<int>(raw.size());
     pjsip_parse_rdata(buf, raw.size(), &rdata);
     return rdata;
 }
@@ -128,6 +160,17 @@ constexpr const char* kInviteNoBody = "INVITE sip:bob@example.com SIP/2.0\r\n"
                                       "Content-Length: 0\r\n"
                                       "\r\n";
 
+constexpr const char* kByeWithReplaces = "BYE sip:bob@example.com SIP/2.0\r\n"
+                                         "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKabc123\r\n"
+                                         "Max-Forwards: 70\r\n"
+                                         "To: <sip:bob@example.com>;tag=def\r\n"
+                                         "From: <sip:alice@example.com>;tag=abc\r\n"
+                                         "Call-ID: abc123@127.0.0.1\r\n"
+                                         "CSeq: 2 BYE\r\n"
+                                         "Replaces: target@example.com;to-tag=target-to;from-tag=target-from\r\n"
+                                         "Content-Length: 0\r\n"
+                                         "\r\n";
+
 } // namespace
 
 TEST_CASE("extract_method returns empty for null rx_data", "[extract_utils]") {
@@ -143,6 +186,72 @@ TEST_CASE("extract_method reads the request method", "[extract_utils]") {
     const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithSdp);
     CHECK(extract_method(&rdata) == "INVITE");
+}
+
+TEST_CASE("has_replaces_header is null-safe", "[extract_utils]") {
+    pjsip_rx_data rdata{};
+    CHECK_FALSE(has_replaces_header(nullptr));
+    CHECK_FALSE(has_replaces_header(&rdata));
+}
+
+TEST_CASE("has_replaces_header detects Replaces independently of the request method", "[extract_utils]") {
+    const ScopedPool pool;
+    auto rdata = parse_rdata(pool.get(), kByeWithReplaces);
+    CHECK(has_replaces_header(&rdata));
+}
+
+TEST_CASE("has_replaces_header returns false when Replaces is absent", "[extract_utils]") {
+    const ScopedPool pool;
+    auto rdata = parse_rdata(pool.get(), kInviteNoBody);
+    CHECK_FALSE(has_replaces_header(&rdata));
+}
+
+TEST_CASE("Replaces contains exactly one to-tag and one from-tag", "[extract_utils]") {
+    const auto make_invite = [](std::string_view replaces) {
+        return std::format(
+            "INVITE sip:bob@example.com SIP/2.0\r\n"
+            "Via: SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bKtags\r\n"
+            "To: <sip:bob@example.com>\r\n"
+            "From: <sip:alice@example.com>;tag=abc\r\n"
+            "Call-ID: tags@127.0.0.1\r\n"
+            "CSeq: 1 INVITE\r\n"
+            "Replaces: {}\r\n"
+            "Content-Length: 0\r\n\r\n",
+            replaces);
+    };
+
+    const ScopedPool pool;
+
+    SECTION("accepts one tag of each kind") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;to-tag=one;from-tag=two"));
+        CHECK(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("matches tag names case-insensitively") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;TO-TAG=one;From-Tag=two"));
+        CHECK(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("rejects a missing to-tag") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;from-tag=two"));
+        CHECK_FALSE(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("rejects a missing from-tag") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;to-tag=one"));
+        CHECK_FALSE(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("rejects duplicate to-tag parameters") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;to-tag=one;from-tag=two;to-tag=three"));
+        CHECK_FALSE(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("rejects duplicate from-tag parameters") {
+        auto rdata = parse_rdata(pool.get(), make_invite("target;to-tag=one;from-tag=two;FROM-TAG=three"));
+        CHECK_FALSE(replaces_has_single_dialog_tags(&rdata));
+    }
+    SECTION("does not count tag-like text inside a quoted generic parameter") {
+        auto rdata = parse_rdata(
+            pool.get(),
+            make_invite("target;note=\"ignored;to-tag=fake;from-tag=fake\";to-tag=one;from-tag=two"));
+        CHECK(replaces_has_single_dialog_tags(&rdata));
+    }
 }
 
 TEST_CASE("extract_sdp returns empty for null rx_data", "[extract_utils]") {
@@ -205,6 +314,123 @@ TEST_CASE("extract_from_display_name reads the From header's display name", "[ex
     const ScopedPool pool;
     auto rdata = parse_rdata(pool.get(), kInviteWithDisplayName);
     CHECK(extract_from_display_name(&rdata) == "Alice");
+}
+
+TEST_CASE("resolve_replacement propagates bad INVITE data", "[sip_request_actions]") {
+    boost::asio::io_context ioc;
+    CallManager manager;
+    SipRequestActions actions{nullptr, &manager, EngineStores{}, ioc.get_executor()};
+
+    CHECK_FALSE(actions.resolve_replacement(nullptr).has_value());
+}
+
+TEST_CASE("resolve_replacement returns no target when Replaces is absent", "[sip_request_actions]") {
+    boost::asio::io_context ioc;
+    CallManager manager;
+    SipRequestActions actions{nullptr, &manager, EngineStores{}, ioc.get_executor()};
+    const ScopedPool pool;
+    auto rdata = parse_rdata(pool.get(), kInviteNoBody);
+
+    const auto result = actions.resolve_replacement(&rdata);
+    REQUIRE(result.has_value());
+    CHECK_FALSE(result->has_value());
+}
+
+TEST_CASE("destination Replaces validation follows RFC 3891 state rules", "[sip_request_actions]") {
+    pjsip_inv_session invite{};
+
+    SECTION("disconnected dialogs are declined") {
+        invite.state = PJSIP_INV_STATE_DISCONNECTED;
+        invite.role = PJSIP_ROLE_UAC;
+        CHECK(SipRequestActionsTestAccess::replacement_rejection_code(invite, true) == PJSIP_SC_DECLINE);
+    }
+
+    SECTION("early-only rejects an established dialog as busy") {
+        invite.state = PJSIP_INV_STATE_CONNECTING;
+        invite.role = PJSIP_ROLE_UAC;
+        CHECK(SipRequestActionsTestAccess::replacement_rejection_code(invite, true) == PJSIP_SC_BUSY_HERE);
+    }
+
+    SECTION("confirmed dialogs are replaceable without early-only") {
+        invite.state = PJSIP_INV_STATE_CONFIRMED;
+        invite.role = PJSIP_ROLE_UAS;
+        CHECK_FALSE(SipRequestActionsTestAccess::replacement_rejection_code(invite, false).has_value());
+    }
+
+    SECTION("an early dialog originated by the destination peer is replaceable") {
+        invite.state = PJSIP_INV_STATE_EARLY;
+        invite.role = PJSIP_ROLE_UAS;
+        CHECK_FALSE(SipRequestActionsTestAccess::replacement_rejection_code(invite, true).has_value());
+    }
+
+    SECTION("an early dialog originated by the SBC is not replaceable remotely") {
+        invite.state = PJSIP_INV_STATE_EARLY;
+        invite.role = PJSIP_ROLE_UAC;
+        CHECK(
+            SipRequestActionsTestAccess::replacement_rejection_code(invite, false) == PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+    }
+
+    SECTION("pre-early dialogs do not qualify") {
+        invite.state = PJSIP_INV_STATE_INCOMING;
+        invite.role = PJSIP_ROLE_UAS;
+        CHECK(
+            SipRequestActionsTestAccess::replacement_rejection_code(invite, false) == PJSIP_SC_CALL_TSX_DOES_NOT_EXIST);
+    }
+}
+
+TEST_CASE("translated Replaces tags use the destination peer's dialog view", "[sip_request_actions]") {
+    const auto target = SipRequestActionsTestAccess::make_replacement_target();
+    CHECK(target.call_id_ == "destination-call");
+    CHECK(target.to_tag_ == "remote-tag");
+    CHECK(target.from_tag_ == "local-tag");
+    CHECK(target.target_uri_ == "sip:destination@example.com:5070;transport=udp");
+    CHECK(target.early_only_);
+    CHECK_FALSE(target.matched_dialog_is_uac_);
+}
+
+TEST_CASE("outbound Replaces requires extension support", "[sip_request_actions]") {
+    const ScopedPool pool;
+    pjsip_msg* message = pjsip_msg_create(pool.get(), PJSIP_REQUEST_MSG);
+
+    OfferAnswerActionsTestAccess::require_replaces(message, pool.get());
+    OfferAnswerActionsTestAccess::require_replaces(message, pool.get());
+
+    const auto* require = static_cast<const pjsip_require_hdr*>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, nullptr));
+    REQUIRE(require != nullptr);
+    REQUIRE(require->count == 1);
+    CHECK(pj_stricmp2(&require->values[0], "replaces") == 0);
+}
+
+TEST_CASE("replacement terminates a confirmed or early UAC old session", "[sip_request_actions][call_session]") {
+    boost::asio::io_context ioc;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* old_session = manager.create_session("old-call", &context, EngineStores{}, ioc.get_executor(), &request);
+
+    SECTION("early UAS old session remains active") {
+        CallSessionTestAccess::negotiate(*old_session);
+        manager.terminate_replaced_session("old-call", false);
+        CHECK(manager.find_by_call_id("old-call") == old_session);
+        CHECK(old_session->dialog_sm().is_active());
+    }
+
+    SECTION("early UAC old session is cancelled") {
+        CallSessionTestAccess::negotiate(*old_session);
+        manager.terminate_replaced_session("old-call", true);
+        CHECK(manager.find_by_call_id("old-call") == nullptr);
+    }
+
+    SECTION("confirmed old session enters BYE termination") {
+        CallSessionTestAccess::establish(*old_session);
+        manager.terminate_replaced_session("old-call", false);
+        CHECK(old_session->dialog_sm().is_terminating());
+    }
+
+    manager.schedule_remove("old-call");
+    manager.purge_scheduled();
 }
 
 TEST_CASE("extract_uri_user extracts the user part of a sip URI", "[extract_utils]") {

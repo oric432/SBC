@@ -1,9 +1,80 @@
 #include "extract_utils.hpp"
 
 #include <array>
+#include <cctype>
 #include <format>
+#include <string_view>
 
 namespace SbcEngine {
+namespace {
+
+std::string_view trim_lws(std::string_view value) {
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+        value.remove_prefix(1);
+    }
+    while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+        value.remove_suffix(1);
+    }
+    return value;
+}
+
+bool ascii_iequals(std::string_view lhs, std::string_view rhs) {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+        const auto left = static_cast<unsigned char>(lhs[index]);
+        const auto right = static_cast<unsigned char>(rhs[index]);
+        if (std::tolower(left) != std::tolower(right)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string raw_replaces_value(const pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.msg_buf == nullptr || rx_data->msg_info.len <= 0) {
+        return {};
+    }
+
+    std::string_view message{rx_data->msg_info.msg_buf, static_cast<std::size_t>(rx_data->msg_info.len)};
+    std::string value;
+    bool found = false;
+    bool first_line = true;
+    while (!message.empty()) {
+        const std::size_t newline = message.find('\n');
+        std::string_view line = message.substr(0, newline);
+        if (!line.empty() && line.back() == '\r') {
+            line.remove_suffix(1);
+        }
+        message = newline == std::string_view::npos ? std::string_view{} : message.substr(newline + 1);
+
+        if (first_line) {
+            first_line = false;
+            continue;
+        }
+        if (line.empty()) {
+            break;
+        }
+        if (found && (line.front() == ' ' || line.front() == '\t')) {
+            value.push_back(' ');
+            value.append(trim_lws(line));
+            continue;
+        }
+        if (found) {
+            break;
+        }
+
+        const std::size_t colon = line.find(':');
+        if (colon != std::string_view::npos && ascii_iequals(trim_lws(line.substr(0, colon)), "Replaces")) {
+            value.assign(trim_lws(line.substr(colon + 1)));
+            found = true;
+        }
+    }
+    return value;
+}
+
+} // namespace
 
 std::string extract_method(pjsip_rx_data* rx_data) {
     if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
@@ -12,6 +83,60 @@ std::string extract_method(pjsip_rx_data* rx_data) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access) — PJSIP C API
     const pj_str_t& name = rx_data->msg_info.msg->line.req.method.name;
     return {name.ptr, static_cast<std::size_t>(name.slen)};
+}
+
+bool has_replaces_header(pjsip_rx_data* rx_data) {
+    if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
+        return false;
+    }
+    static std::string replaces_name_string_s = "Replaces";
+    const pj_str_t replaces_name = pj_str(replaces_name_string_s.data());
+    return pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_name, nullptr) != nullptr;
+}
+
+bool replaces_has_single_dialog_tags(pjsip_rx_data* rx_data) {
+    const std::string value = raw_replaces_value(rx_data);
+    if (value.empty()) {
+        return false;
+    }
+
+    std::size_t to_tag_count = 0;
+    std::size_t from_tag_count = 0;
+    bool quoted = false;
+    bool escaped = false;
+    std::size_t parameter_start = std::string::npos;
+    for (std::size_t index = 0; index <= value.size(); ++index) {
+        const char character = index < value.size() ? value[index] : ';';
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (quoted && character == '\\') {
+            escaped = true;
+            continue;
+        }
+        if (character == '"') {
+            quoted = !quoted;
+            continue;
+        }
+        if (character != ';' || quoted) {
+            continue;
+        }
+        if (parameter_start != std::string::npos) {
+            const std::string_view parameter =
+                trim_lws(std::string_view{value}.substr(parameter_start, index - parameter_start));
+            const std::size_t equals = parameter.find('=');
+            const std::string_view name = trim_lws(parameter.substr(0, equals));
+            if (ascii_iequals(name, "to-tag")) {
+                ++to_tag_count;
+            }
+            else if (ascii_iequals(name, "from-tag")) {
+                ++from_tag_count;
+            }
+        }
+        parameter_start = index + 1;
+    }
+    return to_tag_count == 1 && from_tag_count == 1;
 }
 
 std::string extract_sdp(pjsip_rx_data* rx_data) {

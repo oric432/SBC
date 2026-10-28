@@ -1,8 +1,7 @@
 #include "offer_answer_actions.hpp"
 
 #include <array>
-#include <string_view>
-#include <vector>
+#include <pjsip-ua/sip_replaces.h>
 #include <pjsip_ua.h>
 
 #include "sip/call/call_session.hpp"
@@ -11,6 +10,30 @@
 #include "core/utils/log.hpp"
 
 namespace SbcEngine {
+void OfferAnswerActions::require_replaces(pjsip_msg* message, pj_pool_t* pool) {
+    static std::string replaces_s = "replaces";
+    const pj_str_t replaces = pj_str(replaces_s.data());
+    pjsip_require_hdr* require = nullptr;
+    auto* header = static_cast<pjsip_require_hdr*>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, nullptr));
+    while (header != nullptr) {
+        for (unsigned index = 0; index < header->count; ++index) {
+            if (pj_stricmp(&header->values[index], &replaces) == 0) { // NOLINT
+                return;
+            }
+        }
+        if (require == nullptr && header->count < PJSIP_GENERIC_ARRAY_MAX_COUNT) {
+            require = header;
+        }
+        header = static_cast<pjsip_require_hdr*>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, header->next));
+    }
+    if (require == nullptr) {
+        require = pjsip_require_hdr_create(pool);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
+        pjsip_msg_add_hdr(message, reinterpret_cast<pjsip_hdr*>(require));
+    }
+    require->values[require->count++] = replaces; // NOLINT
+}
+
 bool OfferAnswerActions::offer_usable(const std::string& sdp) const {
     return Sdp::is_valid_sdp(sdp);
 }
@@ -95,14 +118,18 @@ bool OfferAnswerActions::create_outbound_leg(const std::string& destination) {
     std::string local_uri_s = cfg.caller_facing_from_uri(session_.caller_display_name(), caller_user);
     std::string local_contact_s = cfg.own_contact_uri();
     std::string dest_s = destination;
+    std::string target_s = session_.replacement_target() ? session_.replacement_target()->target_uri_ : dest_s;
 
     const pj_str_t local_uri = pj_str(local_uri_s.data());
     const pj_str_t local_contact = pj_str(local_contact_s.data());
     const pj_str_t remote_uri = pj_str(dest_s.data());
+    const pj_str_t target_uri = pj_str(target_s.data());
 
     pjsip_dialog* dlg = nullptr;
+    // A replacement must target the peer that owns the old dialog. Keep the
+    // ordinary route-derived URI as the new dialog's logical remote identity.
     pj_status_t status =
-        pjsip_dlg_create_uac(pjsip_ua_instance(), &local_uri, &local_contact, &remote_uri, &remote_uri, &dlg);
+        pjsip_dlg_create_uac(pjsip_ua_instance(), &local_uri, &local_contact, &remote_uri, &target_uri, &dlg);
     if (status != PJ_SUCCESS) {
         Log::sip()->error("[{}] pjsip_dlg_create_uac failed ({})", session_.call_id(), status);
         return false;
@@ -169,6 +196,18 @@ bool OfferAnswerActions::send_outbound_invite() {
         pjsip_max_fwd_hdr* new_hdr = pjsip_max_fwd_hdr_create(tdata->pool, outbound_max_fwd);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
         pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(new_hdr));
+    }
+
+    if (const auto& replacement = session_.replacement_target()) {
+        // Force unsupported peers to reject instead of ignoring Replaces and creating an extra call.
+        require_replaces(tdata->msg, tdata->pool);
+        pjsip_replaces_hdr* replaces = pjsip_replaces_hdr_create(tdata->pool);
+        pj_strdup2(tdata->pool, &replaces->call_id, replacement->call_id_.c_str());
+        pj_strdup2(tdata->pool, &replaces->to_tag, replacement->to_tag_.c_str());
+        pj_strdup2(tdata->pool, &replaces->from_tag, replacement->from_tag_.c_str());
+        replaces->early_only = replacement->early_only_ ? PJ_TRUE : PJ_FALSE;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — PJSIP C API
+        pjsip_msg_add_hdr(tdata->msg, reinterpret_cast<pjsip_hdr*>(replaces));
     }
 
     return Inv::send(inv, tdata);

@@ -4,6 +4,10 @@ C++26 SBC.
 High-level design and state-machine philosophy
 are in the root [`AGENTS.md`](../AGENTS.md); this file covers the engine's own layout.
 
+## SIP Replaces
+
+`INVITE` with RFC 3891 `Replaces` is best-effort across the SBC's independent SIP legs, not an atomic call swap. The SBC translates the matched dialog identity to the destination leg and keeps the old `CallSession` until the replacement setup commits, so a destination rejection leaves the old call intact. Once the destination accepts, however, RFC 3891 permits it to end its own replaced dialog with BYE (or CANCEL for an eligible early dialog) before the caller-facing replacement leg confirms. If that latter leg fails or is never ACKed, the destination-side old dialog cannot be restored; this is normal SIP behavior rather than a rollback failure.
+
 ## Quick Start with Just
 
 To see all available commands, simply run:
