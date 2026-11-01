@@ -22,12 +22,21 @@
 #include "sip/sm/dialog_sm_runner.hpp"
 #include "sip/sm/setup_sm_runner.hpp"
 #include "sip/call/offer_answer_exchange.hpp"
-#include "sip/router/sip_request_actions.hpp"
 #include "sip/stack/sdp.hpp"
 
 namespace SbcEngine {
 
 class CallManager;
+
+struct ReplacementTarget {
+    std::string replaced_session_id_;
+    std::string call_id_;
+    std::string to_tag_;
+    std::string from_tag_;
+    std::string target_uri_;
+    bool early_only_ = false;
+    bool matched_dialog_is_uac_ = false;
+};
 
 // Owns everything for one B2BUA call: the two PJSIP invite-session legs, the two
 // RTP relay sockets, and the Setup/Dialog state machines with their per-call

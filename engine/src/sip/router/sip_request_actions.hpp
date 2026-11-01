@@ -6,22 +6,12 @@
 #include <boost/asio/any_io_executor.hpp>
 #include <pjsip.h>
 
+#include "sip/call/call_session.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/engine_stores.hpp"
 
 namespace SbcEngine {
-class CallSession;
 class CallManager;
-
-struct ReplacementTarget {
-    std::string replaced_session_id_;
-    std::string call_id_;
-    std::string to_tag_;
-    std::string from_tag_;
-    std::string target_uri_;
-    bool early_only_ = false;
-    bool matched_dialog_is_uac_ = false;
-};
 
 // SIP request admission and responses that do not belong to a live call.
 // Creates signaling legs, but leaves lifecycle activation to MessageRouter.
