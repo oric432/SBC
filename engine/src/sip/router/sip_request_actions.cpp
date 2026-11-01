@@ -223,7 +223,6 @@ CallSession* SipRequestActions::create_call(pjsip_rx_data* rx_data) {
         return nullptr;
     }
 
-
     // Let PJSIP vet transaction-level correctness before we orchestrate.
     // Enable RFC 4028 on the caller-facing leg. The timer module processes
     // Session-Expires/Min-SE and owns timer-only UPDATE/re-INVITE refreshes;
