@@ -157,7 +157,16 @@ bool OfferAnswerActions::create_outbound_leg(const std::string& destination) {
 
     session_.set_inv_callee(inv);
     session_.set_outbound_destination(destination);
-    Log::call()->debug("[{}] outbound leg created towards {}", session_.call_id(), destination);
+    if (target_s == dest_s) {
+        Log::call()->debug("[{}] outbound leg created towards {}", session_.call_id(), destination);
+    }
+    else {
+        Log::call()->debug(
+            "[{}] outbound replacement leg created via {} towards {}",
+            session_.call_id(),
+            destination,
+            target_s);
+    }
     return true;
 }
 
