@@ -196,6 +196,7 @@ void MessageRouter::process_pending_media_events() {
         call_manager_->process_pending_hold_timeouts();
     }
 
+    call_manager_->process_pending_replacements();
     call_manager_->purge_scheduled();
     registrar_actions_.process_pending_binding_sweep();
 }

@@ -1,5 +1,7 @@
 #include "call_manager.hpp"
 
+#include <utility>
+
 #include "core/utils/log.hpp"
 #include "net/rtp/rtp_inactivity_timer.hpp"
 #include "sip/call/call_session.hpp"
@@ -69,6 +71,18 @@ CallSession* CallManager::find_by_dialog(pjsip_dialog* dialog) {
         }
     }
     return nullptr;
+}
+
+void CallManager::queue_replaced_session(std::string call_id, bool matched_dialog_is_uac) {
+    pending_replacements_.push_back({.call_id_ = std::move(call_id), .matched_dialog_is_uac_ = matched_dialog_is_uac});
+}
+
+void CallManager::process_pending_replacements() {
+    auto pending_replacements = std::move(pending_replacements_);
+    pending_replacements_.clear();
+    for (const auto& replacement : pending_replacements) {
+        terminate_replaced_session(replacement.call_id_, replacement.matched_dialog_is_uac_);
+    }
 }
 
 void CallManager::terminate_replaced_session(const std::string& call_id, bool matched_dialog_is_uac) {

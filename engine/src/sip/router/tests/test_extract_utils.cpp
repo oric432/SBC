@@ -401,7 +401,7 @@ TEST_CASE("outbound Replaces requires extension support", "[sip_request_actions]
     CHECK(pj_stricmp2(&require->values[0], kReplacesName.data()) == 0);
 }
 
-TEST_CASE("replacement terminates a confirmed or early UAC old session", "[sip_request_actions][call_session]") {
+TEST_CASE("replacement teardown runs after the replacement transition", "[sip_request_actions][call_session]") {
     boost::asio::io_context ioc;
     PjContext context;
     context.endpt_ = kPjEndpoint.get();
@@ -412,20 +412,26 @@ TEST_CASE("replacement terminates a confirmed or early UAC old session", "[sip_r
 
     SECTION("early UAS old session remains active") {
         CallSessionTestAccess::negotiate(*old_session);
-        manager.terminate_replaced_session("old-call", false);
+        manager.queue_replaced_session("old-call", false);
+        CHECK(manager.find_by_call_id("old-call") == old_session);
+        manager.process_pending_replacements();
         CHECK(manager.find_by_call_id("old-call") == old_session);
         CHECK(old_session->dialog_sm().is_active());
     }
 
     SECTION("early UAC old session is cancelled") {
         CallSessionTestAccess::negotiate(*old_session);
-        manager.terminate_replaced_session("old-call", true);
+        manager.queue_replaced_session("old-call", true);
+        CHECK(manager.find_by_call_id("old-call") == old_session);
+        manager.process_pending_replacements();
         CHECK(manager.find_by_call_id("old-call") == nullptr);
     }
 
     SECTION("confirmed old session enters BYE termination") {
         CallSessionTestAccess::establish(*old_session);
-        manager.terminate_replaced_session("old-call", false);
+        manager.queue_replaced_session("old-call", false);
+        CHECK(old_session->dialog_sm().is_active());
+        manager.process_pending_replacements();
         CHECK(old_session->dialog_sm().is_terminating());
     }
 
