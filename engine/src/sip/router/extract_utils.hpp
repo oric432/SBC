@@ -1,10 +1,17 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 #include <pjsip.h>
 
 namespace SbcEngine {
+
+inline constexpr std::string_view kReplacesName = "Replaces";
+
+inline pj_str_t replaces_name() {
+    return {.ptr = const_cast<char*>(kReplacesName.data()), .slen = static_cast<pj_ssize_t>(kReplacesName.size())};
+}
 
 // Pure, stateless string-extraction helpers shared across the router/call layers.
 //

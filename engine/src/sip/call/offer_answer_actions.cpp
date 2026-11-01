@@ -11,8 +11,7 @@
 
 namespace SbcEngine {
 void OfferAnswerActions::require_replaces(pjsip_msg* message, pj_pool_t* pool) {
-    static std::string replaces_s = "replaces";
-    const pj_str_t replaces = pj_str(replaces_s.data());
+    const pj_str_t replaces = replaces_name();
     pjsip_require_hdr* require = nullptr;
     auto* header = static_cast<pjsip_require_hdr*>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, nullptr));
     while (header != nullptr) {

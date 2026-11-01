@@ -398,7 +398,7 @@ TEST_CASE("outbound Replaces requires extension support", "[sip_request_actions]
     const auto* require = static_cast<const pjsip_require_hdr*>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, nullptr));
     REQUIRE(require != nullptr);
     REQUIRE(require->count == 1);
-    CHECK(pj_stricmp2(&require->values[0], "replaces") == 0);
+    CHECK(pj_stricmp2(&require->values[0], kReplacesName.data()) == 0);
 }
 
 TEST_CASE("replacement terminates a confirmed or early UAC old session", "[sip_request_actions][call_session]") {

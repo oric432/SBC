@@ -66,7 +66,7 @@ std::string raw_replaces_value(const pjsip_rx_data* rx_data) {
         }
 
         const std::size_t colon = line.find(':');
-        if (colon != std::string_view::npos && ascii_iequals(trim_lws(line.substr(0, colon)), "Replaces")) {
+        if (colon != std::string_view::npos && ascii_iequals(trim_lws(line.substr(0, colon)), kReplacesName)) {
             value.assign(trim_lws(line.substr(colon + 1)));
             found = true;
         }
@@ -89,9 +89,8 @@ bool has_replaces_header(pjsip_rx_data* rx_data) {
     if (rx_data == nullptr || rx_data->msg_info.msg == nullptr) {
         return false;
     }
-    static std::string replaces_name_string_s = "Replaces";
-    const pj_str_t replaces_name = pj_str(replaces_name_string_s.data());
-    return pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_name, nullptr) != nullptr;
+    const pj_str_t replaces = replaces_name();
+    return pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces, nullptr) != nullptr;
 }
 
 bool replaces_has_single_dialog_tags(pjsip_rx_data* rx_data) {

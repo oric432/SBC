@@ -64,8 +64,7 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
         return std::unexpected("Replaces must contain exactly one to-tag and one from-tag");
     }
 
-    static std::string replaces_s = "Replaces";
-    const pj_str_t replaces_name = pj_str(replaces_s.data());
+    const pj_str_t replaces_header_name = replaces_name();
 
     pjsip_dialog* dialog = nullptr;
     pjsip_tx_data* response = nullptr;
@@ -98,7 +97,7 @@ std::expected<std::optional<ReplacementTarget>, std::string> SipRequestActions::
     }
 
     const auto* replaces = static_cast<const pjsip_replaces_hdr*>(
-        pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_name, nullptr));
+        pjsip_msg_find_hdr_by_name(rx_data->msg_info.msg, &replaces_header_name, nullptr));
 
     if (replaces == nullptr) {
         pjsip_dlg_dec_lock(dialog);
