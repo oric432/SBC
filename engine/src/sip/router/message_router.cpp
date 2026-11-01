@@ -21,7 +21,15 @@ void reject_reinvite(pjsip_inv_session* inv, pjsip_rx_data* rdata, int status_co
 } // namespace
 bool MessageRouter::on_rx_request(pjsip_rx_data* request) {
     const std::string method = extract_method(request);
-    pjsip_dialog* dialog = pjsip_rdata_get_dlg(request);
+    const pjsip_dialog* dialog = pjsip_rdata_get_dlg(request);
+    if (method == "ACK") {
+        request_actions_.handle_unmatched_ack(request);
+        return true;
+    }
+    if (method == "CANCEL") {
+        request_actions_.handle_unmatched_dialog_request(request);
+        return true;
+    }
     if (has_replaces_header(request) && (method != "INVITE" || dialog != nullptr)) {
         request_actions_.reject_bad_request(request);
         return true;
@@ -41,11 +49,8 @@ bool MessageRouter::on_rx_request(pjsip_rx_data* request) {
     else if (method == "REGISTER") {
         process_register(request);
     }
-    else if (method == "BYE" || method == "CANCEL") {
+    else if (method == "BYE") {
         request_actions_.handle_unmatched_dialog_request(request);
-    }
-    else if (method == "ACK") {
-        request_actions_.handle_unmatched_ack(request);
     }
     else if (method == "REFER") {
         request_actions_.reject_out_of_dialog_refer(request);
