@@ -8,6 +8,7 @@ import threading
 import time
 import urllib.parse
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -773,6 +774,581 @@ def _raw_sdp(port: int) -> str:
 
 def _header_line(message: str, name: str) -> str:
     return re.search(rf"^{name}:.*$", message, re.MULTILINE | re.IGNORECASE).group(0).rstrip()
+
+
+def _header_value(message: str, name: str) -> str:
+    match = re.search(rf"^{re.escape(name)}:\s*(.*?)\s*$", message, re.MULTILINE | re.IGNORECASE)
+    assert match is not None, f"missing {name} header:\n{message}"
+    return match.group(1)
+
+
+def _sip_method(message: str) -> str | None:
+    match = re.match(r"([A-Z]+)\s+\S+\s+SIP/2\.0", message)
+    return match.group(1) if match else None
+
+
+def _sip_status(message: str) -> int | None:
+    match = re.match(r"SIP/2\.0\s+(\d{3})", message)
+    return int(match.group(1)) if match else None
+
+
+def _sip_cseq(message: str) -> tuple[int, str]:
+    match = re.search(r"^CSeq:\s*(\d+)\s+([A-Z]+)", message, re.MULTILINE | re.IGNORECASE)
+    assert match is not None, f"missing CSeq header:\n{message}"
+    return int(match.group(1)), match.group(2).upper()
+
+
+def _sip_tag(message: str, header: str) -> str:
+    match = re.search(r";tag=([^;>\s]+)", _header_value(message, header), re.IGNORECASE)
+    assert match is not None, f"missing {header} tag:\n{message}"
+    return match.group(1)
+
+
+@dataclass
+class _SipDatagram:
+    text: str
+    source: tuple[str, int]
+
+
+@dataclass
+class _InboundDialog:
+    call_id: str
+    from_tag: str
+    invite: str
+    provisional: str | None = None
+    final: str | None = None
+
+    @property
+    def to_tag(self) -> str:
+        assert self.provisional is not None or self.final is not None
+        return _sip_tag(self.final or self.provisional or "", "To")
+
+
+class _RawSipPeer:
+    """Small message-driven SIP endpoint used when one test needs several concurrent dialogs."""
+
+    def __init__(self, sbc_port: int, local_port: int = 0) -> None:
+        self._sbc = ("127.0.0.1", sbc_port)
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.bind(("127.0.0.1", local_port))
+        self._port = self._sock.getsockname()[1]
+        self._pending: list[_SipDatagram] = []
+
+    def close(self) -> None:
+        self._sock.close()
+
+    def _receive(self, predicate, timeout_s: float = 5.0) -> _SipDatagram:
+        for index, datagram in enumerate(self._pending):
+            if predicate(datagram.text):
+                return self._pending.pop(index)
+
+        deadline = time.monotonic() + timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                pytest.fail("timed out waiting for a matching SIP message")
+            self._sock.settimeout(remaining)
+            try:
+                data, source = self._sock.recvfrom(65535)
+            except TimeoutError:
+                pytest.fail("timed out waiting for a matching SIP message")
+            datagram = _SipDatagram(data.decode(errors="replace"), source)
+            if predicate(datagram.text):
+                return datagram
+            self._pending.append(datagram)
+
+    def request(self, method: str, call_id: str | None = None, timeout_s: float = 5.0) -> _SipDatagram:
+        return self._receive(
+            lambda message: _sip_method(message) == method
+            and (call_id is None or _header_value(message, "Call-ID") == call_id),
+            timeout_s,
+        )
+
+    def response(
+        self,
+        cseq_method: str,
+        call_id: str,
+        status: int | None = None,
+        timeout_s: float = 5.0,
+    ) -> _SipDatagram:
+        return self._receive(
+            lambda message: _sip_status(message) is not None
+            and _sip_cseq(message)[1] == cseq_method
+            and _header_value(message, "Call-ID") == call_id
+            and (status is None or _sip_status(message) == status),
+            timeout_s,
+        )
+
+    def assert_no_request(self, method: str, call_id: str | None = None, timeout_s: float = 0.25) -> None:
+        for datagram in self._pending:
+            if _sip_method(datagram.text) == method and (
+                call_id is None or _header_value(datagram.text, "Call-ID") == call_id
+            ):
+                pytest.fail(f"unexpected {method}:\n{datagram.text}")
+
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            self._sock.settimeout(deadline - time.monotonic())
+            try:
+                data, source = self._sock.recvfrom(65535)
+            except TimeoutError:
+                return
+            datagram = _SipDatagram(data.decode(errors="replace"), source)
+            if _sip_method(datagram.text) == method and (
+                call_id is None or _header_value(datagram.text, "Call-ID") == call_id
+            ):
+                pytest.fail(f"unexpected {method}:\n{datagram.text}")
+            self._pending.append(datagram)
+
+    def invite(self, *, replaces: str | None = None, early_only: bool = False) -> _InboundDialog:
+        call_id = f"raw-{uuid.uuid4().hex}@127.0.0.1"
+        from_tag = f"peer-{uuid.uuid4().hex[:12]}"
+        branch = f"z9hG4bK-{uuid.uuid4().hex[:12]}"
+        extra_headers = []
+        if replaces is not None:
+            suffix = ";early-only" if early_only else ""
+            extra_headers.extend(["Require: replaces", f"Replaces: {replaces}{suffix}"])
+        invite = self._build_request(
+            "INVITE",
+            call_id,
+            from_tag,
+            "",
+            1,
+            branch,
+            extra_headers,
+            _raw_sdp(41000),
+        )
+        self._sock.sendto(invite.encode(), self._sbc)
+        return _InboundDialog(call_id, from_tag, invite)
+
+    def cancel(self, dialog: _InboundDialog) -> None:
+        cancel = re.sub(r"^INVITE ", "CANCEL ", dialog.invite, count=1)
+        cancel = re.sub(r"^CSeq:\s*(\d+)\s+INVITE", r"CSeq: \1 CANCEL", cancel, flags=re.MULTILINE)
+        cancel = re.sub(r"Content-Type: application/sdp\r\n", "", cancel)
+        cancel = re.sub(r"Content-Length: \d+\r\n\r\n.*", "Content-Length: 0\r\n\r\n", cancel, flags=re.DOTALL)
+        self._sock.sendto(cancel.encode(), self._sbc)
+
+    def ack(self, dialog: _InboundDialog) -> None:
+        assert dialog.final is not None
+        status = _sip_status(dialog.final)
+        branch = (
+            re.search(r"branch=([^;\s]+)", _header_value(dialog.invite, "Via"), re.IGNORECASE).group(1)
+            if status is not None and status >= 300
+            else f"z9hG4bK-{uuid.uuid4().hex[:12]}"
+        )
+        ack = self._build_request(
+            "ACK",
+            dialog.call_id,
+            dialog.from_tag,
+            dialog.to_tag,
+            1,
+            branch,
+            [],
+            "",
+        )
+        self._sock.sendto(ack.encode(), self._sbc)
+
+    def bye(self, dialog: _InboundDialog, cseq: int = 2) -> None:
+        bye = self._build_request(
+            "BYE",
+            dialog.call_id,
+            dialog.from_tag,
+            dialog.to_tag,
+            cseq,
+            f"z9hG4bK-{uuid.uuid4().hex[:12]}",
+            [],
+            "",
+        )
+        self._sock.sendto(bye.encode(), self._sbc)
+
+    def reply(self, request: _SipDatagram, status: int, *, to_tag: str | None = None, body: str = "") -> str:
+        reasons = {
+            180: "Ringing",
+            200: "OK",
+            481: "Call/Transaction Does Not Exist",
+            486: "Busy Here",
+            487: "Request Terminated",
+        }
+        to_line = _header_line(request.text, "To")
+        if to_tag is not None and ";tag=" not in to_line:
+            to_line += f";tag={to_tag}"
+        lines = [
+            f"SIP/2.0 {status} {reasons[status]}",
+            *(via.rstrip() for via in re.findall(r"^Via:.*$", request.text, re.MULTILINE | re.IGNORECASE)),
+            _header_line(request.text, "From"),
+            to_line,
+            _header_line(request.text, "Call-ID"),
+            _header_line(request.text, "CSeq"),
+            f"Contact: <sip:peer@127.0.0.1:{self._port}>",
+        ]
+        if body:
+            lines.append("Content-Type: application/sdp")
+        response = "\r\n".join([*lines, f"Content-Length: {len(body)}"]) + "\r\n\r\n" + body
+        self._sock.sendto(response.encode(), request.source)
+        return response
+
+    def _build_request(
+        self,
+        method: str,
+        call_id: str,
+        from_tag: str,
+        to_tag: str,
+        cseq: int,
+        branch: str,
+        extra_headers: list[str],
+        body: str,
+    ) -> str:
+        tagged_to = f";tag={to_tag}" if to_tag else ""
+        lines = [
+            f"{method} sip:service@127.0.0.1:{self._sbc[1]} SIP/2.0",
+            f"Via: SIP/2.0/UDP 127.0.0.1:{self._port};branch={branch}",
+            "Max-Forwards: 70",
+            f"From: <sip:peer@127.0.0.1:{self._port}>;tag={from_tag}",
+            f"To: <sip:service@127.0.0.1:{self._sbc[1]}>{tagged_to}",
+            f"Call-ID: {call_id}",
+            f"CSeq: {cseq} {method}",
+            f"Contact: <sip:peer@127.0.0.1:{self._port}>",
+            *extra_headers,
+        ]
+        if body:
+            lines.append("Content-Type: application/sdp")
+        return "\r\n".join([*lines, f"Content-Length: {len(body)}"]) + "\r\n\r\n" + body
+
+
+@dataclass
+class _B2buaCall:
+    incoming: _InboundDialog
+    outgoing_invite: _SipDatagram
+    outgoing_progress: str
+
+    @property
+    def outgoing_call_id(self) -> str:
+        return _header_value(self.outgoing_invite.text, "Call-ID")
+
+    @property
+    def caller_facing_replaces(self) -> str:
+        return f"{self.incoming.call_id};to-tag={self.incoming.to_tag};from-tag={self.incoming.from_tag}"
+
+    @property
+    def caller_dialog_replaces_for_peer(self) -> str:
+        return f"{self.incoming.call_id};to-tag={self.incoming.from_tag};from-tag={self.incoming.to_tag}"
+
+    @property
+    def callee_facing_replaces(self) -> str:
+        return (
+            f"{self.outgoing_call_id};to-tag={_sip_tag(self.outgoing_progress, 'To')};"
+            f"from-tag={_sip_tag(self.outgoing_invite.text, 'From')}"
+        )
+
+    @property
+    def callee_dialog_replaces_for_sbc(self) -> str:
+        return (
+            f"{self.outgoing_call_id};to-tag={_sip_tag(self.outgoing_invite.text, 'From')};"
+            f"from-tag={_sip_tag(self.outgoing_progress, 'To')}"
+        )
+
+
+def _start_raw_call(caller: _RawSipPeer, callee: _RawSipPeer, *, confirm: bool) -> _B2buaCall:
+    incoming = caller.invite()
+    outgoing = callee.request("INVITE")
+    assert _header_value(outgoing.text, "Call-ID") != incoming.call_id
+    assert _sip_cseq(outgoing.text)[1] == "INVITE"
+
+    outgoing_tag = f"callee-{uuid.uuid4().hex[:10]}"
+    outgoing_progress = callee.reply(outgoing, 180, to_tag=outgoing_tag)
+    incoming.provisional = caller.response("INVITE", incoming.call_id, 180).text
+    assert _sip_tag(incoming.provisional, "From") == incoming.from_tag
+
+    call = _B2buaCall(incoming, outgoing, outgoing_progress)
+    if confirm:
+        callee.reply(outgoing, 200, to_tag=outgoing_tag, body=_raw_sdp(42000))
+        outgoing_ack = callee.request("ACK", call.outgoing_call_id)
+        assert _sip_cseq(outgoing_ack.text) == (_sip_cseq(outgoing.text)[0], "ACK")
+        incoming.final = caller.response("INVITE", incoming.call_id, 200).text
+        caller.ack(incoming)
+    return call
+
+
+def _accept_replacement(
+    replacer: _RawSipPeer,
+    target: _RawSipPeer,
+    replacement: _InboundDialog,
+    expected_replaces: str,
+    expected_target_uri: str,
+) -> _SipDatagram:
+    outbound = target.request("INVITE")
+    assert _header_value(outbound.text, "Call-ID") != replacement.call_id
+    assert outbound.text.split(" ", 2)[1] == expected_target_uri
+    assert _header_value(outbound.text, "Replaces") == expected_replaces
+    assert "replaces" in _header_value(outbound.text, "Require").lower()
+    target.reply(outbound, 200, to_tag=f"replacement-{uuid.uuid4().hex[:10]}", body=_raw_sdp(42002))
+    ack = target.request("ACK", _header_value(outbound.text, "Call-ID"))
+    assert _sip_cseq(ack.text) == (_sip_cseq(outbound.text)[0], "ACK")
+    replacement.final = replacer.response("INVITE", replacement.call_id, 200).text
+    replacer.ack(replacement)
+    return outbound
+
+
+def _end_call_from_caller(
+    caller: _RawSipPeer,
+    target: _RawSipPeer,
+    incoming: _InboundDialog,
+    outgoing_call_id: str,
+) -> None:
+    caller.bye(incoming)
+    outbound_bye = target.request("BYE", outgoing_call_id)
+    assert _sip_cseq(outbound_bye.text)[1] == "BYE"
+    target.reply(outbound_bye, 200)
+    response = caller.response("BYE", incoming.call_id, 200)
+    assert _sip_cseq(response.text)[1] == "BYE"
+
+
+def _answer_replacement_byes(
+    caller: _RawSipPeer,
+    callee: _RawSipPeer,
+    old_call: _B2buaCall,
+) -> None:
+    caller_bye = caller.request("BYE", old_call.incoming.call_id)
+    callee_bye = callee.request("BYE", old_call.outgoing_call_id)
+    assert _sip_cseq(caller_bye.text)[1] == "BYE"
+    assert _sip_cseq(callee_bye.text)[1] == "BYE"
+    caller.reply(caller_bye, 200)
+    callee.reply(callee_bye, 200)
+    caller.assert_no_request("BYE", old_call.incoming.call_id)
+    callee.assert_no_request("BYE", old_call.outgoing_call_id)
+
+
+def test_b2bua_invite_replaces_confirmed_dialog_terminates_old_call_with_bye(sbc_engine, ports):
+    caller = _RawSipPeer(ports.sbc_port)
+    callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
+    try:
+        old_call = _start_raw_call(caller, callee, confirm=True)
+        replacement = caller.invite(replaces=old_call.caller_facing_replaces)
+        replacement_outbound = _accept_replacement(
+            caller,
+            callee,
+            replacement,
+            old_call.callee_facing_replaces,
+            _header_value(old_call.outgoing_progress, "Contact").strip("<>"),
+        )
+
+        _answer_replacement_byes(caller, callee, old_call)
+        _end_call_from_caller(
+            caller,
+            callee,
+            replacement,
+            _header_value(replacement_outbound.text, "Call-ID"),
+        )
+    finally:
+        caller.close()
+        callee.close()
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+def test_b2bua_invite_replaces_destination_acceptance_ends_old_call_before_replacement_ack(sbc_engine, ports):
+    """RFC 3891 lets the destination end its old dialog after accepting the
+    replacement, before the incoming replacement INVITE has an ACK."""
+    caller = _RawSipPeer(ports.sbc_port)
+    callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
+    try:
+        old_call = _start_raw_call(caller, callee, confirm=True)
+        replacement = caller.invite(replaces=old_call.caller_facing_replaces)
+        outbound = callee.request("INVITE")
+        assert _header_value(outbound.text, "Replaces") == old_call.callee_facing_replaces
+        callee.reply(outbound, 200, to_tag=f"replacement-{uuid.uuid4().hex[:10]}", body=_raw_sdp(42002))
+        callee.request("ACK", _header_value(outbound.text, "Call-ID"))
+        replacement.final = caller.response("INVITE", replacement.call_id, 200).text
+
+        # A compliant destination ends the dialog Replaces named; deliberately
+        # do not ACK the replacement on its caller-facing leg.
+        old_bye = callee._build_request(
+            "BYE",
+            old_call.outgoing_call_id,
+            _sip_tag(old_call.outgoing_progress, "To"),
+            _sip_tag(old_call.outgoing_invite.text, "From"),
+            2,
+            f"z9hG4bK-{uuid.uuid4().hex[:12]}",
+            [],
+            "",
+        )
+        callee._sock.sendto(old_bye.encode(), callee._sbc)
+
+        caller_bye = caller.request("BYE", old_call.incoming.call_id)
+        caller.reply(caller_bye, 200)
+        callee.response("BYE", old_call.outgoing_call_id, 200)
+        callee.assert_no_request("BYE", _header_value(outbound.text, "Call-ID"))
+    finally:
+        caller.close()
+        callee.close()
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+def test_b2bua_invite_replaces_early_uac_dialog_forwards_replaces_and_cancels_old_invite(sbc_engine, ports):
+    caller = _RawSipPeer(ports.sbc_port)
+    callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
+    try:
+        old_call = _start_raw_call(caller, callee, confirm=False)
+        replacement = caller.invite(replaces=old_call.callee_dialog_replaces_for_sbc, early_only=True)
+        replacement_outbound = _accept_replacement(
+            caller,
+            caller,
+            replacement,
+            f"{old_call.caller_dialog_replaces_for_peer};early-only",
+            _header_value(old_call.incoming.invite, "Contact").strip("<>"),
+        )
+
+        cancel = callee.request("CANCEL", old_call.outgoing_call_id)
+        assert _sip_cseq(cancel.text) == (_sip_cseq(old_call.outgoing_invite.text)[0], "CANCEL")
+        callee.reply(cancel, 200)
+        callee.reply(
+            old_call.outgoing_invite,
+            487,
+            to_tag=_sip_tag(old_call.outgoing_progress, "To"),
+        )
+        old_ack = callee.request("ACK", old_call.outgoing_call_id)
+        assert _sip_cseq(old_ack.text) == (_sip_cseq(old_call.outgoing_invite.text)[0], "ACK")
+        old_call.incoming.final = caller.response("INVITE", old_call.incoming.call_id, 487).text
+        caller.ack(old_call.incoming)
+        callee.assert_no_request("CANCEL", old_call.outgoing_call_id)
+
+        _end_call_from_caller(
+            caller,
+            caller,
+            replacement,
+            _header_value(replacement_outbound.text, "Call-ID"),
+        )
+    finally:
+        caller.close()
+        callee.close()
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+def test_b2bua_invite_replaces_early_uas_dialog_is_rejected_and_original_completes(sbc_engine, ports):
+    caller = _RawSipPeer(ports.sbc_port)
+    callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
+    try:
+        old_call = _start_raw_call(caller, callee, confirm=False)
+        replacement = caller.invite(replaces=old_call.caller_facing_replaces)
+        replacement.final = caller.response("INVITE", replacement.call_id, 481).text
+        caller.ack(replacement)
+        callee.assert_no_request("INVITE")
+        callee.assert_no_request("CANCEL", old_call.outgoing_call_id)
+
+        caller.cancel(old_call.incoming)
+        cancel_response = caller.response("CANCEL", old_call.incoming.call_id, 200)
+        assert _sip_cseq(cancel_response.text)[1] == "CANCEL"
+        outbound_cancel = callee.request("CANCEL", old_call.outgoing_call_id)
+        callee.reply(outbound_cancel, 200)
+        callee.reply(
+            old_call.outgoing_invite,
+            487,
+            to_tag=_sip_tag(old_call.outgoing_progress, "To"),
+        )
+        callee.request("ACK", old_call.outgoing_call_id)
+        old_call.incoming.final = caller.response("INVITE", old_call.incoming.call_id, 487).text
+        caller.ack(old_call.incoming)
+    finally:
+        caller.close()
+        callee.close()
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+@pytest.mark.parametrize("rejection_status", [486, 481], ids=["busy", "dialog-does-not-exist"])
+def test_b2bua_rejected_invite_replaces_preserves_confirmed_old_call(sbc_engine, ports, rejection_status):
+    caller = _RawSipPeer(ports.sbc_port)
+    callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
+    try:
+        old_call = _start_raw_call(caller, callee, confirm=True)
+        replacement = caller.invite(replaces=old_call.caller_facing_replaces)
+        outbound = callee.request("INVITE")
+        assert _header_value(outbound.text, "Replaces") == old_call.callee_facing_replaces
+        callee.reply(outbound, rejection_status, to_tag=f"reject-{uuid.uuid4().hex[:10]}")
+        callee.request("ACK", _header_value(outbound.text, "Call-ID"))
+        replacement.final = caller.response("INVITE", replacement.call_id, rejection_status).text
+        caller.ack(replacement)
+
+        caller.assert_no_request("BYE", old_call.incoming.call_id)
+        callee.assert_no_request("BYE", old_call.outgoing_call_id)
+        caller.assert_no_request("CANCEL", old_call.incoming.call_id)
+        callee.assert_no_request("CANCEL", old_call.outgoing_call_id)
+        _end_call_from_caller(caller, callee, old_call.incoming, old_call.outgoing_call_id)
+    finally:
+        caller.close()
+        callee.close()
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+def test_b2bua_invite_replaces_early_only_rejects_confirmed_dialog(sbc_engine, ports):
+    caller = _RawSipPeer(ports.sbc_port)
+    callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
+    try:
+        old_call = _start_raw_call(caller, callee, confirm=True)
+        replacement = caller.invite(replaces=old_call.caller_facing_replaces, early_only=True)
+        replacement.final = caller.response("INVITE", replacement.call_id, 486).text
+        assert ";early-only" in _header_value(replacement.invite, "Replaces")
+        caller.ack(replacement)
+
+        callee.assert_no_request("INVITE")
+        caller.assert_no_request("BYE", old_call.incoming.call_id)
+        callee.assert_no_request("BYE", old_call.outgoing_call_id)
+        callee.assert_no_request("CANCEL", old_call.outgoing_call_id)
+        _end_call_from_caller(caller, callee, old_call.incoming, old_call.outgoing_call_id)
+    finally:
+        caller.close()
+        callee.close()
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+def test_b2bua_invite_replaces_cancel_200_race_acks_then_byes_old_dialog(sbc_engine, ports):
+    caller = _RawSipPeer(ports.sbc_port)
+    callee = _RawSipPeer(ports.sbc_port, ports.callee_port)
+    try:
+        old_call = _start_raw_call(caller, callee, confirm=False)
+        replacement = caller.invite(replaces=old_call.callee_dialog_replaces_for_sbc, early_only=True)
+        replacement_outbound = _accept_replacement(
+            caller,
+            caller,
+            replacement,
+            f"{old_call.caller_dialog_replaces_for_peer};early-only",
+            _header_value(old_call.incoming.invite, "Contact").strip("<>"),
+        )
+
+        cancel = callee.request("CANCEL", old_call.outgoing_call_id)
+        assert _sip_cseq(cancel.text)[1] == "CANCEL"
+        callee.reply(
+            old_call.outgoing_invite,
+            200,
+            to_tag=_sip_tag(old_call.outgoing_progress, "To"),
+            body=_raw_sdp(42000),
+        )
+        old_ack = callee.request("ACK", old_call.outgoing_call_id)
+        old_bye = callee.request("BYE", old_call.outgoing_call_id)
+        assert _sip_cseq(old_ack.text)[1] == "ACK"
+        assert _sip_cseq(old_bye.text)[1] == "BYE"
+        callee.reply(cancel, 200)
+        callee.reply(old_bye, 200)
+
+        old_call.incoming.final = caller.response("INVITE", old_call.incoming.call_id, 487).text
+        caller.ack(old_call.incoming)
+        callee.assert_no_request("BYE", old_call.outgoing_call_id)
+        callee.assert_no_request("CANCEL", old_call.outgoing_call_id)
+        _end_call_from_caller(
+            caller,
+            caller,
+            replacement,
+            _header_value(replacement_outbound.text, "Call-ID"),
+        )
+    finally:
+        caller.close()
+        callee.close()
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
 
 
 class _RawUas:

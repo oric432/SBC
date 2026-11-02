@@ -28,6 +28,16 @@ namespace SbcEngine {
 
 class CallManager;
 
+struct ReplacementTarget {
+    std::string replaced_session_id_;
+    std::string call_id_;
+    std::string to_tag_;
+    std::string from_tag_;
+    std::string target_uri_;
+    bool early_only_ = false;
+    bool matched_dialog_is_uac_ = false;
+};
+
 // Owns everything for one B2BUA call: the two PJSIP invite-session legs, the two
 // RTP relay sockets, and the Setup/Dialog state machines with their per-call
 // action objects. Non-copyable/movable — held by CallManager via unique_ptr.
@@ -127,6 +137,8 @@ public:
     [[nodiscard]] const std::string& caller_display_name() const { return caller_display_name_; }
     [[nodiscard]] const std::string& outbound_destination() const { return outbound_destination_; }
     void set_outbound_destination(std::string dest) { outbound_destination_ = std::move(dest); }
+    [[nodiscard]] const std::optional<ReplacementTarget>& replacement_target() const { return replacement_target_; }
+    void set_replacement_target(std::optional<ReplacementTarget> target) { replacement_target_ = std::move(target); }
 
     // rx_data of the request currently driving the setup SM's cascade: set at
     // construction from the inbound INVITE, cleared once that cascade settles
@@ -195,6 +207,7 @@ private:
     std::string caller_uri_;
     std::string caller_display_name_;
     std::string outbound_destination_;
+    std::optional<ReplacementTarget> replacement_target_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.
     SetupActions setup_actions_;

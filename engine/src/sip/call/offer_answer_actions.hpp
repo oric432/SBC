@@ -50,6 +50,9 @@ public:
     void mark_early_media_relayed();
 
 private:
+    friend struct OfferAnswerActionsTestAccess;
+
+    static void require_replaces(pjsip_msg* message, pj_pool_t* pool);
     bool create_outbound_leg(const std::string& destination);
     bool send_outbound_invite();
     void capture_callee_media(pjmedia_sdp_session* callee_answer);

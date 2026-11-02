@@ -74,6 +74,10 @@ After making any code changes, you MUST complete the following checklist before 
 - **Namespaces**: All newly defined types (classes, structs, type aliases) and functions MUST be placed inside the `SbcEngine` namespace. Do not pollute the global namespace.
 - **Comments**: One short line, only when the WHY is non-obvious (a hidden constraint, a workaround for a specific bug, a surprising invariant). Never restate what the code already says via naming, and never write multi-line or paragraph comment blocks.
 
+### Boost.SML Dispatch
+- Never call `process_event()` on a state machine from one of that same machine's actions; use `Sml::back::process<...>` so SML drains the follow-up event after the current transition returns.
+- An action may call `process_event()` on a different state machine only for an explicit, non-reentrant handoff. Confirm that the target machine cannot synchronously re-enter the source machine or invalidate the caller's state while its action is on the stack.
+
 ## Error Handling Guidelines
 
 When writing or modifying C++ code in the engine, adhere to the following error handling practices:

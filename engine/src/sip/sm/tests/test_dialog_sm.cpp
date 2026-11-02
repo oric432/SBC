@@ -329,6 +329,16 @@ TEST_CASE("DialogSm waits for the original call after an early refer result", "[
     REQUIRE(actions.was_called("cleanup"));
 }
 
+TEST_CASE("DialogSm replacement terminates the original call", "[dialog_sm]") {
+    MockDialogActions actions;
+    TestMachine machine{actions};
+
+    REQUIRE(machine.process_event(CallReplaced{}));
+    REQUIRE(machine.is(Sml::state<Terminating>));
+    REQUIRE(actions.was_called("terminate_call"));
+    REQUIRE(actions.termination_reason_ == TerminationReason::kReplaced);
+}
+
 TEST_CASE("DialogSm call error terminates a pending refer", "[dialog_sm]") {
     const auto event =
         GENERATE(CallError{}, CallError{TerminationReason::kHoldTimeout}, CallError{TerminationReason::kRtpInactivity});

@@ -1,13 +1,16 @@
 #pragma once
 
+#include <optional>
+#include <string>
+
 #include <boost/asio/any_io_executor.hpp>
 #include <pjsip.h>
 
+#include "sip/call/call_session.hpp"
 #include "sip/call/pj_context.hpp"
 #include "sip/engine_stores.hpp"
 
 namespace SbcEngine {
-class CallSession;
 class CallManager;
 
 // SIP request admission and responses that do not belong to a live call.
@@ -25,12 +28,26 @@ public:
         , executor_(std::move(executor)) {}
 
     CallSession* create_call(pjsip_rx_data* rx_data);
+    [[nodiscard]] std::expected<std::optional<ReplacementTarget>, std::string> resolve_replacement(
+        pjsip_rx_data* rx_data);
     void handle_unmatched_dialog_request(pjsip_rx_data* rx_data);
     void handle_unmatched_ack(pjsip_rx_data* rx_data);
+    void reject_bad_request(pjsip_rx_data* rx_data);
     void reject_unsupported_method(pjsip_rx_data* rx_data);
     void reject_out_of_dialog_refer(pjsip_rx_data* rx_data);
 
 private:
+    friend struct SipRequestActionsTestAccess;
+
+    [[nodiscard]] static std::optional<int> replacement_rejection_code(
+        const pjsip_inv_session* invite,
+        bool early_only);
+    [[nodiscard]] static ReplacementTarget make_replacement_target(
+        const pj_str_t& call_id,
+        const pj_str_t& local_tag,
+        const pj_str_t& remote_tag,
+        const pj_str_t& target_uri,
+        bool early_only);
     void respond_stateless(pjsip_rx_data* rx_data, int code);
 
     PjContext* ctx_;

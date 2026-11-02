@@ -42,6 +42,8 @@ public:
     CallSession* find_by_call_id(const std::string& call_id);
     CallSession* find_by_inv(pjsip_inv_session* inv);
     CallSession* find_by_dialog(pjsip_dialog* dialog);
+    void queue_replaced_session(std::string call_id, bool matched_dialog_is_uac);
+    void process_pending_replacements();
     // The live session other than `except` whose relay socket listens on `port`.
     CallSession* find_by_relay_port(unsigned short port, const CallSession* except);
     void remove_session(const std::string& call_id);
@@ -75,10 +77,17 @@ public:
     void process_pending_hold_timeouts();
 
 private:
+    struct PendingReplacement {
+        std::string call_id_;
+        bool matched_dialog_is_uac_;
+    };
+
     void stop_rtp_inactivity_timer();
+    void terminate_replaced_session(const std::string& call_id, bool matched_dialog_is_uac);
 
     std::unordered_map<std::string, std::unique_ptr<CallSession>> sessions_;
     std::vector<std::unique_ptr<CallSession>> retired_sessions_;
+    std::vector<PendingReplacement> pending_replacements_;
     std::shared_ptr<RtpInactivityTimer> rtp_inactivity_timer_;
     int module_id_ = -1;
 };

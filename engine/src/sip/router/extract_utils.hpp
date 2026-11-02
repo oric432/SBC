@@ -1,10 +1,17 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 #include <pjsip.h>
 
 namespace SbcEngine {
+
+inline constexpr std::string_view kReplacesName = "Replaces";
+
+inline pj_str_t replaces_name() {
+    return {.ptr = const_cast<char*>(kReplacesName.data()), .slen = static_cast<pj_ssize_t>(kReplacesName.size())};
+}
 
 // Pure, stateless string-extraction helpers shared across the router/call layers.
 //
@@ -16,6 +23,8 @@ namespace SbcEngine {
 // SetupSm's own guard handles it) or simply fails the next step normally (empty
 // request-uri: routing lookup finds nothing, RouteFailed).
 std::string extract_method(pjsip_rx_data* rx_data);
+bool has_replaces_header(pjsip_rx_data* rx_data);
+bool replaces_has_single_dialog_tags(pjsip_rx_data* rx_data);
 std::string extract_sdp(pjsip_rx_data* rx_data);
 // 0 (not a valid SIP status code) on a malformed/absent rx_data or a request.
 int extract_status_code(pjsip_rx_data* rx_data);

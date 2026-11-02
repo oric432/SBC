@@ -21,7 +21,20 @@ void reject_reinvite(pjsip_inv_session* inv, pjsip_rx_data* rdata, int status_co
 } // namespace
 bool MessageRouter::on_rx_request(pjsip_rx_data* request) {
     const std::string method = extract_method(request);
-    if (pjsip_rdata_get_dlg(request) != nullptr) {
+    const pjsip_dialog* dialog = pjsip_rdata_get_dlg(request);
+    if (method == "ACK") {
+        request_actions_.handle_unmatched_ack(request);
+        return true;
+    }
+    if (method == "CANCEL") {
+        request_actions_.handle_unmatched_dialog_request(request);
+        return true;
+    }
+    if (has_replaces_header(request) && (method != "INVITE" || dialog != nullptr)) {
+        request_actions_.reject_bad_request(request);
+        return true;
+    }
+    if (dialog != nullptr) {
         // PJSIP's existing dialog usages own every in-dialog method except
         // REFER, which this module claims and dispatches from on_tsx_state.
         return method == "REFER";
@@ -36,11 +49,8 @@ bool MessageRouter::on_rx_request(pjsip_rx_data* request) {
     else if (method == "REGISTER") {
         process_register(request);
     }
-    else if (method == "BYE" || method == "CANCEL") {
+    else if (method == "BYE") {
         request_actions_.handle_unmatched_dialog_request(request);
-    }
-    else if (method == "ACK") {
-        request_actions_.handle_unmatched_ack(request);
     }
     else if (method == "REFER") {
         request_actions_.reject_out_of_dialog_refer(request);
@@ -186,6 +196,7 @@ void MessageRouter::process_pending_media_events() {
         call_manager_->process_pending_hold_timeouts();
     }
 
+    call_manager_->process_pending_replacements();
     call_manager_->purge_scheduled();
     registrar_actions_.process_pending_binding_sweep();
 }
