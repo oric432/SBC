@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCheck, History } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,6 +34,8 @@ export function CallHistoryPage() {
   const [selectedCall, setSelectedCall] = useState<CallRecord | undefined>(
     undefined,
   );
+  const jumpTimer = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const [highlightedCallId, setHighlightedCallId] = useState<string>();
   const [lastSeenAt, markAllAsRead] = useLastSeenCheckpoint();
   const { data: allCalls } = useGetAllCallsQuery(undefined, {
     pollingInterval: CALL_HISTORY_POLL_INTERVAL_MS,
@@ -72,6 +74,20 @@ export function CallHistoryPage() {
 
   const closeDetailDialog = useCallback((open: boolean) => {
     if (!open) setSelectedCall(undefined);
+  }, []);
+  const jumpToCall = useCallback((call: CallRecord) => {
+    setSelectedCall(undefined);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`call-${call.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedCallId(call.id);
+      if (jumpTimer.current) clearTimeout(jumpTimer.current);
+      jumpTimer.current = setTimeout(
+        () => setHighlightedCallId(undefined),
+        2000,
+      );
+    });
   }, []);
 
   const calls = data?.rows ?? [];
@@ -136,6 +152,7 @@ export function CallHistoryPage() {
           sortDir={sortDir}
           onSortChange={handleSortChange}
           onSelectCall={setSelectedCall}
+          highlightedCallId={highlightedCallId}
           lastSeenAt={lastSeenAt}
         />
       )}
@@ -152,7 +169,7 @@ export function CallHistoryPage() {
       <CallHistoryDetailDialog
         call={selectedCall}
         calls={allCalls ?? calls}
-        onSelectCall={setSelectedCall}
+        onJumpToCall={jumpToCall}
         onOpenChange={closeDetailDialog}
       />
     </div>

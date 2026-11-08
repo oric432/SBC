@@ -1,4 +1,4 @@
-import { PhoneOff } from "lucide-react";
+import { GitMerge, PhoneOff } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ActiveCall } from "@/features/active-calls/types";
-import { formatDuration } from "@/features/call-history/format";
+import { formatDuration, formatSipUri } from "@/features/call-history/format";
 
 interface ActiveCallsTableProps {
   calls: ActiveCall[];
@@ -64,6 +64,18 @@ export const ActiveCallsTable = memo(function ActiveCallsTable({
   calls,
 }: ActiveCallsTableProps) {
   const now = useNow(1000);
+  const displayedCalls = calls.flatMap((call, index) => {
+    const peer = call.mediaPeerCallId
+      ? calls.find((candidate) => candidate.sipCallId === call.mediaPeerCallId)
+      : undefined;
+    if (!peer) return [{ call, child: false }];
+    if (calls.findIndex((candidate) => candidate.id === peer.id) < index)
+      return [];
+    return [
+      { call, child: false },
+      { call: peer, child: true },
+    ];
+  });
 
   if (calls.length === 0) {
     return (
@@ -85,23 +97,46 @@ export const ActiveCallsTable = memo(function ActiveCallsTable({
               <TableHead>Route</TableHead>
               <TableHead>Codec</TableHead>
               <TableHead>State</TableHead>
+              <TableHead>Media joined to</TableHead>
               <TableHead>Duration</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {calls.map((call) => {
+            {displayedCalls.map(({ call, child }) => {
               const mediaPeer = call.mediaPeerCallId
                 ? calls.find(
                     (candidate) => candidate.sipCallId === call.mediaPeerCallId,
                   )
                 : undefined;
               return (
-                <TableRow key={call.id} id={`call-${call.id}`}>
+                <TableRow
+                  key={call.id}
+                  id={`call-${call.id}`}
+                  className={child ? "bg-muted/30" : undefined}
+                >
                   <TableCell className="font-mono text-sm">
-                    {call.caller}
+                    <div
+                      className={
+                        child
+                          ? "flex items-center gap-2 border-l-2 border-blue-400 pl-3"
+                          : undefined
+                      }
+                    >
+                      {child && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <GitMerge className="h-4 w-4 shrink-0 cursor-help text-blue-500" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Bridged call linked to the row above
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {formatSipUri(call.caller)}
+                    </div>
                   </TableCell>
                   <TableCell className="font-mono text-sm">
-                    {call.callee}
+                    {formatSipUri(call.callee)}
                   </TableCell>
                   <TableCell className="max-w-[220px] font-mono text-sm">
                     {call.route ? (
@@ -119,20 +154,18 @@ export const ActiveCallsTable = memo(function ActiveCallsTable({
                   </TableCell>
                   <TableCell className="text-sm">{call.codec ?? "—"}</TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StateCell call={call} />
-                      {call.mediaPeerCallId &&
-                        (mediaPeer ? (
-                          <a
-                            href={`#call-${mediaPeer.id}`}
-                            aria-label={`Show joined call ${call.mediaPeerCallId}`}
-                          >
-                            <Badge variant="secondary">Joined</Badge>
-                          </a>
-                        ) : (
-                          <Badge variant="secondary">Joined</Badge>
-                        ))}
-                    </div>
+                    <StateCell call={call} />
+                  </TableCell>
+                  <TableCell className="max-w-[220px] font-mono text-sm">
+                    {mediaPeer && (
+                      <Badge
+                        variant="outline"
+                        className="gap-1 border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300"
+                      >
+                        <GitMerge className="h-3 w-3" />
+                        Bridged leg
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="font-mono text-sm tabular-nums">
                     {call.answeredAt

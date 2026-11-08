@@ -17,6 +17,10 @@ export function formatDuration(durationSeconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+export function formatSipUri(uri: string): string {
+  return uri.match(/(sip:[^>\s]+)/i)?.[1] ?? uri;
+}
+
 const CODEC_LABELS: Record<string, Codec> = {
   PCMU: "G.711 (PCMU)",
   PCMA: "G.711 (PCMA)",

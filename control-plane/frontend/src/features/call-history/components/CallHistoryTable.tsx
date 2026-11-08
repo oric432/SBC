@@ -1,5 +1,5 @@
 import { formatDistanceToNow, format } from "date-fns";
-import { ArrowDown, ArrowUp, PhoneOff } from "lucide-react";
+import { ArrowDown, ArrowUp, GitMerge, PhoneOff } from "lucide-react";
 import { memo } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { STATUS_BADGE_STYLES } from "@/features/call-history/format";
+import {
+  formatSipUri,
+  STATUS_BADGE_STYLES,
+} from "@/features/call-history/format";
 import type {
   CallHistorySortField,
   CallRecord,
@@ -34,6 +37,7 @@ interface CallHistoryTableProps {
   onSortChange: (field: CallHistorySortField) => void;
   onSelectCall: (call: CallRecord) => void;
   lastSeenAt: string | null;
+  highlightedCallId?: string;
 }
 
 interface SortableHeadProps {
@@ -77,7 +81,20 @@ export const CallHistoryTable = memo(function CallHistoryTable({
   onSortChange,
   onSelectCall,
   lastSeenAt,
+  highlightedCallId,
 }: CallHistoryTableProps) {
+  const displayedCalls = calls.flatMap((call, index) => {
+    const peer = call.mediaPeerCallId
+      ? calls.find((candidate) => candidate.sipCallId === call.mediaPeerCallId)
+      : undefined;
+    if (!peer) return [{ call, child: false }];
+    if (calls.findIndex((candidate) => candidate.id === peer.id) < index)
+      return [];
+    return [
+      { call, child: false },
+      { call: peer, child: true },
+    ];
+  });
   if (calls.length === 0) {
     return (
       <div className="flex h-40 flex-col items-center justify-center gap-2 rounded-md border border-dashed text-muted-foreground">
@@ -117,10 +134,11 @@ export const CallHistoryTable = memo(function CallHistoryTable({
               <TableHead>Route</TableHead>
               <TableHead>Codec</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Media joined to</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {calls.map((call) => {
+            {displayedCalls.map(({ call, child }) => {
               const isNew = isCallNew(call, lastSeenAt);
               const mediaPeer = call.mediaPeerCallId
                 ? calls.find(
@@ -130,9 +148,13 @@ export const CallHistoryTable = memo(function CallHistoryTable({
               return (
                 <TableRow
                   key={call.id}
+                  id={`call-${call.id}`}
                   className={cn(
                     "cursor-pointer",
                     isNew && "bg-primary/5 hover:bg-primary/10",
+                    child && "bg-muted/30",
+                    highlightedCallId === call.id &&
+                      "bg-blue-500/15 ring-2 ring-inset ring-blue-400 animate-pulse",
                   )}
                   onClick={() => onSelectCall(call)}
                 >
@@ -158,10 +180,28 @@ export const CallHistoryTable = memo(function CallHistoryTable({
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-sm">
-                    {call.caller}
+                    <div
+                      className={
+                        child
+                          ? "flex items-center gap-2 border-l-2 border-blue-400 pl-3"
+                          : undefined
+                      }
+                    >
+                      {child && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <GitMerge className="h-4 w-4 shrink-0 cursor-help text-blue-500" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Earlier bridged call linked to the row above
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {formatSipUri(call.caller)}
+                    </div>
                   </TableCell>
                   <TableCell className="font-mono text-sm">
-                    {call.callee}
+                    {formatSipUri(call.callee)}
                   </TableCell>
                   <TableCell className="max-w-[220px] font-mono text-sm">
                     {call.route ? (
@@ -179,26 +219,20 @@ export const CallHistoryTable = memo(function CallHistoryTable({
                   </TableCell>
                   <TableCell className="text-sm">{call.codec ?? "—"}</TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge className={cn(STATUS_BADGE_STYLES[call.status])}>
-                        {call.status}
+                    <Badge className={cn(STATUS_BADGE_STYLES[call.status])}>
+                      {call.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-[220px] font-mono text-sm">
+                    {mediaPeer && (
+                      <Badge
+                        variant="outline"
+                        className="gap-1 border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300"
+                      >
+                        <GitMerge className="h-3 w-3" />
+                        Bridged leg
                       </Badge>
-                      {call.mediaPeerCallId &&
-                        (mediaPeer ? (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onSelectCall(mediaPeer);
-                            }}
-                            aria-label={`Show joined call ${call.mediaPeerCallId}`}
-                          >
-                            <Badge variant="secondary">Joined</Badge>
-                          </button>
-                        ) : (
-                          <Badge variant="secondary">Joined</Badge>
-                        ))}
-                    </div>
+                    )}
                   </TableCell>
                 </TableRow>
               );
