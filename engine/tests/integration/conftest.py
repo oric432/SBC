@@ -105,6 +105,7 @@ class RoutesStubServer:
     def __init__(self) -> None:
         self._routes: dict[int, RouteRule] = {}
         self._users: list[SipUserFixture] = []
+        self._events: list[dict[str, object]] = []
         self._lock = threading.Lock()
         stub = self
 
@@ -226,6 +227,9 @@ class RoutesStubServer:
                         } or not envelope.get(message_type):
                             continue
 
+                        with stub._lock:
+                            stub._events.append(envelope)
+
                         ack = json.dumps(
                             {"type": "ack", "success": True}, separators=(",", ":")
                         ).encode()
@@ -266,6 +270,14 @@ class RoutesStubServer:
     def set_users(self, users: list[SipUserFixture]) -> None:
         with self._lock:
             self._users = list(users)
+
+    def event_count(self) -> int:
+        with self._lock:
+            return len(self._events)
+
+    def events_since(self, index: int) -> list[dict[str, object]]:
+        with self._lock:
+            return list(self._events[index:])
 
     def stop(self) -> None:
         self._server.shutdown()

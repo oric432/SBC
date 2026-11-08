@@ -36,17 +36,20 @@ struct CallStarted {
 };
 
 // Sent once the call is answered (route and codec become known) and again
-// whenever a mid-dialog renegotiation changes the caller leg's codec.
+// whenever the caller-leg codec or the joined media peer changes.
 struct CallUpdated {
     std::string sip_call_id;
     std::optional<std::string> route;
     std::optional<std::string> codec;
+    std::optional<std::string> media_peer_call_id;
     std::string updated_at;
 
     struct glaze_json_schema {
         glz::schema sip_call_id{.description = "SIP Call-ID of the caller-facing leg"};
         glz::schema route{.description = "Destination the call was routed to"};
         glz::schema codec{.description = "Codec negotiated with the caller"};
+        glz::schema media_peer_call_id{
+            .description = "Caller-facing SIP Call-ID of the SBC call whose RTP relay this call is joined to"};
         glz::schema updated_at{.description = "ISO-8601 UTC time of this update, engine clock"};
     };
 };

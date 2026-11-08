@@ -154,6 +154,7 @@ public:
     void report_call_started();
     void report_call_answered();
     void report_call_updated();
+    void report_media_peer(std::string peer_call_id);
     void report_call_terminated(std::string_view status, std::optional<std::string> failure_reason);
 
     // Time since report_call_answered() was called, for the dialog-teardown
@@ -208,6 +209,7 @@ private:
     std::string caller_display_name_;
     std::string outbound_destination_;
     std::optional<ReplacementTarget> replacement_target_;
+    std::optional<std::string> media_peer_call_id_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.
     SetupActions setup_actions_;
