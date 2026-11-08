@@ -59,8 +59,7 @@ void retarget_leg(CallSession& session, Leg leg, const std::string& address, std
     }
     auto* peer = session.call_manager()->find_by_relay_port(port, &session);
     if (peer != nullptr) {
-        session.report_media_peer(peer->call_id());
-        peer->report_media_peer(session.call_id());
+        session.call_manager()->link_transfer_sessions(session, *peer);
         Log::call()->info(
             "[{}] media chain: {} leg now relayed through call [{}] ({} -> {})",
             session.call_id(),

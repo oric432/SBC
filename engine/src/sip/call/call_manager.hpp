@@ -42,6 +42,7 @@ public:
     CallSession* find_by_call_id(const std::string& call_id);
     CallSession* find_by_inv(pjsip_inv_session* inv);
     CallSession* find_by_dialog(pjsip_dialog* dialog);
+    void link_transfer_sessions(CallSession& first, CallSession& second);
     void queue_replaced_session(std::string call_id, bool matched_dialog_is_uac);
     void process_pending_replacements();
     // The live session other than `except` whose relay socket listens on `port`.

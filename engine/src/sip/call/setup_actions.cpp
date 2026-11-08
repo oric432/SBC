@@ -235,6 +235,9 @@ void SetupActions::establish_call() {
         callee_relay_port.value_or(0));
     session_.report_call_answered();
     if (const auto& replacement = session_.replacement_target()) {
+        if (auto* replaced = session_.call_manager()->find_by_call_id(replacement->replaced_session_id_)) {
+            session_.call_manager()->link_transfer_sessions(session_, *replaced);
+        }
         session_.call_manager()->queue_replaced_session(
             replacement->replaced_session_id_,
             replacement->matched_dialog_is_uac_);

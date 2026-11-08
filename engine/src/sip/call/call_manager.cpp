@@ -77,6 +77,11 @@ void CallManager::queue_replaced_session(std::string call_id, bool matched_dialo
     pending_replacements_.push_back({.call_id_ = std::move(call_id), .matched_dialog_is_uac_ = matched_dialog_is_uac});
 }
 
+void CallManager::link_transfer_sessions(CallSession& first, CallSession& second) {
+    first.report_media_peer(second.call_id());
+    second.report_media_peer(first.call_id());
+}
+
 void CallManager::process_pending_replacements() {
     auto pending_replacements = std::move(pending_replacements_);
     pending_replacements_.clear();
