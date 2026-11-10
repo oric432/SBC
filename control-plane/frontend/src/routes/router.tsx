@@ -8,16 +8,32 @@ import { RoutesPage } from "@/features/routes/RoutesPage";
 import { SipUsersPage } from "@/features/sip-users/SipUsersPage";
 
 export const router = createBrowserRouter([
-    {
-        path: "/",
-        element: <AppShell />,
-        children: [
-            { index: true, element: <Navigate to="/routes" replace /> },
-            { path: "routes", element: <RoutesPage />, handle: { title: "Routes" } },
-            { path: "active-calls", element: <ActiveCallsPage />, handle: { title: "Active Calls" } },
-            { path: "call-history", element: <CallHistoryPage />, handle: { title: "Call History" } },
-            { path: "sip-users", element: <SipUsersPage />, handle: { title: "SIP Users" } },
-            { path: "registrations", element: <RegistrationsPage />, handle: { title: "Registrations" } },
-        ],
-    },
+  {
+    path: "/",
+    element: <AppShell />,
+    children: [
+      { index: true, element: <Navigate to="/routes" replace /> },
+      { path: "routes", element: <RoutesPage />, handle: { title: "Routes" } },
+      {
+        path: "active-calls",
+        element: <ActiveCallsPage />,
+        handle: { title: "Active Calls" },
+      },
+      {
+        path: "call-history",
+        element: <CallHistoryPage />,
+        handle: { title: "Call History" },
+      },
+      {
+        path: "sip-users",
+        element: <SipUsersPage />,
+        handle: { title: "SIP Users" },
+      },
+      {
+        path: "registrations",
+        element: <RegistrationsPage />,
+        handle: { title: "Registrations" },
+      },
+    ],
+  },
 ]);

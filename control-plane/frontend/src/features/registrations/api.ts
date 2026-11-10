@@ -9,16 +9,16 @@ import type { Registration } from "./types";
 export const REGISTRATIONS_POLL_INTERVAL_MS = 5000;
 
 export const registrationsApi = createApi({
-    reducerPath: "registrationsApi",
-    baseQuery: fetchBaseQuery({ baseUrl: "/api/registrations" }),
-    tagTypes: ["Registration"],
-    endpoints: (builder) => ({
-        getRegistrations: builder.query<Registration[], void>({
-            query: () => "",
-            transformResponse: unwrap<Registration[]>,
-            providesTags: [{ type: "Registration", id: "LIST" }],
-        }),
+  reducerPath: "registrationsApi",
+  baseQuery: fetchBaseQuery({ baseUrl: "/api/registrations" }),
+  tagTypes: ["Registration"],
+  endpoints: (builder) => ({
+    getRegistrations: builder.query<Registration[], void>({
+      query: () => "",
+      transformResponse: unwrap<Registration[]>,
+      providesTags: [{ type: "Registration", id: "LIST" }],
     }),
+  }),
 });
 
 export const { useGetRegistrationsQuery } = registrationsApi;

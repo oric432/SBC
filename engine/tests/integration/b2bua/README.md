@@ -8,6 +8,7 @@ pytest + SIPp integration tests for the SBC's B2BUA call handling. See
 ```bash
 just test-b2bua          # from engine/
 just test-b2bua --show-engine-logs  # also stream the spawned engine's logs
+just test-b2bua --backend-mode demo  # run against local PostgreSQL + control plane
 ```
 
 This installs the Python dependencies declared in `../../pyproject.toml`,
@@ -22,6 +23,10 @@ sudo setcap cap_net_raw+ep "$(readlink -f "$(command -v sipp)")"
 RTP is streamed at realistic packet pacing (~30ms per packet) by both legs,
 using `g711a.pcap` (G.711) unless a scenario's callee overrides it (see
 `transcode_mismatched_codecs` below).
+
+`--backend-mode demo` starts PostgreSQL, Backend, and frontend, then pytest
+provisions the routes and SIP users and owns the SbcEngine process exactly as
+in the default mode. The demo launcher only manages those supporting services.
 
 To instead run against an `SbcEngine` + Backend you've already started
 yourself in their own terminals (so you get their live logs and can attach a

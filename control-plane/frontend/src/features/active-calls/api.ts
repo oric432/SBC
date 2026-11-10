@@ -11,15 +11,18 @@ export const ACTIVE_CALLS_POLL_INTERVAL_MS = 5000;
 type ActiveCallDto = Omit<ActiveCall, "codec"> & { codec: string | null };
 
 export const activeCallsApi = createApi({
-    reducerPath: "activeCallsApi",
-    baseQuery: fetchBaseQuery({ baseUrl: "/api/calls/active" }),
-    endpoints: (builder) => ({
-        getActiveCalls: builder.query<ActiveCall[], void>({
-            query: () => "",
-            transformResponse: (response: ApiResponse<ActiveCallDto[]>) =>
-                unwrap(response).map((call) => ({ ...call, codec: formatCodec(call.codec) })),
-        }),
+  reducerPath: "activeCallsApi",
+  baseQuery: fetchBaseQuery({ baseUrl: "/api/calls/active" }),
+  endpoints: (builder) => ({
+    getActiveCalls: builder.query<ActiveCall[], void>({
+      query: () => "",
+      transformResponse: (response: ApiResponse<ActiveCallDto[]>) =>
+        unwrap(response).map((call) => ({
+          ...call,
+          codec: formatCodec(call.codec),
+        })),
     }),
+  }),
 });
 
 export const { useGetActiveCallsQuery } = activeCallsApi;

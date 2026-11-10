@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <vector>
 
 #include <pjlib-util.h>
 #include <pjsip.h>
@@ -10,6 +11,7 @@
 #include "sip/router/extract_utils.hpp"
 #include "sip/router/sip_request_actions.hpp"
 #include "sip/call/call_manager.hpp"
+#include "sip/call/i_call_event_sink.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/call/offer_answer_actions.hpp"
 #include "sip/registrar/binding_store.hpp"
@@ -107,6 +109,15 @@ public:
 
 private:
     pj_pool_t* pool_;
+};
+
+class RecordingCallEventSink final : public ICallEventSink {
+public:
+    void send_call_started(Protocols::CallStarted) override {}
+    void send_call_updated(Protocols::CallUpdated event) override { updates_.push_back(std::move(event)); }
+    void send_call_terminated(Protocols::CallTerminated) override {}
+
+    std::vector<Protocols::CallUpdated> updates_;
 };
 
 // Parses a raw SIP message into a real rx_data the same way PJSIP's transport
@@ -742,6 +753,64 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
     manager.purge_scheduled();
     ioc.restart();
     ioc.run();
+}
+
+TEST_CASE(
+    "CallSession reports media peers once and retains early detection until answer",
+    "[call_session][call_events]") {
+    boost::asio::io_context ioc;
+    RecordingCallEventSink events;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    context.call_events_ = &events;
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* session = manager.create_session("call-a", &context, EngineStores{}, ioc.get_executor(), &request);
+
+    session->report_media_peer("call-b");
+    CHECK(events.updates_.empty());
+
+    session->report_call_answered();
+    REQUIRE(events.updates_.size() == 1);
+    CHECK(events.updates_.front().sip_call_id == "call-a");
+    CHECK(events.updates_.front().media_peer_call_id == "call-b");
+
+    session->report_media_peer("call-b");
+    CHECK(events.updates_.size() == 1);
+
+    manager.schedule_remove("call-a");
+    manager.purge_scheduled();
+}
+
+TEST_CASE("CallSession reports reciprocal media peers", "[call_session][call_events]") {
+    boost::asio::io_context ioc;
+    RecordingCallEventSink events;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    context.call_events_ = &events;
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* first = manager.create_session("call-a", &context, EngineStores{}, ioc.get_executor(), &request);
+    auto* second = manager.create_session("call-b", &context, EngineStores{}, ioc.get_executor(), &request);
+
+    first->report_call_answered();
+    second->report_call_answered();
+    events.updates_.clear();
+
+    first->report_media_peer(second->call_id());
+    second->report_media_peer(first->call_id());
+
+    REQUIRE(events.updates_.size() == 2);
+    CHECK(events.updates_[0].sip_call_id == "call-a");
+    CHECK(events.updates_[0].media_peer_call_id == "call-b");
+    CHECK(events.updates_[1].sip_call_id == "call-b");
+    CHECK(events.updates_[1].media_peer_call_id == "call-a");
+
+    manager.schedule_remove("call-a");
+    manager.schedule_remove("call-b");
+    manager.purge_scheduled();
 }
 
 } // namespace SbcEngine

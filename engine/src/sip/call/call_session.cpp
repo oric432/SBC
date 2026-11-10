@@ -110,6 +110,14 @@ void CallSession::report_call_updated() {
     }
 }
 
+void CallSession::report_media_peer(std::string peer_call_id) {
+    if (peer_call_id == call_id_ || media_peer_call_id_ == peer_call_id) {
+        return;
+    }
+    media_peer_call_id_ = std::move(peer_call_id);
+    report_call_updated();
+}
+
 void CallSession::send_call_updated() {
     if (ctx_->call_events_ == nullptr) {
         return;
@@ -120,6 +128,7 @@ void CallSession::send_call_updated() {
             .sip_call_id = call_id_,
             .route = outbound_destination_,
             .codec = caller_codec ? std::optional<std::string>{caller_codec->name_} : std::nullopt,
+            .media_peer_call_id = media_peer_call_id_,
             .updated_at = iso8601_now()});
 }
 

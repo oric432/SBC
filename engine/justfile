@@ -79,8 +79,8 @@ format-check:
 format:
     cmake --build build --target format
 
-# Run B2BUA integration tests (builds+starts the engine itself; sipp must be installed)
-test-b2bua *args:
+# Run B2BUA integration tests using the stub backend (called by test-b2bua).
+test-b2bua-stub *args:
     #!/usr/bin/env bash
     set -e
 
@@ -107,6 +107,49 @@ test-b2bua *args:
     fi
     "$VENV/bin/pip" install --quiet ./tests
     "$VENV/bin/pytest" tests/integration/b2bua {{args}}
+
+# Run B2BUA integration tests with the stub backend (default) or demo control plane.
+# Pass --backend-mode demo to start Docker/PostgreSQL plus local backend/frontend.
+test-b2bua *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -- {{args}}
+
+    backend_mode=stub
+    test_args=()
+    while (($#)); do
+        case "$1" in
+            --backend-mode)
+                if (($# < 2)); then
+                    echo "error: --backend-mode requires 'stub' or 'demo'" >&2
+                    exit 2
+                fi
+                backend_mode="$2"
+                shift 2
+                ;;
+            --backend-mode=*)
+                backend_mode="${1#--backend-mode=}"
+                shift
+                ;;
+            *)
+                test_args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    case "$backend_mode" in
+        stub)
+            just test-b2bua-stub "${test_args[@]}"
+            ;;
+        demo)
+            bash ../scripts/demo-b2bua.sh "${test_args[@]}"
+            ;;
+        *)
+            echo "error: invalid backend mode '$backend_mode' (expected 'stub' or 'demo')" >&2
+            exit 2
+            ;;
+    esac
 
 # Generate schemas using the schema generator tool
 generate-schemas:

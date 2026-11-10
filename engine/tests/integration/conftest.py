@@ -105,6 +105,7 @@ class RoutesStubServer:
     def __init__(self) -> None:
         self._routes: dict[int, RouteRule] = {}
         self._users: list[SipUserFixture] = []
+        self._events: list[dict[str, object]] = []
         self._lock = threading.Lock()
         stub = self
 
@@ -226,6 +227,9 @@ class RoutesStubServer:
                         } or not envelope.get(message_type):
                             continue
 
+                        with stub._lock:
+                            stub._events.append(envelope)
+
                         ack = json.dumps(
                             {"type": "ack", "success": True}, separators=(",", ":")
                         ).encode()
@@ -266,6 +270,14 @@ class RoutesStubServer:
     def set_users(self, users: list[SipUserFixture]) -> None:
         with self._lock:
             self._users = list(users)
+
+    def event_count(self) -> int:
+        with self._lock:
+            return len(self._events)
+
+    def events_since(self, index: int) -> list[dict[str, object]]:
+        with self._lock:
+            return list(self._events[index:])
 
     def stop(self) -> None:
         self._server.shutdown()
@@ -319,6 +331,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             "there is nothing captured to check."
         ),
     )
+    parser.addoption("--backend-demo", action="store_true", default=False, help="Use the demo control plane at localhost:3001.")
 
 
 @pytest.fixture(scope="session")
@@ -376,9 +389,10 @@ def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_
     routes_stub_server.set_users(sip_users)
 
     work_dir = tmp_path_factory.mktemp("sbc_engine")
+    backend_demo = request.config.getoption("--backend-demo")
     settings = {
         "sip": {"address": "127.0.0.1", "port": sip_port},
-        "control_plane": {"ws_url": routes_stub_server.url},
+        "control_plane": {"ws_url": "ws://127.0.0.1:3001/ws/engine" if backend_demo else routes_stub_server.url},
         "registrar": {"min_expires_s": 60, "max_expires_s": 120},
     }
     for section, overrides in settings_overrides.items():

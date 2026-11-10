@@ -72,6 +72,7 @@ export const calls = pgTable(
     callee: text('callee').notNull(),
     route: text('route'),
     codec: text('codec'),
+    mediaPeerCallId: text('media_peer_call_id'),
     status: text('status'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     answeredAt: timestamp('answered_at', { withTimezone: true }),
@@ -80,5 +81,5 @@ export const calls = pgTable(
     failureReason: text('failure_reason'),
   },
   // Scanned by the retention cleanup job (jobs/callHistoryCleanup.ts) on every tick.
-  (table) => [index('calls_ended_at_idx').on(table.endedAt)],
+  (table) => [index('calls_ended_at_idx').on(table.endedAt), index('calls_media_peer_call_id_idx').on(table.mediaPeerCallId)],
 );

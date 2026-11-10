@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
-import { CALL_HISTORY_POLL_INTERVAL_MS, useGetAllCallsQuery } from "@/features/call-history/api";
+import {
+  CALL_HISTORY_POLL_INTERVAL_MS,
+  useGetAllCallsQuery,
+} from "@/features/call-history/api";
 
 const LAST_SEEN_KEY = "sbc.callHistory.lastSeenAt";
 
@@ -8,20 +17,20 @@ type Listener = () => void;
 const listeners = new Set<Listener>();
 
 function getLastSeenAt(): string | null {
-    return localStorage.getItem(LAST_SEEN_KEY);
+  return localStorage.getItem(LAST_SEEN_KEY);
 }
 
 // The only writer of the checkpoint — notifies subscribers synchronously so
 // any component reading it via useSyncExternalStore re-renders immediately,
 // with no reliance on effect ordering between components.
 function setLastSeenAt(iso: string): void {
-    localStorage.setItem(LAST_SEEN_KEY, iso);
-    listeners.forEach((listener) => listener());
+  localStorage.setItem(LAST_SEEN_KEY, iso);
+  listeners.forEach((listener) => listener());
 }
 
 function subscribe(listener: Listener): () => void {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 // Captures the checkpoint once on mount (before advancing it), so a row's
@@ -44,23 +53,26 @@ function subscribe(listener: Listener): () => void {
 // mount, this clears "New" flags in the current view right away rather than
 // only affecting the next visit.
 export function useLastSeenCheckpoint(): [string | null, () => void] {
-    const [capturedLastSeenAt, setCapturedLastSeenAt] = useState(getLastSeenAt);
+  const [capturedLastSeenAt, setCapturedLastSeenAt] = useState(getLastSeenAt);
 
-    useEffect(() => {
-        setLastSeenAt(new Date().toISOString());
-    }, []);
+  useEffect(() => {
+    setLastSeenAt(new Date().toISOString());
+  }, []);
 
-    const markAllAsRead = useCallback(() => {
-        const now = new Date().toISOString();
-        setLastSeenAt(now);
-        setCapturedLastSeenAt(now);
-    }, []);
+  const markAllAsRead = useCallback(() => {
+    const now = new Date().toISOString();
+    setLastSeenAt(now);
+    setCapturedLastSeenAt(now);
+  }, []);
 
-    return [capturedLastSeenAt, markAllAsRead];
+  return [capturedLastSeenAt, markAllAsRead];
 }
 
-export function isCallNew(call: { timestamp: string }, lastSeenAt: string | null): boolean {
-    return lastSeenAt !== null && call.timestamp > lastSeenAt;
+export function isCallNew(
+  call: { timestamp: string },
+  lastSeenAt: string | null,
+): boolean {
+  return lastSeenAt !== null && call.timestamp > lastSeenAt;
 }
 
 // Sidebar badge — reads the checkpoint via useSyncExternalStore (the
@@ -72,8 +84,13 @@ export function isCallNew(call: { timestamp: string }, lastSeenAt: string | null
 // fire again *after* the page's checkpoint-advancing effect had already run
 // once, capturing the just-advanced value and permanently zeroing the count.
 export function useUnseenCallCount(): number {
-    const { data: calls } = useGetAllCallsQuery(undefined, { pollingInterval: CALL_HISTORY_POLL_INTERVAL_MS });
-    const lastSeenAt = useSyncExternalStore(subscribe, getLastSeenAt);
+  const { data: calls } = useGetAllCallsQuery(undefined, {
+    pollingInterval: CALL_HISTORY_POLL_INTERVAL_MS,
+  });
+  const lastSeenAt = useSyncExternalStore(subscribe, getLastSeenAt);
 
-    return useMemo(() => (calls ?? []).filter((call) => isCallNew(call, lastSeenAt)).length, [calls, lastSeenAt]);
+  return useMemo(
+    () => (calls ?? []).filter((call) => isCallNew(call, lastSeenAt)).length,
+    [calls, lastSeenAt],
+  );
 }

@@ -27,6 +27,7 @@ export interface CallUpdated {
   sip_call_id: string;
   route?: string | null;
   codec?: string | null;
+  media_peer_call_id?: string;
   updated_at: string;
 }
 

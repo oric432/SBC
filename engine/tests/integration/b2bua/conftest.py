@@ -58,11 +58,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--live-backend-url",
         default="http://127.0.0.1:3001",
         help=(
-            "Base URL of the real Backend a --live-engine SbcEngine is connected "
-            "to (see settings.toml's [control_plane].ws_url on that engine). Used "
-            "only to provision this suite's registered_user/other_registered_user "
-            "through the Backend's REST API for the register scenarios -- ignored "
-            "otherwise."
+            "Base URL of the real Backend used by --backend-demo or connected to "
+            "a --live-engine SbcEngine."
         ),
     )
 
@@ -84,21 +81,27 @@ def other_registered_user(registered_user: SipUserFixture) -> SipUserFixture:
 
 
 @pytest.fixture(scope="session")
-def sip_users(registered_user: SipUserFixture, other_registered_user: SipUserFixture) -> list[SipUserFixture]:
-    return [registered_user, other_registered_user]
+def sip_users(request, registered_user: SipUserFixture, other_registered_user: SipUserFixture) -> list[SipUserFixture]:
+    users = [registered_user, other_registered_user]
+    if request.config.getoption("--backend-demo"):
+        _provision_sip_users(request.config.getoption("--live-backend-url"), users)
+    return users
 
 
 @pytest.fixture(scope="session")
-def initial_routes(ports: Ports) -> dict[int, RouteRule]:
+def initial_routes(request, ports: Ports) -> dict[int, RouteRule]:
     # SIPp's [service] macro defaults to the literal "service", so this is
     # the exact request-URI the caller scenario will send.
-    return {
+    routes = {
         2: RouteRule(
             uri=f"sip:service@{ports.local_ip}:{ports.sbc_port}",
             sip_address=ports.local_ip,
             port=ports.callee_port,
         ),
     }
+    if request.config.getoption("--backend-demo"):
+        _provision_routes(request.config.getoption("--live-backend-url"), routes)
+    return routes
 
 
 @pytest.fixture(scope="session")
@@ -231,7 +234,7 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., 
             caller_output = _communicate_sipp(
                 caller, caller_scenario, "caller", sbc_engine, trace=trace
             )
-            if sbc_engine.process.poll() is not None:
+            if sbc_engine.process is not None and sbc_engine.process.poll() is not None:
                 pytest.fail(f"SbcEngine exited during the call ({sbc_engine.process.returncode}):\n{sbc_engine.log_tail()}")
             callee_output = _communicate_sipp(
                 callee,
@@ -331,6 +334,37 @@ def _delete_sip_user(base_url: str, user_id: int) -> None:
     _backend_call(base_url, "DELETE", f"/api/sip-users/{user_id}")
 
 
+def _provision_sip_users(base_url: str, users: list[SipUserFixture]) -> list[int]:
+    created_ids = []
+    for user in users:
+        user_id = _create_sip_user(base_url, user)
+        if user_id is None:
+            existing_id = _find_sip_user_id(base_url, user.username, user.realm)
+            if existing_id is not None:
+                _delete_sip_user(base_url, existing_id)
+            user_id = _create_sip_user(base_url, user)
+            if user_id is None:
+                pytest.fail(f"could not provision SIP user {user.username}@{user.realm} on the Backend")
+        created_ids.append(user_id)
+    return created_ids
+
+
+def _provision_routes(base_url: str, routes: dict[int, RouteRule]) -> None:
+    for priority, route in routes.items():
+        body = {
+            "priority": priority,
+            "uri": route.uri,
+            "sip_address": route.sip_address,
+            "port": route.port,
+            "codec": route.codec,
+        }
+        status, raw = _backend_call(base_url, "POST", "/api/b2bua/routes", body)
+        if status == 409:
+            status, raw = _backend_call(base_url, "PUT", f"/api/b2bua/routes/{priority}", body)
+        if status not in {200, 201}:
+            pytest.fail(f"could not provision route {priority} on the Backend ({status}): {raw.decode()}")
+
+
 @pytest.fixture(scope="session")
 def _live_registered_users(request, sip_users: list[SipUserFixture]):
     """Provisions this suite's registered_user/other_registered_user for real
@@ -346,17 +380,7 @@ def _live_registered_users(request, sip_users: list[SipUserFixture]):
         return
 
     base_url = request.config.getoption("--live-backend-url")
-    created_ids = []
-    for user in sip_users:
-        user_id = _create_sip_user(base_url, user)
-        if user_id is None:
-            existing_id = _find_sip_user_id(base_url, user.username, user.realm)
-            if existing_id is not None:
-                _delete_sip_user(base_url, existing_id)
-            user_id = _create_sip_user(base_url, user)
-            if user_id is None:
-                pytest.fail(f"could not provision SIP user {user.username}@{user.realm} on the Backend")
-        created_ids.append(user_id)
+    created_ids = _provision_sip_users(base_url, sip_users)
 
     yield
 

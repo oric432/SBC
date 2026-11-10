@@ -32,6 +32,7 @@ const toHistoryRecord = (row: CallRow) => ({
   timestamp: row.startedAt.toISOString(),
   durationSeconds: row.durationSeconds ?? undefined,
   failureReason: row.failureReason ?? undefined,
+  mediaPeerCallId: row.mediaPeerCallId ?? undefined,
 });
 
 const toActiveCall = (row: CallRow) => ({
@@ -43,6 +44,7 @@ const toActiveCall = (row: CallRow) => ({
   codec: row.codec,
   startedAt: row.startedAt.toISOString(),
   answeredAt: row.answeredAt?.toISOString() ?? null,
+  mediaPeerCallId: row.mediaPeerCallId ?? undefined,
   stale: Date.now() - row.startedAt.getTime() > STALE_AFTER_MS,
 });
 
@@ -93,6 +95,7 @@ export const applyCallUpdated = async (event: CallUpdated): Promise<void> => {
     .set({
       route: event.route ?? undefined,
       codec: event.codec ?? undefined,
+      mediaPeerCallId: Object.hasOwn(event, 'media_peer_call_id') ? event.media_peer_call_id ?? null : undefined,
       // The first update is the answer; a later codec-change update must not
       // overwrite it.
       answeredAt: sql`COALESCE(${calls.answeredAt}, ${updatedAt})`,
