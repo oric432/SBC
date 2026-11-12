@@ -37,6 +37,7 @@ interface CallHistoryTableProps {
   sortDir: SortDirection;
   onSortChange: (field: CallHistorySortField) => void;
   onSelectCall: (call: CallRecord) => void;
+  onCallRowChange: (callId: string, row: HTMLTableRowElement | null) => void;
   lastSeenAt: string | null;
   highlightedCallId?: string;
 }
@@ -81,6 +82,7 @@ export const CallHistoryTable = memo(function CallHistoryTable({
   sortDir,
   onSortChange,
   onSelectCall,
+  onCallRowChange,
   lastSeenAt,
   highlightedCallId,
 }: CallHistoryTableProps) {
@@ -137,7 +139,7 @@ export const CallHistoryTable = memo(function CallHistoryTable({
               return (
                 <TableRow
                   key={call.id}
-                  id={`call-${call.id}`}
+                  ref={(row) => onCallRowChange(call.id, row)}
                   className={cn(
                     "cursor-pointer",
                     isNew && "bg-primary/5 hover:bg-primary/10",

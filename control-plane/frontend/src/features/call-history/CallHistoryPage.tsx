@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCheck, History } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,7 +35,9 @@ export function CallHistoryPage() {
   const [selectedCall, setSelectedCall] = useState<CallRecord | undefined>(
     undefined,
   );
+  const callRowRefs = useRef(new Map<string, HTMLTableRowElement>());
   const jumpTimer = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const [scrollTargetCallId, setScrollTargetCallId] = useState<string>();
   const [highlightedCallId, setHighlightedCallId] = useState<string>();
   const [lastSeenAt, markAllAsRead] = useLastSeenCheckpoint();
   const { data: allCalls } = useGetAllCallsQuery(undefined, {
@@ -55,6 +58,8 @@ export function CallHistoryPage() {
     },
     { pollingInterval: CALL_HISTORY_POLL_INTERVAL_MS },
   );
+  const calls = useMemo(() => data?.rows ?? [], [data?.rows]);
+  const totalCount = data?.totalCount ?? 0;
 
   const handleStatusChange = useCallback((next: CallStatus[]) => {
     setStatuses(next);
@@ -75,23 +80,52 @@ export function CallHistoryPage() {
   const closeDetailDialog = useCallback((open: boolean) => {
     if (!open) setSelectedCall(undefined);
   }, []);
-  const jumpToCall = useCallback((call: CallRecord) => {
-    setSelectedCall(undefined);
-    requestAnimationFrame(() => {
-      document
-        .getElementById(`call-${call.id}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-      setHighlightedCallId(call.id);
-      if (jumpTimer.current) clearTimeout(jumpTimer.current);
-      jumpTimer.current = setTimeout(
-        () => setHighlightedCallId(undefined),
-        2000,
-      );
-    });
-  }, []);
 
-  const calls = data?.rows ?? [];
-  const totalCount = data?.totalCount ?? 0;
+  const registerCallRow = useCallback(
+    (callId: string, row: HTMLTableRowElement | null) => {
+      if (row) {
+        callRowRefs.current.set(callId, row);
+      } else {
+        callRowRefs.current.delete(callId);
+      }
+    },
+    [],
+  );
+
+  const jumpToCall = useCallback(
+    (call: CallRecord) => {
+      if (!calls.some((candidate) => candidate.id === call.id)) {
+        toast.error(
+          "Bridged session is not on this page. Select its page to inspect it.",
+        );
+        return;
+      }
+
+      setSelectedCall(undefined);
+      setScrollTargetCallId(call.id);
+    },
+    [calls],
+  );
+
+  useEffect(() => {
+    if (!scrollTargetCallId) return;
+
+    const row = callRowRefs.current.get(scrollTargetCallId);
+    if (!row) return;
+
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedCallId(scrollTargetCallId);
+    setScrollTargetCallId(undefined);
+
+    if (jumpTimer.current) clearTimeout(jumpTimer.current);
+    jumpTimer.current = setTimeout(() => setHighlightedCallId(undefined), 2000);
+  }, [scrollTargetCallId]);
+
+  useEffect(() => {
+    return () => {
+      if (jumpTimer.current) clearTimeout(jumpTimer.current);
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -152,6 +186,7 @@ export function CallHistoryPage() {
           sortDir={sortDir}
           onSortChange={handleSortChange}
           onSelectCall={setSelectedCall}
+          onCallRowChange={registerCallRow}
           highlightedCallId={highlightedCallId}
           lastSeenAt={lastSeenAt}
         />
