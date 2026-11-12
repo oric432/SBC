@@ -100,7 +100,6 @@ export const ActiveCallsTable = memo(function ActiveCallsTable({
               return (
                 <TableRow
                   key={call.id}
-                  id={`call-${call.id}`}
                   className={child ? "bg-muted/30" : undefined}
                 >
                   <TableCell className="font-mono text-sm">
@@ -152,7 +151,7 @@ export const ActiveCallsTable = memo(function ActiveCallsTable({
                         className="gap-1 border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300"
                       >
                         <GitMerge className="h-3 w-3" />
-                        Bridged leg
+                        {formatSipUri(mediaPeer.callee)}
                       </Badge>
                     )}
                   </TableCell>
