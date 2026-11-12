@@ -22,6 +22,7 @@ import {
   formatSipUri,
   STATUS_BADGE_STYLES,
 } from "@/features/call-history/format";
+import { groupMediaPeerCalls } from "@/features/call-history/groupMediaPeerCalls";
 import type {
   CallHistorySortField,
   CallRecord,
@@ -83,18 +84,8 @@ export const CallHistoryTable = memo(function CallHistoryTable({
   lastSeenAt,
   highlightedCallId,
 }: CallHistoryTableProps) {
-  const displayedCalls = calls.flatMap((call, index) => {
-    const peer = call.mediaPeerCallId
-      ? calls.find((candidate) => candidate.sipCallId === call.mediaPeerCallId)
-      : undefined;
-    if (!peer) return [{ call, child: false }];
-    if (calls.findIndex((candidate) => candidate.id === peer.id) < index)
-      return [];
-    return [
-      { call, child: false },
-      { call: peer, child: true },
-    ];
-  });
+  const displayedCalls = groupMediaPeerCalls(calls);
+  const callsBySipCallId = new Map(calls.map((call) => [call.sipCallId, call]));
   if (calls.length === 0) {
     return (
       <div className="flex h-40 flex-col items-center justify-center gap-2 rounded-md border border-dashed text-muted-foreground">
@@ -141,9 +132,7 @@ export const CallHistoryTable = memo(function CallHistoryTable({
             {displayedCalls.map(({ call, child }) => {
               const isNew = isCallNew(call, lastSeenAt);
               const mediaPeer = call.mediaPeerCallId
-                ? calls.find(
-                    (candidate) => candidate.sipCallId === call.mediaPeerCallId,
-                  )
+                ? callsBySipCallId.get(call.mediaPeerCallId)
                 : undefined;
               return (
                 <TableRow

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/tooltip";
 import type { ActiveCall } from "@/features/active-calls/types";
 import { formatDuration, formatSipUri } from "@/features/call-history/format";
+import { groupMediaPeerCalls } from "@/features/call-history/groupMediaPeerCalls";
 
 interface ActiveCallsTableProps {
   calls: ActiveCall[];
@@ -64,18 +65,8 @@ export const ActiveCallsTable = memo(function ActiveCallsTable({
   calls,
 }: ActiveCallsTableProps) {
   const now = useNow(1000);
-  const displayedCalls = calls.flatMap((call, index) => {
-    const peer = call.mediaPeerCallId
-      ? calls.find((candidate) => candidate.sipCallId === call.mediaPeerCallId)
-      : undefined;
-    if (!peer) return [{ call, child: false }];
-    if (calls.findIndex((candidate) => candidate.id === peer.id) < index)
-      return [];
-    return [
-      { call, child: false },
-      { call: peer, child: true },
-    ];
-  });
+  const displayedCalls = groupMediaPeerCalls(calls);
+  const callsBySipCallId = new Map(calls.map((call) => [call.sipCallId, call]));
 
   if (calls.length === 0) {
     return (
@@ -104,9 +95,7 @@ export const ActiveCallsTable = memo(function ActiveCallsTable({
           <TableBody>
             {displayedCalls.map(({ call, child }) => {
               const mediaPeer = call.mediaPeerCallId
-                ? calls.find(
-                    (candidate) => candidate.sipCallId === call.mediaPeerCallId,
-                  )
+                ? callsBySipCallId.get(call.mediaPeerCallId)
                 : undefined;
               return (
                 <TableRow
