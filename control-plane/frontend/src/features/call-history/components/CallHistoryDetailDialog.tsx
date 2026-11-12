@@ -112,11 +112,15 @@ export function CallHistoryDetailDialog({
             <div className="divide-y">
               <DetailRow
                 label="Caller"
-                value={<span className="font-mono">{call.caller}</span>}
+                value={
+                  <span className="font-mono">{formatSipUri(call.caller)}</span>
+                }
               />
               <DetailRow
                 label="Callee"
-                value={<span className="font-mono">{call.callee}</span>}
+                value={
+                  <span className="font-mono">{formatSipUri(call.callee)}</span>
+                }
               />
               <DetailRow
                 label="Route"
