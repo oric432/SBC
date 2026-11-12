@@ -219,7 +219,7 @@ export const CallHistoryTable = memo(function CallHistoryTable({
                         className="gap-1 border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300"
                       >
                         <GitMerge className="h-3 w-3" />
-                        Bridged leg
+                        {formatSipUri(mediaPeer.callee)}
                       </Badge>
                     )}
                   </TableCell>
