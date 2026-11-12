@@ -236,7 +236,7 @@ void SetupActions::establish_call() {
     session_.report_call_answered();
     if (const auto& replacement = session_.replacement_target()) {
         if (auto* replaced = session_.call_manager()->find_by_call_id(replacement->replaced_session_id_)) {
-            session_.call_manager()->link_transfer_sessions(session_, *replaced);
+            session_.call_manager()->link_media_peers(session_, *replaced);
         }
         session_.call_manager()->queue_replaced_session(
             replacement->replaced_session_id_,
