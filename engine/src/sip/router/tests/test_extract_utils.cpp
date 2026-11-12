@@ -783,7 +783,7 @@ TEST_CASE(
     manager.purge_scheduled();
 }
 
-TEST_CASE("CallSession reports reciprocal media peers", "[call_session][call_events]") {
+TEST_CASE("CallManager links reciprocal media peers", "[call_manager][call_events]") {
     boost::asio::io_context ioc;
     RecordingCallEventSink events;
     PjContext context;
@@ -799,8 +799,7 @@ TEST_CASE("CallSession reports reciprocal media peers", "[call_session][call_eve
     second->report_call_answered();
     events.updates_.clear();
 
-    first->report_media_peer(second->call_id());
-    second->report_media_peer(first->call_id());
+    manager.link_media_peers(*first, *second);
 
     REQUIRE(events.updates_.size() == 2);
     CHECK(events.updates_[0].sip_call_id == "call-a");
