@@ -50,7 +50,9 @@ export function CallHistoryDetailDialog({
 
   return (
     <Dialog open={Boolean(call)} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent
+        className={cn("sm:max-w-md", mediaPeer && "sm:max-w-2xl")}
+      >
         <DialogHeader>
           <DialogTitle>Call details</DialogTitle>
         </DialogHeader>
