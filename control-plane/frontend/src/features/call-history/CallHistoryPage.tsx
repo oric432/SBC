@@ -36,7 +36,7 @@ export function CallHistoryPage() {
     undefined,
   );
   const callRowRefs = useRef(new Map<string, HTMLTableRowElement>());
-  const jumpTimer = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const jumpTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [scrollTargetCallId, setScrollTargetCallId] = useState<string>();
   const [highlightedCallId, setHighlightedCallId] = useState<string>();
   const [lastSeenAt, markAllAsRead] = useLastSeenCheckpoint();
