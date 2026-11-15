@@ -95,7 +95,7 @@ export const applyCallUpdated = async (event: CallUpdated): Promise<void> => {
     .set({
       route: event.route ?? undefined,
       codec: event.codec ?? undefined,
-      mediaPeerCallId: Object.hasOwn(event, 'media_peer_call_id') ? event.media_peer_call_id ?? null : undefined,
+      mediaPeerCallId: event.media_peer_call_id ?? undefined,
       // The first update is the answer; a later codec-change update must not
       // overwrite it.
       answeredAt: sql`COALESCE(${calls.answeredAt}, ${updatedAt})`,
