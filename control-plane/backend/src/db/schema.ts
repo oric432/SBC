@@ -81,5 +81,5 @@ export const calls = pgTable(
     failureReason: text('failure_reason'),
   },
   // Scanned by the retention cleanup job (jobs/callHistoryCleanup.ts) on every tick.
-  (table) => [index('calls_ended_at_idx').on(table.endedAt), index('calls_media_peer_call_id_idx').on(table.mediaPeerCallId)],
+  (table) => [index('calls_ended_at_idx').on(table.endedAt)],
 );
