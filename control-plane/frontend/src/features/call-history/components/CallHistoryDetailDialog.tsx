@@ -3,6 +3,7 @@ import { ArrowRight, ExternalLink, GitMerge } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -16,11 +17,6 @@ import {
 } from "@/features/call-history/format";
 import type { CallRecord } from "@/features/call-history/types";
 import { cn } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 interface CallHistoryDetailDialogProps {
   call: CallRecord | undefined;
@@ -67,39 +63,44 @@ export function CallHistoryDetailDialog({
                 <div className="grid gap-3 text-sm sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                   <div className="rounded-md border bg-background p-3">
                     <p className="text-xs text-muted-foreground">This call</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Caller</p>
+                    <p className="font-medium">{formatSipUri(call.caller)}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Callee</p>
                     <p className="font-medium">{formatSipUri(call.callee)}</p>
                     <p className="text-xs text-muted-foreground">
                       {call.codec ?? "Codec pending"} · {call.status}
                     </p>
                   </div>
                   <ArrowRight className="mx-auto h-5 w-5 text-blue-500" />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="cursor-pointer rounded-md border bg-background p-3 text-left transition-colors hover:border-blue-400 hover:bg-blue-500/5"
-                        onClick={() => onJumpToCall(mediaPeer)}
-                      >
-                        <p className="text-xs text-muted-foreground">
-                          Bridged leg
-                        </p>
-                        <p className="font-medium">
-                          {formatSipUri(mediaPeer.callee)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {mediaPeer.codec ?? "Codec pending"} ·{" "}
-                          {mediaPeer.status}
-                        </p>
-                        <p className="mt-2 flex items-center gap-1 text-xs text-blue-600 dark:text-blue-300">
-                          <ExternalLink className="h-3 w-3" />
-                          Inspect bridged session
-                        </p>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Click to inspect bridged session
-                    </TooltipContent>
-                  </Tooltip>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-auto w-full cursor-pointer flex-col items-start whitespace-normal p-3 text-left hover:border-blue-400 hover:bg-blue-500/5"
+                    onClick={() => onJumpToCall(mediaPeer)}
+                  >
+                    <span className="text-xs text-muted-foreground">
+                      Bridged leg
+                    </span>
+                    <span className="mt-2 text-xs text-muted-foreground">
+                      Caller
+                    </span>
+                    <span className="font-medium">
+                      {formatSipUri(mediaPeer.caller)}
+                    </span>
+                    <span className="mt-2 text-xs text-muted-foreground">
+                      Callee
+                    </span>
+                    <span className="font-medium">
+                      {formatSipUri(mediaPeer.callee)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {mediaPeer.codec ?? "Codec pending"} · {mediaPeer.status}
+                    </span>
+                    <span className="mt-2 flex items-center gap-1 text-xs text-blue-600 dark:text-blue-300">
+                      <ExternalLink className="h-3 w-3" />
+                      Inspect bridged session
+                    </span>
+                  </Button>
                 </div>
                 <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
                   <span>
