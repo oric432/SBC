@@ -72,6 +72,7 @@ export const calls = pgTable(
     callee: text('callee').notNull(),
     route: text('route'),
     codec: text('codec'),
+    mediaPeerCallId: text('media_peer_call_id'),
     status: text('status'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     answeredAt: timestamp('answered_at', { withTimezone: true }),

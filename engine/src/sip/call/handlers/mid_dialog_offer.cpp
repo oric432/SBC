@@ -54,19 +54,22 @@ void retarget_leg(CallSession& session, Leg leg, const std::string& address, std
     Log::call()->debug("[{}] {} leg relay retargeted to {}:{}", session.call_id(), to_string(leg), address, port);
 
     // CUCM transfers by pointing each call's leg at the other call's media, which this SBC anchors.
-    if (address != session.ctx()->config_.local_ip_) {
+    auto* peer = address == session.ctx()->config_.local_ip_
+                     ? session.call_manager()->find_by_relay_port(port, &session)
+                     : nullptr;
+    if (peer == nullptr) {
+        session.report_media_peer(std::nullopt);
         return;
     }
-    const CallSession* peer = session.call_manager()->find_by_relay_port(port, &session);
-    if (peer != nullptr) {
-        Log::call()->info(
-            "[{}] transfer: {} leg now relayed through call [{}] ({} -> {})",
-            session.call_id(),
-            to_string(leg),
-            peer->call_id(),
-            peer->caller_uri(),
-            peer->outbound_destination());
-    }
+
+    session.call_manager()->link_media_peers(session, *peer);
+    Log::call()->info(
+        "[{}] media chain: {} leg now relayed through call [{}] ({} -> {})",
+        session.call_id(),
+        to_string(leg),
+        peer->call_id(),
+        peer->caller_uri(),
+        peer->outbound_destination());
 }
 
 } // namespace

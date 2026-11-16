@@ -150,10 +150,13 @@ public:
     // Call-history events (see ICallEventSink); no-ops when no sink is wired.
     // report_call_answered() also starts the clock report_call_terminated()
     // measures duration from. report_call_updated() is only for an answered
-    // call, and report_call_terminated() only ever reports once.
+    // call; media-peer changes are reported immediately so early replacements
+    // are not lost. report_call_terminated() only ever reports once.
     void report_call_started();
     void report_call_answered();
     void report_call_updated();
+    void report_media_peer(std::optional<std::string> peer_call_id);
+    void clear_media_peer(std::string_view peer_call_id);
     void report_call_terminated(std::string_view status, std::optional<std::string> failure_reason);
 
     // Time since report_call_answered() was called, for the dialog-teardown
@@ -208,6 +211,7 @@ private:
     std::string caller_display_name_;
     std::string outbound_destination_;
     std::optional<ReplacementTarget> replacement_target_;
+    std::optional<std::string> media_peer_call_id_;
 
     // Actions must outlive (so precede) the runners whose machines reference them.
     SetupActions setup_actions_;
