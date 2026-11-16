@@ -15,6 +15,7 @@ done
 run_dir="$(mktemp -d)"
 log_dir="$run_dir/logs"
 mkdir -p "$log_dir"
+compose_project="sbc-b2bua-demo-$$"
 pids=()
 declare -A service_pids=()
 compose_started=false
@@ -37,7 +38,7 @@ cleanup() {
     done
     wait 2>/dev/null || true
     if "$compose_started"; then
-        docker compose -f "$root_dir/control-plane/backend/docker-compose.yml" down --volumes --remove-orphans || true
+        docker compose -p "$compose_project" -f "$root_dir/control-plane/backend/docker-compose.yml" down --volumes --remove-orphans || true
     fi
     rm -rf "$run_dir"
 }
@@ -69,7 +70,7 @@ wait_for_http() {
 
 wait_for_postgres() {
     for _ in {1..50}; do
-        if docker compose -f "$root_dir/control-plane/backend/docker-compose.yml" exec -T postgres \
+        if docker compose -p "$compose_project" -f "$root_dir/control-plane/backend/docker-compose.yml" exec -T postgres \
             pg_isready -U sbc -d sbc_control_plane >/dev/null 2>&1; then
             return
         fi
@@ -83,7 +84,7 @@ command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
 [[ -x "$root_dir/engine/build/SbcEngine" ]] || { echo "build engine first: just engine build-dev" >&2; exit 1; }
 
-docker compose -f "$root_dir/control-plane/backend/docker-compose.yml" up -d
+docker compose -p "$compose_project" -f "$root_dir/control-plane/backend/docker-compose.yml" up -d
 compose_started=true
 wait_for_postgres
 export DATABASE_URL="postgresql://sbc:sbc@127.0.0.1:5432/sbc_control_plane"
