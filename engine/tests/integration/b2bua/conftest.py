@@ -59,7 +59,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--live-backend-url",
         default="http://127.0.0.1:3001",
         help=(
-            "Base URL of the real Backend used by --backend-mode demo or connected to "
+            "Base URL of the real Backend used by --demo or connected to "
             "a --live-engine SbcEngine."
         ),
     )
@@ -84,7 +84,7 @@ def other_registered_user(registered_user: SipUserFixture) -> SipUserFixture:
 @pytest.fixture(scope="session")
 def sip_users(request, registered_user: SipUserFixture, other_registered_user: SipUserFixture) -> list[SipUserFixture]:
     users = [registered_user, other_registered_user]
-    if request.config.getoption("--backend-mode") == "demo":
+    if request.config.getoption("--demo"):
         _provision_sip_users(request.config.getoption("--live-backend-url"), users)
     return users
 
@@ -100,7 +100,7 @@ def initial_routes(request, ports: Ports) -> dict[int, RouteRule]:
             port=ports.callee_port,
         ),
     }
-    if request.config.getoption("--backend-mode") == "demo":
+    if request.config.getoption("--demo"):
         _provision_routes(request.config.getoption("--live-backend-url"), routes)
     return routes
 

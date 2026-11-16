@@ -2,17 +2,22 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+engine_dir="$root_dir/engine"
 postgres_port="${SBC_DEMO_POSTGRES_PORT:-5432}"
 backend_port="${SBC_DEMO_BACKEND_PORT:-3001}"
 frontend_port="${SBC_DEMO_FRONTEND_PORT:-5173}"
 backend_url="http://127.0.0.1:${backend_port}"
 frontend_url="http://127.0.0.1:${frontend_port}"
 export SBC_DEMO_POSTGRES_PORT="$postgres_port"
+demo=false
 interactive=false
 show_logs=false
 test_args=()
 for arg in "$@"; do
     case "$arg" in
+        --demo)
+            demo=true
+            ;;
         --interactive)
             interactive=true
             ;;
@@ -24,6 +29,41 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+if "$interactive" && ! "$demo"; then
+    echo "error: --interactive requires --demo" >&2
+    exit 2
+fi
+
+run_test_suite() {
+    local sipp_bin
+    sipp_bin="$(command -v sipp || true)"
+    if [[ -z "$sipp_bin" ]]; then
+        echo "error: SIPp is not installed or is not in PATH" >&2
+        exit 1
+    fi
+
+    if [[ $EUID -ne 0 ]] && ! getcap "$(readlink -f "$sipp_bin")" 2>/dev/null | grep -q 'cap_net_raw'; then
+        echo "error: SIPp needs CAP_NET_RAW to replay tests/integration/b2bua/g711a.pcap" >&2
+        echo "run once: sudo setcap cap_net_raw+ep \"$(readlink -f "$sipp_bin")\"" >&2
+        exit 1
+    fi
+
+    (
+        cd "$engine_dir"
+        local venv="tests/.venv"
+        if [[ ! -x "$venv/bin/python" ]]; then
+            python3 -m venv "$venv"
+        fi
+        "$venv/bin/pip" install --quiet ./tests
+        "$venv/bin/pytest" tests/integration/b2bua "$@"
+    )
+}
+
+if ! "$demo"; then
+    run_test_suite "${test_args[@]}"
+    exit
+fi
 
 run_dir="$(mktemp -d)"
 log_dir="$run_dir/logs"
@@ -95,7 +135,7 @@ wait_for_postgres() {
 
 command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
-[[ -x "$root_dir/engine/build/SbcEngine" ]] || { echo "build engine first: just engine build-dev" >&2; exit 1; }
+[[ -x "$engine_dir/build/SbcEngine" ]] || { echo "build engine first: just build-dev" >&2; exit 1; }
 
 docker compose -p "$compose_project" -f "$root_dir/control-plane/backend/docker-compose.yml" up -d
 compose_started=true
@@ -116,8 +156,7 @@ if "$interactive"; then
 fi
 
 echo "Running SIPp suite against real control plane..."
-just --justfile "$root_dir/engine/justfile" test-b2bua-stub \
-    --backend-mode demo --live-backend-url "$backend_url" "${test_args[@]}"
+run_test_suite --demo --live-backend-url "$backend_url" "${test_args[@]}"
 if "$interactive"; then
     echo "Suite finished. Inspect call history in UI; press Ctrl-C to stop demo services."
     wait

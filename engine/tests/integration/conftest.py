@@ -332,12 +332,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         ),
     )
     parser.addoption(
-        "--backend-mode",
-        choices=("stub", "demo"),
-        default="stub",
+        "--demo",
+        action="store_true",
+        default=False,
         help=(
-            "Control-plane mode for an engine the suite starts: use the local "
-            "websocket stub (default) or the demo control plane at localhost:3001."
+            "Use the demo control plane instead of the local websocket stub."
         ),
     )
 
@@ -397,7 +396,7 @@ def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_
     routes_stub_server.set_users(sip_users)
 
     work_dir = tmp_path_factory.mktemp("sbc_engine")
-    backend_demo = request.config.getoption("--backend-mode") == "demo"
+    backend_demo = request.config.getoption("--demo")
     live_backend_url = request.config.getoption("--live-backend-url").rstrip("/")
     settings = {
         "sip": {"address": "127.0.0.1", "port": sip_port},

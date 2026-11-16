@@ -1527,7 +1527,7 @@ def _has_persisted_peer(rows, call_id: str, peer_call_id: str) -> bool:
 
 
 def test_b2bua_transfer_chain_logged_and_reported_to_stub(sbc_engine, ports, routes_stub_server, request):
-    if request.config.getoption("--backend-mode") == "demo" or sbc_engine.process is None:
+    if request.config.getoption("--demo") or sbc_engine.process is None:
         pytest.skip("the spawned engine reports to the real Backend in demo mode and in live-engine mode")
 
     event_start = routes_stub_server.event_count()
@@ -1563,7 +1563,7 @@ def test_b2bua_transfer_chain_logged_and_reported_to_stub(sbc_engine, ports, rou
 
 
 def test_b2bua_transfer_chain_persisted_by_backend(sbc_engine, ports, request):
-    if request.config.getoption("--backend-mode") != "demo" and sbc_engine.process is not None:
+    if not request.config.getoption("--demo") and sbc_engine.process is not None:
         pytest.skip("the default test engine reports to the websocket stub, not the real Backend")
 
     transfer = _run_transfer_chain(sbc_engine, ports)
