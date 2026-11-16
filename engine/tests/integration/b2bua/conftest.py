@@ -65,6 +65,28 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "requires_backend: requires a real control-plane Backend instead of the websocket stub",
+    )
+    config.addinivalue_line(
+        "markers",
+        "requires_stub: requires the local websocket stub instead of a real control-plane Backend",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    real_backend = config.getoption("--demo") or config.getoption("--live-engine")
+    unavailable_marker = "requires_stub" if real_backend else "requires_backend"
+    unavailable_items = [item for item in items if item.get_closest_marker(unavailable_marker)]
+    if not unavailable_items:
+        return
+
+    config.hook.pytest_deselected(items=unavailable_items)
+    items[:] = [item for item in items if not item.get_closest_marker(unavailable_marker)]
+
+
 @pytest.fixture(scope="session")
 def registered_user() -> SipUserFixture:
     # A domain distinct from anything the call scenarios route through

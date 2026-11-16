@@ -1526,10 +1526,8 @@ def _has_persisted_peer(rows, call_id: str, peer_call_id: str) -> bool:
     return any(row["sipCallId"] == call_id and row.get("mediaPeerCallId") == peer_call_id for row in rows)
 
 
-def test_b2bua_transfer_chain_logged_and_reported_to_stub(sbc_engine, ports, routes_stub_server, request):
-    if request.config.getoption("--demo") or sbc_engine.process is None:
-        pytest.skip("the spawned engine reports to the real Backend in demo mode and in live-engine mode")
-
+@pytest.mark.requires_stub
+def test_b2bua_transfer_chain_logged_and_reported_to_stub(sbc_engine, ports, routes_stub_server):
     event_start = routes_stub_server.event_count()
     transfer = _run_transfer_chain(sbc_engine, ports)
     first_line = _wait_for_log(
@@ -1562,10 +1560,8 @@ def test_b2bua_transfer_chain_logged_and_reported_to_stub(sbc_engine, ports, rou
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
 
 
+@pytest.mark.requires_backend
 def test_b2bua_transfer_chain_persisted_by_backend(sbc_engine, ports, request):
-    if not request.config.getoption("--demo") and sbc_engine.process is not None:
-        pytest.skip("the default test engine reports to the websocket stub, not the real Backend")
-
     transfer = _run_transfer_chain(sbc_engine, ports)
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
