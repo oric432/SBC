@@ -96,6 +96,6 @@ wait_for_http http://127.0.0.1:5173
 
 echo "UI: http://127.0.0.1:5173"
 echo "Running SIPp suite against real control plane..."
-just --justfile "$root_dir/engine/justfile" test-b2bua-stub --backend-demo "${test_args[@]}"
+just --justfile "$root_dir/engine/justfile" test-b2bua-stub --backend-mode demo "${test_args[@]}"
 echo "Suite finished. Inspect call history in UI; press Ctrl-C to stop demo services."
 wait
