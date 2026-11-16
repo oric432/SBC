@@ -32,6 +32,15 @@ history in the printed UI; press Ctrl-C to stop them. Its cleanup runs
 `docker compose down --volumes --remove-orphans`, which removes the demo
 database volume as well as the containers and orphaned services.
 
+The demo uses ports `5432` (PostgreSQL), `3001` (Backend), and `5173` (UI) by
+default. Override any of them without changing local configuration, for
+example:
+
+```bash
+SBC_DEMO_POSTGRES_PORT=15432 SBC_DEMO_BACKEND_PORT=13001 SBC_DEMO_FRONTEND_PORT=15173 \
+  just test-b2bua --backend-mode demo
+```
+
 To instead run against an `SbcEngine` + Backend you've already started
 yourself in their own terminals (so you get their live logs and can attach a
 debugger, rather than this suite's captured-and-only-shown-on-failure

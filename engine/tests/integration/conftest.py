@@ -398,9 +398,14 @@ def sbc_engine(request, tmp_path_factory, routes_stub_server, sip_port, initial_
 
     work_dir = tmp_path_factory.mktemp("sbc_engine")
     backend_demo = request.config.getoption("--backend-mode") == "demo"
+    live_backend_url = request.config.getoption("--live-backend-url").rstrip("/")
     settings = {
         "sip": {"address": "127.0.0.1", "port": sip_port},
-        "control_plane": {"ws_url": "ws://127.0.0.1:3001/ws/engine" if backend_demo else routes_stub_server.url},
+        "control_plane": {
+            "ws_url": f"{live_backend_url.replace('http://', 'ws://', 1)}/ws/engine"
+            if backend_demo
+            else routes_stub_server.url
+        },
         "registrar": {"min_expires_s": 60, "max_expires_s": 120},
     }
     for section, overrides in settings_overrides.items():

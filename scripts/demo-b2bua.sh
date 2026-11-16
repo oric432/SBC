@@ -2,6 +2,12 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+postgres_port="${SBC_DEMO_POSTGRES_PORT:-5432}"
+backend_port="${SBC_DEMO_BACKEND_PORT:-3001}"
+frontend_port="${SBC_DEMO_FRONTEND_PORT:-5173}"
+backend_url="http://127.0.0.1:${backend_port}"
+frontend_url="http://127.0.0.1:${frontend_port}"
+export SBC_DEMO_POSTGRES_PORT="$postgres_port"
 show_logs=false
 test_args=()
 for arg in "$@"; do
@@ -87,16 +93,20 @@ command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
 docker compose -p "$compose_project" -f "$root_dir/control-plane/backend/docker-compose.yml" up -d
 compose_started=true
 wait_for_postgres
-export DATABASE_URL="postgresql://sbc:sbc@127.0.0.1:5432/sbc_control_plane"
+export DATABASE_URL="postgresql://sbc:sbc@127.0.0.1:${postgres_port}/sbc_control_plane"
+export PORT="$backend_port"
+export FRONTEND_URL="$frontend_url"
+export VITE_BACKEND_URL="$backend_url"
 (cd "$root_dir/control-plane/backend" && npm run db:push && npm run db:seed)
 
 start_service backend bash -c "cd '$root_dir/control-plane/backend' && npm run dev"
-start_service frontend bash -c "cd '$root_dir/control-plane/frontend' && npm run dev -- --host 127.0.0.1"
-wait_for_http http://127.0.0.1:3001/api/b2bua/routes
-wait_for_http http://127.0.0.1:5173
+start_service frontend bash -c "cd '$root_dir/control-plane/frontend' && npm run dev -- --host 127.0.0.1 --port '$frontend_port'"
+wait_for_http "$backend_url/api/b2bua/routes"
+wait_for_http "$frontend_url"
 
-echo "UI: http://127.0.0.1:5173"
+echo "UI: $frontend_url"
 echo "Running SIPp suite against real control plane..."
-just --justfile "$root_dir/engine/justfile" test-b2bua-stub --backend-mode demo "${test_args[@]}"
+just --justfile "$root_dir/engine/justfile" test-b2bua-stub \
+    --backend-mode demo --live-backend-url "$backend_url" "${test_args[@]}"
 echo "Suite finished. Inspect call history in UI; press Ctrl-C to stop demo services."
 wait

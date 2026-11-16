@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: sbc
       POSTGRES_DB: sbc_control_plane
     ports:
-      - '5432:5432'
+      - '${SBC_DEMO_POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
