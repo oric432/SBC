@@ -8,14 +8,21 @@ frontend_port="${SBC_DEMO_FRONTEND_PORT:-5173}"
 backend_url="http://127.0.0.1:${backend_port}"
 frontend_url="http://127.0.0.1:${frontend_port}"
 export SBC_DEMO_POSTGRES_PORT="$postgres_port"
+interactive=false
 show_logs=false
 test_args=()
 for arg in "$@"; do
-    if [[ "$arg" == "--show-logs" ]]; then
-        show_logs=true
-    else
-        test_args+=("$arg")
-    fi
+    case "$arg" in
+        --interactive)
+            interactive=true
+            ;;
+        --show-logs)
+            show_logs=true
+            ;;
+        *)
+            test_args+=("$arg")
+            ;;
+    esac
 done
 
 run_dir="$(mktemp -d)"
@@ -100,13 +107,18 @@ export VITE_BACKEND_URL="$backend_url"
 (cd "$root_dir/control-plane/backend" && npm run db:push && npm run db:seed)
 
 start_service backend bash -c "cd '$root_dir/control-plane/backend' && npm run dev"
-start_service frontend bash -c "cd '$root_dir/control-plane/frontend' && npm run dev -- --host 127.0.0.1 --port '$frontend_port'"
 wait_for_http "$backend_url/api/b2bua/routes"
-wait_for_http "$frontend_url"
 
-echo "UI: $frontend_url"
+if "$interactive"; then
+    start_service frontend bash -c "cd '$root_dir/control-plane/frontend' && npm run dev -- --host 127.0.0.1 --port '$frontend_port'"
+    wait_for_http "$frontend_url"
+    echo "UI: $frontend_url"
+fi
+
 echo "Running SIPp suite against real control plane..."
 just --justfile "$root_dir/engine/justfile" test-b2bua-stub \
     --backend-mode demo --live-backend-url "$backend_url" "${test_args[@]}"
-echo "Suite finished. Inspect call history in UI; press Ctrl-C to stop demo services."
-wait
+if "$interactive"; then
+    echo "Suite finished. Inspect call history in UI; press Ctrl-C to stop demo services."
+    wait
+fi

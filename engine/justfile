@@ -109,7 +109,7 @@ test-b2bua-stub *args:
     "$VENV/bin/pytest" tests/integration/b2bua {{args}}
 
 # Run B2BUA integration tests with the stub backend (default) or demo control plane.
-# Pass --backend-mode demo to start Docker/PostgreSQL plus local backend/frontend.
+# The demo mode is headless and exits with pytest's status.
 test-b2bua *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -150,6 +150,10 @@ test-b2bua *args:
             exit 2
             ;;
     esac
+
+# Run the demo control plane with its UI and keep it available after the suite.
+demo-b2bua *args:
+    bash ../scripts/demo-b2bua.sh --interactive {{args}}
 
 # Generate schemas using the schema generator tool
 generate-schemas:

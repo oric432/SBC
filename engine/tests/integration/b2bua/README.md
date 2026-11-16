@@ -9,6 +9,7 @@ pytest + SIPp integration tests for the SBC's B2BUA call handling. See
 just test-b2bua          # from engine/
 just test-b2bua --show-engine-logs  # also stream the spawned engine's logs
 just test-b2bua --backend-mode demo  # run against local PostgreSQL + control plane
+just demo-b2bua  # run the suite, then inspect its results in the UI
 ```
 
 This installs the Python dependencies declared in `../../pyproject.toml`,
@@ -24,13 +25,14 @@ RTP is streamed at realistic packet pacing (~30ms per packet) by both legs,
 using `g711a.pcap` (G.711) unless a scenario's callee overrides it (see
 `transcode_mismatched_codecs` below).
 
-`--backend-mode demo` starts PostgreSQL, Backend, and frontend, then pytest
-provisions the routes and SIP users and owns the SbcEngine process exactly as
-in the default mode. The demo launcher only manages those supporting services.
-After the suite finishes, it leaves them running so you can inspect the call
-history in the printed UI; press Ctrl-C to stop them. Its cleanup runs
-`docker compose down --volumes --remove-orphans`, which removes the demo
-database volume as well as the containers and orphaned services.
+`--backend-mode demo` starts PostgreSQL and Backend, then pytest provisions
+the routes and SIP users and owns the SbcEngine process exactly as in the
+default mode. It exits with pytest's status and cleans up its supporting
+services. `just demo-b2bua` additionally starts the frontend and leaves all
+demo services running after the suite, so you can inspect call history in the
+printed UI; press Ctrl-C to stop them. Its cleanup runs `docker compose down
+--volumes --remove-orphans`, which removes the demo database volume as well as
+the containers and orphaned services.
 
 The demo uses ports `5432` (PostgreSQL), `3001` (Backend), and `5173` (UI) by
 default. Override any of them without changing local configuration, for
@@ -38,7 +40,7 @@ example:
 
 ```bash
 SBC_DEMO_POSTGRES_PORT=15432 SBC_DEMO_BACKEND_PORT=13001 SBC_DEMO_FRONTEND_PORT=15173 \
-  just test-b2bua --backend-mode demo
+  just demo-b2bua
 ```
 
 To instead run against an `SbcEngine` + Backend you've already started
