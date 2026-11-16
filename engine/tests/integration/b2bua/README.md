@@ -27,6 +27,10 @@ using `g711a.pcap` (G.711) unless a scenario's callee overrides it (see
 `--backend-mode demo` starts PostgreSQL, Backend, and frontend, then pytest
 provisions the routes and SIP users and owns the SbcEngine process exactly as
 in the default mode. The demo launcher only manages those supporting services.
+After the suite finishes, it leaves them running so you can inspect the call
+history in the printed UI; press Ctrl-C to stop them. Its cleanup runs
+`docker compose down --volumes --remove-orphans`, which removes the demo
+database volume as well as the containers and orphaned services.
 
 To instead run against an `SbcEngine` + Backend you've already started
 yourself in their own terminals (so you get their live logs and can attach a
