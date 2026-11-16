@@ -755,9 +755,7 @@ TEST_CASE("CallSession tracks consecutive hold periods and cancels expiry on ter
     ioc.run();
 }
 
-TEST_CASE(
-    "CallSession reports media peers once and retains early detection until answer",
-    "[call_session][call_events]") {
+TEST_CASE("CallSession reports media-peer changes before answer", "[call_session][call_events]") {
     boost::asio::io_context ioc;
     RecordingCallEventSink events;
     PjContext context;
@@ -769,15 +767,20 @@ TEST_CASE(
     auto* session = manager.create_session("call-a", &context, EngineStores{}, ioc.get_executor(), &request);
 
     session->report_media_peer("call-b");
-    CHECK(events.updates_.empty());
-
-    session->report_call_answered();
     REQUIRE(events.updates_.size() == 1);
-    CHECK(events.updates_.front().sip_call_id == "call-a");
     CHECK(events.updates_.front().media_peer_call_id == "call-b");
 
+    session->report_call_answered();
+    REQUIRE(events.updates_.size() == 2);
+    CHECK(events.updates_.back().sip_call_id == "call-a");
+    CHECK(events.updates_.back().media_peer_call_id == "call-b");
+
     session->report_media_peer("call-b");
-    CHECK(events.updates_.size() == 1);
+    CHECK(events.updates_.size() == 2);
+
+    session->report_media_peer(std::nullopt);
+    REQUIRE(events.updates_.size() == 3);
+    CHECK_FALSE(events.updates_.back().media_peer_call_id.has_value());
 
     manager.schedule_remove("call-a");
     manager.purge_scheduled();
@@ -807,8 +810,13 @@ TEST_CASE("CallManager links reciprocal media peers", "[call_manager][call_event
     CHECK(events.updates_[1].sip_call_id == "call-b");
     CHECK(events.updates_[1].media_peer_call_id == "call-a");
 
-    manager.schedule_remove("call-a");
+    events.updates_.clear();
     manager.schedule_remove("call-b");
+    REQUIRE(events.updates_.size() == 1);
+    CHECK(events.updates_.front().sip_call_id == "call-a");
+    CHECK_FALSE(events.updates_.front().media_peer_call_id.has_value());
+
+    manager.schedule_remove("call-a");
     manager.purge_scheduled();
 }
 

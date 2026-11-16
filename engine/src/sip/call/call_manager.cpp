@@ -138,6 +138,11 @@ void CallManager::schedule_remove(const std::string& call_id) {
         return;
     }
 
+    for (auto& [other_call_id, session] : sessions_) {
+        if (other_call_id != call_id) {
+            session->clear_media_peer(call_id);
+        }
+    }
     retired_sessions_.push_back(std::move(iter->second));
     sessions_.erase(iter);
 }
