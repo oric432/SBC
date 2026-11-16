@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import re
 import socket
 import struct
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from .conftest import _PCAP_PATHS, _backend_call
+from .conftest import _PCAP_PATHS, fetch_control_plane_calls
 from .scenarios import SCENARIOS
 
 _log = logging.getLogger("integration.b2bua")
@@ -1530,7 +1530,7 @@ def test_b2bua_transfer_chain_logged(sbc_engine, ports, routes_stub_server, requ
     if request.config.getoption("--backend-demo") or sbc_engine.process is None:
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
-            status, raw = _backend_call(request.config.getoption("--live-backend-url"), "GET", "/api/calls?pageSize=100")
+            status, raw = fetch_control_plane_calls(request.config.getoption("--live-backend-url"))
             rows = json.loads(raw)["data"]["rows"] if status == 200 else []
             if any(row["sipCallId"] == first.call_id and row.get("mediaPeerCallId") == second.call_id for row in rows) and any(
                 row["sipCallId"] == second.call_id and row.get("mediaPeerCallId") == first.call_id for row in rows

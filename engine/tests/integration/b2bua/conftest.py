@@ -17,6 +17,7 @@ from ..conftest import RouteRule, SipUserFixture
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _BACKEND_TIMEOUT_S = 5
+_CONTROL_PLANE_CALLS_PAGE_SIZE = 100
 _PCAP_PATHS = {
     "g711a": Path(__file__).parent / "g711a.pcap",
     # g711a.pcap re-encoded to real G.722 (same SSRC/seq/timestamps/packet
@@ -304,6 +305,10 @@ def _backend_call(base_url: str, method: str, path: str, body: dict | None = Non
         return exc.code, exc.read()
     except urllib.error.URLError as exc:
         pytest.fail(f"could not reach Backend at {base_url} ({exc.reason}); is it running?")
+
+
+def fetch_control_plane_calls(base_url: str) -> tuple[int, bytes]:
+    return _backend_call(base_url, "GET", f"/api/calls?pageSize={_CONTROL_PLANE_CALLS_PAGE_SIZE}")
 
 
 def _create_sip_user(base_url: str, user: SipUserFixture) -> int | None:
