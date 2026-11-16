@@ -13,6 +13,7 @@ export interface ActiveCall {
     codec: Codec | null;
     startedAt: string;
     answeredAt: string | null;
+    mediaPeerCallId?: string | null;
     // Started long enough ago that its "terminated" event was probably lost
     // (engine crash) rather than the call still being live.
     stale: boolean;

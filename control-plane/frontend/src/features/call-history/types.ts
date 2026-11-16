@@ -15,6 +15,7 @@ export interface CallRecord {
     durationSeconds?: number;
     sipCallId: string;
     failureReason?: string;
+    mediaPeerCallId?: string | null;
 }
 
 export type CallHistorySortField = "timestamp" | "caller" | "callee";

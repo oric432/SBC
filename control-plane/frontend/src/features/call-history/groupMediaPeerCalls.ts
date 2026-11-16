@@ -1,7 +1,7 @@
 interface MediaPeerCall {
   id: string;
   sipCallId: string;
-  mediaPeerCallId?: string;
+  mediaPeerCallId?: string | null;
 }
 
 export interface DisplayedCall<T> {
