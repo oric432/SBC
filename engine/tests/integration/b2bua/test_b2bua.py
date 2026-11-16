@@ -1487,39 +1487,24 @@ def _wait_for_log(engine, needle: str, start: int, timeout_s: float = 5.0) -> st
     return None
 
 
-def test_b2bua_transfer_chain_logged(sbc_engine, ports, routes_stub_server, request):
-    """CUCM transfers by re-pointing each call at the other call's media, which the SBC anchors. Each call's
-    offerless re-INVITE ACK then names the other session's relay port, and the engine must report the media chain."""
-    start = len(sbc_engine.log_lines)
-    event_start = routes_stub_server.event_count()
+@dataclass(frozen=True)
+class _TransferChain:
+    log_start: int
+    first_call_id: str
+    second_call_id: str
+
+
+def _run_transfer_chain(sbc_engine, ports) -> _TransferChain:
+    """Drive CUCM's two-call media handoff through the SBC."""
+    log_start = len(sbc_engine.log_lines)
     uas = _RawUas(ports.callee_port)
     first, second = _RawCaller(ports.sbc_port), _RawCaller(ports.sbc_port)
-    events = []
     try:
         assert first.invite(41000).startswith("SIP/2.0 200")
         assert second.invite(41002).startswith("SIP/2.0 200")
         first.reinvite_offerless_answering(second.relay_port)
         second.reinvite_offerless_answering(first.relay_port)
-        if sbc_engine.process is not None:
-            first_line = _wait_for_log(
-                sbc_engine, f"[{first.call_id}] media chain: caller leg now relayed through call [{second.call_id}]", start
-            )
-            second_line = _wait_for_log(
-                sbc_engine, f"[{second.call_id}] media chain: caller leg now relayed through call [{first.call_id}]", start
-            )
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                events = routes_stub_server.events_since(event_start)
-                if any(
-                    event.get("call_updated", {}).get("sip_call_id") == first.call_id
-                    and event.get("call_updated", {}).get("media_peer_call_id") == second.call_id
-                    for event in events
-                ) and any(
-                    event.get("call_updated", {}).get("sip_call_id") == second.call_id
-                    and event.get("call_updated", {}).get("media_peer_call_id") == first.call_id
-                    for event in events
-                ):
-                    break
+        return _TransferChain(log_start, first.call_id, second.call_id)
     finally:
         first.bye()
         second.bye()
@@ -1527,34 +1512,73 @@ def test_b2bua_transfer_chain_logged(sbc_engine, ports, routes_stub_server, requ
         second.close()
         uas.stop()
 
+
+def _has_peer_update(events, call_id: str, peer_call_id: str) -> bool:
+    return any(
+        event.get("type") == "call_updated"
+        and event.get("call_updated", {}).get("sip_call_id") == call_id
+        and event.get("call_updated", {}).get("media_peer_call_id") == peer_call_id
+        for event in events
+    )
+
+
+def _has_persisted_peer(rows, call_id: str, peer_call_id: str) -> bool:
+    return any(row["sipCallId"] == call_id and row.get("mediaPeerCallId") == peer_call_id for row in rows)
+
+
+def test_b2bua_transfer_chain_logged_and_reported_to_stub(sbc_engine, ports, routes_stub_server, request):
     if request.config.getoption("--backend-demo") or sbc_engine.process is None:
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            status, raw = fetch_control_plane_calls(request.config.getoption("--live-backend-url"))
-            rows = json.loads(raw)["data"]["rows"] if status == 200 else []
-            if any(row["sipCallId"] == first.call_id and row.get("mediaPeerCallId") == second.call_id for row in rows) and any(
-                row["sipCallId"] == second.call_id and row.get("mediaPeerCallId") == first.call_id for row in rows
-            ):
-                return
-            time.sleep(0.05)
-        pytest.fail("backend did not persist reciprocal media peers")
+        pytest.skip("the spawned engine reports to the real Backend in demo mode and in live-engine mode")
+
+    event_start = routes_stub_server.event_count()
+    transfer = _run_transfer_chain(sbc_engine, ports)
+    first_line = _wait_for_log(
+        sbc_engine,
+        f"[{transfer.first_call_id}] media chain: caller leg now relayed through call [{transfer.second_call_id}]",
+        transfer.log_start,
+    )
+    second_line = _wait_for_log(
+        sbc_engine,
+        f"[{transfer.second_call_id}] media chain: caller leg now relayed through call [{transfer.first_call_id}]",
+        transfer.log_start,
+    )
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        events = routes_stub_server.events_since(event_start)
+        if _has_peer_update(events, transfer.first_call_id, transfer.second_call_id) and _has_peer_update(
+            events, transfer.second_call_id, transfer.first_call_id
+        ):
+            break
+        time.sleep(0.05)
 
     assert first_line is not None, f"no media-chain log for the first call:\n{sbc_engine.log_tail()}"
     assert second_line is not None, f"no media-chain log for the second call:\n{sbc_engine.log_tail()}"
-    first_updated = any(
-        event.get("type") == "call_updated"
-        and event.get("call_updated", {}).get("sip_call_id") == first.call_id
-        and event.get("call_updated", {}).get("media_peer_call_id") == second.call_id
-        for event in events
+    assert _has_peer_update(events, transfer.first_call_id, transfer.second_call_id), (
+        "engine did not report the first call's media peer"
     )
-    second_updated = any(
-        event.get("type") == "call_updated"
-        and event.get("call_updated", {}).get("sip_call_id") == second.call_id
-        and event.get("call_updated", {}).get("media_peer_call_id") == first.call_id
-        for event in events
+    assert _has_peer_update(events, transfer.second_call_id, transfer.first_call_id), (
+        "engine did not report the second call's media peer"
     )
-    assert first_updated, "engine did not report the first call's media peer"
-    assert second_updated, "engine did not report the second call's media peer"
+    assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
+
+
+def test_b2bua_transfer_chain_persisted_by_backend(sbc_engine, ports, request):
+    if not request.config.getoption("--backend-demo") and sbc_engine.process is not None:
+        pytest.skip("the default test engine reports to the websocket stub, not the real Backend")
+
+    transfer = _run_transfer_chain(sbc_engine, ports)
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        status, raw = fetch_control_plane_calls(request.config.getoption("--live-backend-url"))
+        rows = json.loads(raw)["data"]["rows"] if status == 200 else []
+        if _has_persisted_peer(rows, transfer.first_call_id, transfer.second_call_id) and _has_persisted_peer(
+            rows, transfer.second_call_id, transfer.first_call_id
+        ):
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("backend did not persist reciprocal media peers")
+
     assert not sbc_engine.has_error_logs(), f"engine logged an error during the call:\n{sbc_engine.log_tail()}"
 
 
