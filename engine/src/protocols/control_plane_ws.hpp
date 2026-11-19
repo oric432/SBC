@@ -45,7 +45,7 @@ struct WsAck {
 // one event at a time and waits for its ack before sending the next event.
 struct WsEnvelope {
     std::string type;
-    std::optional<SipRouteSnapshot> routes_snapshot;
+    std::optional<LegacySipRouteSnapshot> routes_snapshot;
     std::optional<SipUserSnapshot> users_snapshot;
     std::optional<RegistrationEvent> registration;
     std::optional<CallStarted> call_started;

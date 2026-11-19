@@ -2,43 +2,166 @@
    "type": "object",
    "properties": {
       "routes": {
-         "type": "object",
-         "additionalProperties": {
+         "type": "array",
+         "items": {
             "type": "object",
             "properties": {
-               "codec": {
-                  "type": [
-                     "string",
-                     "null"
+               "action": {
+                  "type": "string",
+                  "oneOf": [
+                     {
+                        "title": "route",
+                        "const": "route"
+                     },
+                     {
+                        "title": "reject",
+                        "const": "reject"
+                     }
                   ],
-                  "description": "Optional strict media codec requirement",
-                  "enum": [
-                     "G722",
-                     "PCMU",
-                     "PCMA"
-                  ]
+                  "description": "Action to take when this rule matches: route or reject"
                },
-               "port": {
+               "id": {
+                  "type": "string",
+                  "description": "Stable, immutable identifier for this route rule"
+               },
+               "match": {
+                  "type": "object",
+                  "properties": {
+                     "dest_pattern": {
+                        "type": "string",
+                        "description": "Pattern matched against the dialed number"
+                     },
+                     "source_cidr": {
+                        "type": "array",
+                        "items": {
+                           "type": "string"
+                        },
+                        "description": "Source network CIDRs allowed to match this rule"
+                     },
+                     "source_user": {
+                        "type": [
+                           "string",
+                           "null"
+                        ],
+                        "description": "Optional source SIP user required to match this rule"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "dest_pattern",
+                     "source_cidr"
+                  ],
+                  "description": "Dialed-number and source matching conditions"
+               },
+               "priority": {
                   "$ref": "#/$defs/int32_t",
-                  "description": "Destination SIP signaling port"
+                  "description": "Evaluation tiebreaker after match specificity and source ranking"
                },
-               "sip_address": {
-                  "type": "string",
-                  "description": "Destination SIP proxy or next-hop IP"
+               "rewrite": {
+                  "type": "object",
+                  "properties": {
+                     "add_prefix": {
+                        "type": [
+                           "string",
+                           "null"
+                        ],
+                        "description": "Optional prefix added to the dialed number"
+                     },
+                     "from_rewrite": {
+                        "type": [
+                           "string",
+                           "null"
+                        ],
+                        "description": "Reserved and unsupported From rewrite"
+                     },
+                     "strip_prefix": {
+                        "type": [
+                           "string",
+                           "null"
+                        ],
+                        "description": "Optional prefix removed from the dialed number"
+                     },
+                     "to_rewrite": {
+                        "type": [
+                           "string",
+                           "null"
+                        ],
+                        "description": "Reserved and unsupported To rewrite"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "description": "Dialed-number rewriting configuration"
                },
-               "uri": {
-                  "type": "string",
-                  "description": "The matching SIP URI"
+               "targets": {
+                  "type": "array",
+                  "items": {
+                     "type": "object",
+                     "properties": {
+                        "address": {
+                           "type": "string",
+                           "description": "SIP destination or registered address of record"
+                        },
+                        "codec": {
+                           "type": [
+                              "string",
+                              "null"
+                           ],
+                           "description": "Optional strict media codec requirement",
+                           "enum": [
+                              "G722",
+                              "PCMU",
+                              "PCMA"
+                           ]
+                        },
+                        "kind": {
+                           "type": "string",
+                           "oneOf": [
+                              {
+                                 "title": "sip",
+                                 "const": "sip"
+                              },
+                              {
+                                 "title": "registered",
+                                 "const": "registered"
+                              }
+                           ],
+                           "description": "Target kind: sip or registered"
+                        },
+                        "port": {
+                           "$ref": "#/$defs/int32_t",
+                           "description": "Destination SIP signaling port"
+                        },
+                        "timeout_ms": {
+                           "$ref": "#/$defs/int32_t",
+                           "description": "Time to wait for this target before trying the next one"
+                        }
+                     },
+                     "additionalProperties": false,
+                     "required": [
+                        "kind",
+                        "address",
+                        "port",
+                        "timeout_ms"
+                     ]
+                  },
+                  "description": "Ordered route targets; one to five entries"
                }
             },
             "additionalProperties": false,
             "required": [
-               "uri",
-               "sip_address",
-               "port"
+               "id",
+               "match",
+               "action",
+               "priority",
+               "targets",
+               "rewrite"
             ]
          },
-         "description": "Map of SIP routes keyed by evaluation priority number"
+         "description": "Route rules with stable identifiers and evaluation priorities"
+      },
+      "schema_version": {
+         "$ref": "#/$defs/int32_t",
+         "description": "Version of the route snapshot schema"
       },
       "table_id": {
          "type": "string",
@@ -58,6 +181,7 @@
       }
    },
    "required": [
+      "schema_version",
       "table_id",
       "version",
       "routes"
