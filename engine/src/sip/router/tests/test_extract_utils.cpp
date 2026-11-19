@@ -520,10 +520,14 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
     PjContext context;
     context.endpt_ = kPjEndpoint.get();
     RoutesStore routes;
-    Protocols::SipRouteSnapshot snapshot;
+    Protocols::LegacySipRouteSnapshot snapshot;
     snapshot.routes.emplace(
         1,
-        Protocols::SipRouteRule{.uri = "*", .sip_address = "192.0.2.1", .port = kTestRoutePort, .codec = std::nullopt});
+        Protocols::LegacySipRouteRule{
+            .uri = "*",
+            .sip_address = "192.0.2.1",
+            .port = kTestRoutePort,
+            .codec = std::nullopt});
     routes.set_snapshot(std::move(snapshot));
     UsersStore users;
     BindingStore bindings;

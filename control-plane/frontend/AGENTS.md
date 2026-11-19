@@ -47,7 +47,8 @@ Route payload shapes are defined by the JSON Schema files in `schemas/b2bua/*.js
 names, optionality, and int ranges. `features/routes/types.ts` hand-mirrors those schemas (see the
 comment at the top of that file) — there's no codegen, so if `schemas/b2bua/*.json` changes, this
 file needs a matching manual update, along with the backend's `src/types/sipRoutes.ts` and Drizzle
-schema.
+schema. Route selection fixtures live in `schemas/b2bua/rule_match_vectors.json`; engine and backend
+tests share that file.
 
 ## Conventions
 

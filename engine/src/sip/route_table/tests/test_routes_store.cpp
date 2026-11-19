@@ -8,13 +8,13 @@ namespace {
 
 constexpr int kTestPort = 5060;
 
-Protocols::SipRouteSnapshot make_snapshot(std::string table_id, int version, std::string catch_all_address) {
-    Protocols::SipRouteSnapshot snapshot;
+Protocols::LegacySipRouteSnapshot make_snapshot(std::string table_id, int version, std::string catch_all_address) {
+    Protocols::LegacySipRouteSnapshot snapshot;
     snapshot.table_id = std::move(table_id);
     snapshot.version = version;
     snapshot.routes.emplace(
         1,
-        Protocols::SipRouteRule{
+        Protocols::LegacySipRouteRule{
             .uri = "*",
             .sip_address = std::move(catch_all_address),
             .port = kTestPort,
