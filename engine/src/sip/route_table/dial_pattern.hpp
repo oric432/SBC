@@ -32,7 +32,6 @@ private:
     [[nodiscard]] static Result<std::vector<Token>> parse_tokens(std::string_view pattern);
     [[nodiscard]] static Result<Token> parse_token(std::string_view& pattern);
     [[nodiscard]] static Result<Token> parse_digit_set(std::string_view& pattern);
-    [[nodiscard]] static bool is_digit(char character) noexcept;
 
     bool is_exact_ = false;
     std::string literal_;
@@ -40,4 +39,3 @@ private:
 };
 
 } // namespace SbcEngine
-

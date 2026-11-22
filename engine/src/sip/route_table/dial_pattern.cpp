@@ -2,6 +2,12 @@
 
 namespace SbcEngine {
 
+namespace {
+[[nodiscard]] bool is_digit(char character) noexcept {
+    return character >= '0' && character <= '9';
+}
+} // namespace
+
 Result<DialPattern> DialPattern::create(std::string_view pattern) {
     if (pattern.empty()) {
         return std::unexpected(Error(std::make_error_code(std::errc::invalid_argument), "dial pattern is empty"));
@@ -174,9 +180,4 @@ std::strong_ordering DialPattern::compare(const DialPattern& lhs, const DialPatt
 
     return lhs.tokens_.size() <=> rhs.tokens_.size();
 }
-
-bool DialPattern::is_digit(char character) noexcept {
-    return character >= '0' && character <= '9';
-}
-
 } // namespace SbcEngine
