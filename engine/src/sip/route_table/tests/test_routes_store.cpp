@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "sip/route_table/dial_pattern.hpp"
 #include "sip/route_table/routes_store.hpp"
 
 namespace SbcEngine {
@@ -23,6 +24,38 @@ Protocols::LegacySipRouteSnapshot make_snapshot(std::string table_id, int versio
 }
 
 } // namespace
+
+TEST_CASE("DialPattern matches exact and Asterisk-style patterns", "[dial_pattern]") {
+    const auto exact = DialPattern::create("120");
+    const auto pattern = DialPattern::create("_12[0-35-7]NZ.");
+
+    REQUIRE(exact.has_value());
+    REQUIRE(pattern.has_value());
+    CHECK(exact->matches("120"));
+    CHECK_FALSE(exact->matches("1205"));
+    CHECK(pattern->matches("12329x"));
+    CHECK_FALSE(pattern->matches("12429x"));
+    CHECK_FALSE(pattern->matches("12329"));
+}
+
+TEST_CASE("DialPattern reports invalid syntax with an error code", "[dial_pattern]") {
+    const auto invalid = DialPattern::create("_12.3");
+
+    REQUIRE_FALSE(invalid.has_value());
+    CHECK(invalid.error().code() == std::errc::invalid_argument);
+}
+
+TEST_CASE("DialPattern ranks the most specific digit set first", "[dial_pattern]") {
+    const auto exact_digit = DialPattern::create("_12[3]X");
+    const auto range = DialPattern::create("_12[3-5]X");
+    const auto any_digit = DialPattern::create("_12XX");
+
+    REQUIRE(exact_digit.has_value());
+    REQUIRE(range.has_value());
+    REQUIRE(any_digit.has_value());
+    CHECK(DialPattern::compare(*exact_digit, *range) == std::strong_ordering::less);
+    CHECK(DialPattern::compare(*range, *any_digit) == std::strong_ordering::less);
+}
 
 TEST_CASE("RoutesStore applies the first snapshot unconditionally", "[routes_store]") {
     RoutesStore routes;
