@@ -103,11 +103,12 @@ TEST_CASE(
     auto audio_pkt = receive_one(ioc, recv_sock);
 
     const std::array<std::uint8_t, 4> dtmf_payload{1, 10, 0, 160}; // event=1, end=0, volume=10, duration=160
-    stream.send_dtmf(/*dtmf_payload_type=*/100,
-                     dtmf_payload,
-                     /*marker=*/true,
-                     dst,
-                     [](std::size_t, const std::error_code&) {});
+    stream.send_dtmf(
+        /*dtmf_payload_type=*/100,
+        dtmf_payload,
+        /*marker=*/true,
+        dst,
+        [](std::size_t, const std::error_code&) {});
     auto dtmf_pkt = receive_one(ioc, recv_sock);
 
     CHECK(packet_ssrc(dtmf_pkt) == packet_ssrc(audio_pkt));

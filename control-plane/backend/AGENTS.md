@@ -52,6 +52,8 @@ from a controller and `errorHandlerMiddleware` turns them into the envelope auto
 
 The route payload shape (`SipRouteRule`, `SipRouteSnapshot`) is defined by the JSON Schema files in
 `schemas/b2bua/*.json` (`sip_route_rule.json`, `sip_route_snapshot.json`, `sip_route_update.json`).
+Shared route-match behavior is specified by `schemas/b2bua/rule_match_vectors.json`; engine and backend
+tests must consume it.
 `src/types/sipRoutes.ts` hand-mirrors those schemas — there is no codegen step, so if
 `schemas/b2bua/*.json` changes, update `src/types/sipRoutes.ts` (and the Drizzle schema / frontend
 `features/routes/types.ts`) to match by hand. Check `schemas/b2bua/*.json` when in doubt about

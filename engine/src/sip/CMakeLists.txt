@@ -22,6 +22,7 @@ add_library(sip STATIC
     registrar/registrar_actions.cpp
     sm/sm_runner.cpp
     sm/options_actions.cpp
+    route_table/dial_pattern.cpp
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(sip PUBLIC
