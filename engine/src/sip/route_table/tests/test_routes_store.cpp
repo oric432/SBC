@@ -1,5 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <string_view>
+
 #include "sip/route_table/dial_pattern.hpp"
 #include "sip/route_table/routes_store.hpp"
 
@@ -26,23 +29,50 @@ Protocols::LegacySipRouteSnapshot make_snapshot(std::string table_id, int versio
 } // namespace
 
 TEST_CASE("DialPattern matches exact and Asterisk-style patterns", "[dial_pattern]") {
-    const auto exact = DialPattern::create("120");
-    const auto pattern = DialPattern::create("_12[0-35-7]NZ.");
+    struct MatchCase {
+        std::string_view pattern;
+        std::string_view match;
+        std::string_view non_match;
+    };
+    constexpr std::array cases{
+        MatchCase{.pattern="120", .match="120", .non_match="1205"},
+        MatchCase{.pattern="X", .match="X", .non_match="0"},
+        MatchCase{.pattern="_X", .match="0", .non_match="x"},
+        MatchCase{.pattern="_N", .match="2", .non_match="1"},
+        MatchCase{.pattern="_Z", .match="1", .non_match="0"},
+        MatchCase{.pattern="_[1-35-7]", .match="5", .non_match="4"},
+        MatchCase{.pattern="_12[0-35-7]NZ.", .match="12329x", .non_match="12429x"},
+        MatchCase{.pattern="_X.", .match="7a", .non_match="7"},
+    };
 
-    REQUIRE(exact.has_value());
-    REQUIRE(pattern.has_value());
-    CHECK(exact->matches("120"));
-    CHECK_FALSE(exact->matches("1205"));
-    CHECK(pattern->matches("12329x"));
-    CHECK_FALSE(pattern->matches("12429x"));
-    CHECK_FALSE(pattern->matches("12329"));
+    for (const MatchCase& test_case : cases) {
+        const auto pattern = DialPattern::create(test_case.pattern);
+        REQUIRE(pattern.has_value());
+        CHECK(pattern->matches(test_case.match));
+        CHECK_FALSE(pattern->matches(test_case.non_match));
+    }
 }
 
 TEST_CASE("DialPattern reports invalid syntax with an error code", "[dial_pattern]") {
-    const auto invalid = DialPattern::create("_12.3");
+    constexpr std::array invalid_patterns{"", "_", "_[]", "_[1", "_[a]", "_[5-1]", "_[1-]", "_12.3", "_*"};
 
-    REQUIRE_FALSE(invalid.has_value());
-    CHECK(invalid.error().code() == std::errc::invalid_argument);
+    for (std::string_view pattern : invalid_patterns) {
+        const auto invalid = DialPattern::create(pattern);
+        REQUIRE_FALSE(invalid.has_value());
+        CHECK(invalid.error().code() == std::errc::invalid_argument);
+    }
+}
+
+TEST_CASE("DialPattern applies the shared destination-specificity vector", "[dial_pattern]") {
+    // The shared schema's prefix patterns use this class's equivalent Asterisk syntax.
+    const auto prefix_1 = DialPattern::create("_1.");
+    const auto prefix_120 = DialPattern::create("_120.");
+
+    REQUIRE(prefix_1.has_value());
+    REQUIRE(prefix_120.has_value());
+    CHECK(prefix_1->matches("1205555"));
+    CHECK(prefix_120->matches("1205555"));
+    CHECK(DialPattern::compare(*prefix_120, *prefix_1) == std::strong_ordering::less);
 }
 
 TEST_CASE("DialPattern ranks the most specific digit set first", "[dial_pattern]") {
