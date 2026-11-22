@@ -22,7 +22,8 @@ Protocols::LegacySipRouteSnapshot make_snapshot(std::string table_id, int versio
             .uri = "*",
             .sip_address = std::move(catch_all_address),
             .port = kTestPort,
-            .codec = std::nullopt});
+            .codec = std::nullopt,
+        });
     return snapshot;
 }
 
@@ -30,33 +31,33 @@ Protocols::LegacySipRouteSnapshot make_snapshot(std::string table_id, int versio
 
 TEST_CASE("DialPattern matches exact and Asterisk-style patterns", "[dial_pattern]") {
     struct MatchCase {
-        std::string_view pattern;
-        std::string_view match;
-        std::string_view non_match;
+        std::string_view pattern_;
+        std::string_view match_;
+        std::string_view non_match_;
     };
-    constexpr std::array cases{
-        MatchCase{.pattern="120", .match="120", .non_match="1205"},
-        MatchCase{.pattern="X", .match="X", .non_match="0"},
-        MatchCase{.pattern="_X", .match="0", .non_match="x"},
-        MatchCase{.pattern="_N", .match="2", .non_match="1"},
-        MatchCase{.pattern="_Z", .match="1", .non_match="0"},
-        MatchCase{.pattern="_[1-35-7]", .match="5", .non_match="4"},
-        MatchCase{.pattern="_12[0-35-7]NZ.", .match="12329x", .non_match="12429x"},
-        MatchCase{.pattern="_X.", .match="7a", .non_match="7"},
+    constexpr std::array kCases{
+        MatchCase{.pattern_ = "120", .match_ = "120", .non_match_ = "1205"},
+        MatchCase{.pattern_ = "X", .match_ = "X", .non_match_ = "0"},
+        MatchCase{.pattern_ = "_X", .match_ = "0", .non_match_ = "x"},
+        MatchCase{.pattern_ = "_N", .match_ = "2", .non_match_ = "1"},
+        MatchCase{.pattern_ = "_Z", .match_ = "1", .non_match_ = "0"},
+        MatchCase{.pattern_ = "_[1-35-7]", .match_ = "5", .non_match_ = "4"},
+        MatchCase{.pattern_ = "_12[0-35-7]NZ.", .match_ = "12329x", .non_match_ = "12429x"},
+        MatchCase{.pattern_ = "_X.", .match_ = "7a", .non_match_ = "7"},
     };
 
-    for (const MatchCase& test_case : cases) {
-        const auto pattern = DialPattern::create(test_case.pattern);
+    for (const MatchCase& test_case : kCases) {
+        const auto pattern = DialPattern::create(test_case.pattern_);
         REQUIRE(pattern.has_value());
-        CHECK(pattern->matches(test_case.match));
-        CHECK_FALSE(pattern->matches(test_case.non_match));
+        CHECK(pattern->matches(test_case.match_));
+        CHECK_FALSE(pattern->matches(test_case.non_match_));
     }
 }
 
 TEST_CASE("DialPattern reports invalid syntax with an error code", "[dial_pattern]") {
-    constexpr std::array invalid_patterns{"", "_", "_[]", "_[1", "_[a]", "_[5-1]", "_[1-]", "_12.3", "_*"};
+    constexpr std::array kInvalidPatterns{"", "_", "_[]", "_[1", "_[a]", "_[5-1]", "_[1-]", "_12.3", "_*"};
 
-    for (std::string_view pattern : invalid_patterns) {
+    for (const std::string_view pattern : kInvalidPatterns) {
         const auto invalid = DialPattern::create(pattern);
         REQUIRE_FALSE(invalid.has_value());
         CHECK(invalid.error().code() == std::errc::invalid_argument);
