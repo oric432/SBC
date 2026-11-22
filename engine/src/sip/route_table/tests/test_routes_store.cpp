@@ -94,7 +94,7 @@ TEST_CASE("DialPattern ranks the most specific digit set first", "[dial_pattern]
 
 TEST_CASE("RoutesStore applies the first snapshot unconditionally", "[routes_store]") {
     RoutesStore routes;
-    routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1"));
+    REQUIRE(routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1")));
     REQUIRE(routes.version() == 1);
     const auto route = routes.find_route("sip:anything");
     REQUIRE(route.has_value());
@@ -106,8 +106,8 @@ TEST_CASE("RoutesStore applies the first snapshot unconditionally", "[routes_sto
 
 TEST_CASE("RoutesStore applies a newer version for the same table", "[routes_store]") {
     RoutesStore routes;
-    routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1"));
-    routes.set_snapshot(make_snapshot("default", 2, "192.0.2.2"));
+    REQUIRE(routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1")));
+    REQUIRE(routes.set_snapshot(make_snapshot("default", 2, "192.0.2.2")));
     REQUIRE(routes.version() == 2);
     const auto route = routes.find_route("sip:anything");
     REQUIRE(route.has_value());
@@ -121,8 +121,8 @@ TEST_CASE(
     // Out-of-order delivery is guarded upstream now, by WsEnvelope::seq (see
     // ControlPlaneClient::on_read()) -- RoutesStore itself no longer filters.
     RoutesStore routes;
-    routes.set_snapshot(make_snapshot("default", 2, "192.0.2.2"));
-    routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1"));
+    REQUIRE(routes.set_snapshot(make_snapshot("default", 2, "192.0.2.2")));
+    REQUIRE(routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1")));
     REQUIRE(routes.version() == 1);
     const auto route = routes.find_route("sip:anything");
     REQUIRE(route.has_value());
@@ -133,13 +133,69 @@ TEST_CASE(
 TEST_CASE("RoutesStore applies a snapshot for a different table regardless of version", "[routes_store]") {
     constexpr int kHigherVersion = 5;
     RoutesStore routes;
-    routes.set_snapshot(make_snapshot("default", kHigherVersion, "192.0.2.2"));
-    routes.set_snapshot(make_snapshot("other", 1, "192.0.2.3"));
+    REQUIRE(routes.set_snapshot(make_snapshot("default", kHigherVersion, "192.0.2.2")));
+    REQUIRE(routes.set_snapshot(make_snapshot("other", 1, "192.0.2.3")));
     REQUIRE(routes.version() == 1);
     const auto route = routes.find_route("sip:anything");
     REQUIRE(route.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
     REQUIRE(route->targets.front().address == "192.0.2.3");
+}
+
+TEST_CASE("RoutesStore rejects an invalid snapshot without replacing the active route", "[routes_store]") {
+    RoutesStore routes;
+    REQUIRE(routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1")));
+
+    auto invalid = make_snapshot("default", 2, "192.0.2.2");
+    invalid.routes.front().match.dest_pattern = "_[]";
+    REQUIRE_FALSE(routes.set_snapshot(std::move(invalid)));
+
+    CHECK(routes.version() == 1);
+    const auto route = routes.find_route("sip:anything");
+    REQUIRE(route.has_value());
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
+    CHECK(route->targets.front().address == "192.0.2.1");
+}
+
+TEST_CASE("RoutesStore rejects malformed CIDRs and invalid action-target combinations", "[routes_store]") {
+    RoutesStore routes;
+
+    auto malformed_cidr = make_snapshot("default", 1, "192.0.2.1");
+    malformed_cidr.routes.front().match.source_cidr = {"192.0.2.0/not-a-prefix"};
+    REQUIRE_FALSE(routes.set_snapshot(std::move(malformed_cidr)));
+
+    auto reject_with_target = make_snapshot("default", 1, "192.0.2.1");
+    reject_with_target.routes.front().action = Protocols::SipRouteAction::kReject;
+    REQUIRE_FALSE(routes.set_snapshot(std::move(reject_with_target)));
+}
+
+TEST_CASE("RoutesStore rejects an unsupported snapshot schema version", "[routes_store]") {
+    RoutesStore routes;
+    auto unsupported = make_snapshot("default", 1, "192.0.2.1");
+    unsupported.schema_version = 3;
+
+    REQUIRE_FALSE(routes.set_snapshot(std::move(unsupported)));
+}
+
+TEST_CASE("RoutesStore rejects oversized route snapshot inputs", "[routes_store]") {
+    RoutesStore routes;
+    auto oversized = make_snapshot("default", 1, "192.0.2.1");
+    oversized.routes.resize(513, oversized.routes.front());
+    REQUIRE_FALSE(routes.set_snapshot(std::move(oversized)));
+
+    auto oversized_pattern = make_snapshot("default", 1, "192.0.2.1");
+    oversized_pattern.routes.front().match.dest_pattern.assign(257, '1');
+    REQUIRE_FALSE(routes.set_snapshot(std::move(oversized_pattern)));
+
+    auto oversized_cidrs = make_snapshot("default", 1, "192.0.2.1");
+    oversized_cidrs.routes.front().match.source_cidr.assign(17, "192.0.2.0/24");
+    REQUIRE_FALSE(routes.set_snapshot(std::move(oversized_cidrs)));
+
+    auto oversized_targets = make_snapshot("default", 1, "192.0.2.1");
+    oversized_targets.routes.front().targets.resize(6, oversized_targets.routes.front().targets.front());
+    REQUIRE_FALSE(routes.set_snapshot(std::move(oversized_targets)));
+
+    CHECK(routes.version() == 0);
 }
 
 } // namespace SbcEngine

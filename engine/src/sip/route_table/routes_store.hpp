@@ -4,6 +4,7 @@
 #include <shared_mutex>
 #include <string>
 
+#include "core/utils/error.hpp"
 #include "protocols/sip_routes.hpp"
 
 namespace SbcEngine {
@@ -14,7 +15,9 @@ namespace SbcEngine {
 // callers of find_route() changing.
 class RoutesStore {
 public:
-    void set_snapshot(Protocols::SipRouteSnapshot snapshot);
+    // Validates before taking the lock, so a rejected control-plane payload
+    // never replaces the last known-good routing state.
+    [[nodiscard]] VoidResult set_snapshot(Protocols::SipRouteSnapshot snapshot);
 
     // First supplied rule whose dest_pattern matches request_uri exactly, or
     // is "*". std::nullopt if nothing matches.

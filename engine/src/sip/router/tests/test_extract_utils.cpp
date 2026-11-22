@@ -521,6 +521,7 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
     context.endpt_ = kPjEndpoint.get();
     RoutesStore routes;
     Protocols::SipRouteSnapshot snapshot;
+    snapshot.schema_version = 2;
     snapshot.routes.emplace_back(
         Protocols::SipRouteRule{
             .id = "catch-all",
@@ -532,7 +533,7 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
                 .address = "192.0.2.1",
                 .port = kTestRoutePort}},
         });
-    routes.set_snapshot(std::move(snapshot));
+    REQUIRE(routes.set_snapshot(std::move(snapshot)));
     UsersStore users;
     BindingStore bindings;
     CallManager manager;
