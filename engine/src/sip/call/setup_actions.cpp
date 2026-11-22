@@ -73,7 +73,18 @@ RouteResolution SetupActions::resolve_route() {
         return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
     }
 
-    if (route->sip_address == ctx->config_.local_ip_ && std::cmp_equal(route->port, ctx->config_.sip_port_)) {
+    if (route->action != Protocols::SipRouteAction::kRoute) {
+        Log::sip()->warn("[{}] route for {} does not permit routing", session_.call_id(), request_uri);
+        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
+    }
+
+    if (route->targets.empty() || route->targets.front().kind != Protocols::SipRouteTargetKind::kSip) {
+        Log::sip()->warn("[{}] route for {} has no SIP target", session_.call_id(), request_uri);
+        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
+    }
+    const auto& target = route->targets.front();
+
+    if (target.address == ctx->config_.local_ip_ && std::cmp_equal(target.port, ctx->config_.sip_port_)) {
         // The routing table points this request straight back at this
         // engine's own listening address. Max-Forwards decrementing alone is
         // a fallback net (it still bounds a loop that hops through other
@@ -84,14 +95,14 @@ RouteResolution SetupActions::resolve_route() {
             "[{}] route for {} points back at this SBC ({}:{}), loop detected",
             session_.call_id(),
             request_uri,
-            route->sip_address,
-            route->port);
+            target.address,
+            target.port);
         return {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}, .required_codec_ = {}};
     }
 
     std::optional<Protocols::SupportedCodec> required_codec;
-    if (route->codec) {
-        const auto* supported = Protocols::find_supported_codec_by_name(*route->codec);
+    if (target.codec) {
+        const auto* supported = Protocols::find_supported_codec_by_name(*target.codec);
         if (supported == nullptr) {
             // Configured with a codec name this build doesn't have compiled
             // in at all. Same strict semantics as "caller doesn't offer it"
@@ -102,7 +113,7 @@ RouteResolution SetupActions::resolve_route() {
                 "[{}] route for {} requires unrecognized codec '{}'",
                 session_.call_id(),
                 request_uri,
-                *route->codec);
+                *target.codec);
             return {.kind_ = RouteResolution::Kind::kCodecMismatch, .destination_ = {}, .required_codec_ = {}};
         }
         const pjmedia_sdp_session* caller_offer = Sdp::parse(session_.pool(), session_.caller_offer_sdp());
@@ -120,11 +131,10 @@ RouteResolution SetupActions::resolve_route() {
         required_codec = *supported;
     }
 
-    std::string user = extract_uri_user(route->uri);
-    const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
-                                          : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
-    Log::sip()
-        ->debug("Found route for request uri {}, route uri : {}:{}", request_uri, route->sip_address, route->port);
+    std::string user = extract_uri_user(request_uri);
+    const std::string dest = user.empty() ? std::format("sip:{}:{}", target.address, target.port)
+                                          : std::format("sip:{}@{}:{}", user, target.address, target.port);
+    Log::sip()->debug("Found route for request uri {}, route target: {}:{}", request_uri, target.address, target.port);
     return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest, .required_codec_ = required_codec};
 }
 

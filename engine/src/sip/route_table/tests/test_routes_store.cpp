@@ -12,17 +12,21 @@ namespace {
 
 constexpr int kTestPort = 5060;
 
-Protocols::LegacySipRouteSnapshot make_snapshot(std::string table_id, int version, std::string catch_all_address) {
-    Protocols::LegacySipRouteSnapshot snapshot;
+Protocols::SipRouteSnapshot make_snapshot(std::string table_id, int version, std::string catch_all_address) {
+    Protocols::SipRouteSnapshot snapshot;
+    snapshot.schema_version = 2;
     snapshot.table_id = std::move(table_id);
     snapshot.version = version;
-    snapshot.routes.emplace(
-        1,
-        Protocols::LegacySipRouteRule{
-            .uri = "*",
-            .sip_address = std::move(catch_all_address),
-            .port = kTestPort,
-            .codec = std::nullopt,
+    snapshot.routes.emplace_back(
+        Protocols::SipRouteRule{
+            .id = "catch-all",
+            .match = {.dest_pattern = "*"},
+            .action = Protocols::SipRouteAction::kRoute,
+            .priority = 1,
+            .targets = {Protocols::SipRouteTarget{
+                .kind = Protocols::SipRouteTargetKind::kSip,
+                .address = std::move(catch_all_address),
+                .port = kTestPort}},
         });
     return snapshot;
 }
@@ -97,7 +101,7 @@ TEST_CASE("RoutesStore applies the first snapshot unconditionally", "[routes_sto
     // The has_value() check above is hidden from clang-tidy's dataflow
     // inside Catch2's REQUIRE macro expansion.
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    REQUIRE(route->sip_address == "192.0.2.1");
+    REQUIRE(route->targets.front().address == "192.0.2.1");
 }
 
 TEST_CASE("RoutesStore applies a newer version for the same table", "[routes_store]") {
@@ -108,7 +112,7 @@ TEST_CASE("RoutesStore applies a newer version for the same table", "[routes_sto
     const auto route = routes.find_route("sip:anything");
     REQUIRE(route.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    REQUIRE(route->sip_address == "192.0.2.2");
+    REQUIRE(route->targets.front().address == "192.0.2.2");
 }
 
 TEST_CASE(
@@ -123,7 +127,7 @@ TEST_CASE(
     const auto route = routes.find_route("sip:anything");
     REQUIRE(route.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    REQUIRE(route->sip_address == "192.0.2.1");
+    REQUIRE(route->targets.front().address == "192.0.2.1");
 }
 
 TEST_CASE("RoutesStore applies a snapshot for a different table regardless of version", "[routes_store]") {
@@ -135,7 +139,7 @@ TEST_CASE("RoutesStore applies a snapshot for a different table regardless of ve
     const auto route = routes.find_route("sip:anything");
     REQUIRE(route.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    REQUIRE(route->sip_address == "192.0.2.3");
+    REQUIRE(route->targets.front().address == "192.0.2.3");
 }
 
 } // namespace SbcEngine

@@ -14,17 +14,17 @@ namespace SbcEngine {
 // callers of find_route() changing.
 class RoutesStore {
 public:
-    void set_snapshot(Protocols::LegacySipRouteSnapshot snapshot);
+    void set_snapshot(Protocols::SipRouteSnapshot snapshot);
 
-    // First rule (in ascending priority order) whose uri matches request_uri
-    // exactly, or "*" as a catch-all. std::nullopt if nothing matches.
-    [[nodiscard]] std::optional<Protocols::LegacySipRouteRule> find_route(const std::string& request_uri) const;
+    // First supplied rule whose dest_pattern matches request_uri exactly, or
+    // is "*". std::nullopt if nothing matches.
+    [[nodiscard]] std::optional<Protocols::SipRouteRule> find_route(const std::string& request_uri) const;
 
     [[nodiscard]] int version() const;
 
 private:
     mutable std::shared_mutex mutex_;
-    Protocols::LegacySipRouteSnapshot snapshot_;
+    Protocols::SipRouteSnapshot snapshot_;
 };
 
 } // namespace SbcEngine

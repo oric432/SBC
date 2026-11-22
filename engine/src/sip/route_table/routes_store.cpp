@@ -4,17 +4,17 @@
 
 namespace SbcEngine {
 
-void RoutesStore::set_snapshot(Protocols::LegacySipRouteSnapshot snapshot) {
+void RoutesStore::set_snapshot(Protocols::SipRouteSnapshot snapshot) {
     // Out-of-order delivery is now guarded upstream, by WsEnvelope::seq (see
     // ControlPlaneClient::on_read()) -- this applies whatever it's handed.
     const std::unique_lock lock(mutex_);
     snapshot_ = std::move(snapshot);
 }
 
-std::optional<Protocols::LegacySipRouteRule> RoutesStore::find_route(const std::string& request_uri) const {
+std::optional<Protocols::SipRouteRule> RoutesStore::find_route(const std::string& request_uri) const {
     const std::shared_lock lock(mutex_);
-    for (const auto& [priority, rule] : snapshot_.routes) {
-        if (rule.uri == "*" || rule.uri == request_uri) {
+    for (const auto& rule : snapshot_.routes) {
+        if (rule.match.dest_pattern == "*" || rule.match.dest_pattern == request_uri) {
             return rule;
         }
     }

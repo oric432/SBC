@@ -173,17 +173,26 @@ class RoutesStubServer:
                 envelope = {
                     "type": "snapshot",
                     "routes_snapshot": {
+                        "schema_version": 2,
                         "table_id": "pytest-stub",
                         "version": 1,
-                        "routes": {
-                            str(priority): {
-                                "uri": rule.uri,
-                                "sip_address": rule.sip_address,
-                                "port": rule.port,
-                                "codec": rule.codec,
+                        "routes": [
+                            {
+                                "id": f"pytest-{priority}",
+                                "match": {"dest_pattern": rule.uri, "source_cidr": []},
+                                "action": "route",
+                                "priority": priority,
+                                "targets": [{
+                                    "kind": "sip",
+                                    "address": rule.sip_address,
+                                    "port": rule.port,
+                                    "codec": rule.codec,
+                                    "timeout_ms": 1000,
+                                }],
+                                "rewrite": {},
                             }
                             for priority, rule in routes.items()
-                        },
+                        ],
                     },
                     "users_snapshot": {
                         "users": [
