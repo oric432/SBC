@@ -1,15 +1,24 @@
 {
   "schema_version": 1,
   "matching": {
-    "dest_pattern": "Prefix patterns end in '*'; the longest matching prefix wins.",
-    "source_ranking": "source_user outranks source_cidr, which outranks an unconstrained source.",
+    "dest_pattern": "Asterisk-style patterns begin with '_'; _. is the catch-all pattern.",
+    "source_ranking": "source_user outranks source_cidr; a narrower CIDR outranks a wider CIDR; both outrank an unconstrained source.",
     "priority": "Lower numeric priority wins when destination specificity and source ranking tie.",
-    "reject": "A reject action wins when every other ranking factor, including priority, ties."
+    "reject": "A reject action wins when every other ranking factor, including priority, ties.",
+    "final_tie_breaker": "Equal actions after every ranking factor use ascending lexical rule ID; rule IDs must be unique within a snapshot."
   },
   "rules": [
     {
+      "id": "default",
+      "match": { "dest_pattern": "_.", "source_cidr": [] },
+      "action": "route",
+      "priority": 100,
+      "targets": [{ "kind": "sip", "address": "198.51.100.1", "port": 5060, "timeout_ms": 1000 }],
+      "rewrite": {}
+    },
+    {
       "id": "prefix-1",
-      "match": { "dest_pattern": "1*", "source_cidr": [] },
+      "match": { "dest_pattern": "_1.", "source_cidr": [] },
       "action": "route",
       "priority": 100,
       "targets": [{ "kind": "sip", "address": "198.51.100.10", "port": 5060, "timeout_ms": 1000 }],
@@ -17,15 +26,23 @@
     },
     {
       "id": "prefix-120",
-      "match": { "dest_pattern": "120*", "source_cidr": [] },
+      "match": { "dest_pattern": "_120.", "source_cidr": [] },
       "action": "route",
       "priority": 900,
       "targets": [{ "kind": "sip", "address": "198.51.100.20", "port": 5060, "timeout_ms": 1000 }],
       "rewrite": {}
     },
     {
+      "id": "exact-1205555",
+      "match": { "dest_pattern": "1205555", "source_cidr": [] },
+      "action": "route",
+      "priority": 999,
+      "targets": [{ "kind": "sip", "address": "198.51.100.21", "port": 5060, "timeout_ms": 1000 }],
+      "rewrite": {}
+    },
+    {
       "id": "source-any",
-      "match": { "dest_pattern": "555*", "source_cidr": [] },
+      "match": { "dest_pattern": "_555.", "source_cidr": [] },
       "action": "route",
       "priority": 1,
       "targets": [{ "kind": "sip", "address": "198.51.100.30", "port": 5060, "timeout_ms": 1000 }],
@@ -33,23 +50,55 @@
     },
     {
       "id": "source-network",
-      "match": { "dest_pattern": "555*", "source_cidr": ["192.0.2.0/24"] },
+      "match": { "dest_pattern": "_555.", "source_cidr": ["192.0.2.0/24"] },
       "action": "route",
       "priority": 900,
       "targets": [{ "kind": "sip", "address": "198.51.100.31", "port": 5060, "timeout_ms": 1000 }],
       "rewrite": {}
     },
     {
-      "id": "source-user",
-      "match": { "dest_pattern": "555*", "source_cidr": ["192.0.2.0/24"], "source_user": "alice" },
+      "id": "source-narrow",
+      "match": { "dest_pattern": "_555.", "source_cidr": ["192.0.2.0/25"] },
       "action": "route",
       "priority": 999,
-      "targets": [{ "kind": "registered", "address": "alice@example.test", "port": 5060, "timeout_ms": 1000 }],
+      "targets": [{ "kind": "sip", "address": "198.51.100.32", "port": 5060, "timeout_ms": 1000 }],
+      "rewrite": {}
+    },
+    {
+      "id": "source-user",
+      "match": { "dest_pattern": "_555.", "source_cidr": ["192.0.2.0/24"], "source_user": "alice" },
+      "action": "route",
+      "priority": 999,
+      "targets": [{ "kind": "sip", "address": "198.51.100.33", "port": 5060, "timeout_ms": 1000 }],
+      "rewrite": {}
+    },
+    {
+      "id": "source-user-120",
+      "match": { "dest_pattern": "_120.", "source_cidr": [], "source_user": "alice" },
+      "action": "route",
+      "priority": 1,
+      "targets": [{ "kind": "sip", "address": "198.51.100.34", "port": 5060, "timeout_ms": 1000 }],
+      "rewrite": {}
+    },
+    {
+      "id": "ipv4-wide",
+      "match": { "dest_pattern": "_600.", "source_cidr": ["198.18.0.0/24"] },
+      "action": "route",
+      "priority": 1,
+      "targets": [{ "kind": "sip", "address": "198.51.100.35", "port": 5060, "timeout_ms": 1000 }],
+      "rewrite": {}
+    },
+    {
+      "id": "ipv4-narrow",
+      "match": { "dest_pattern": "_600.", "source_cidr": ["198.18.0.0/25"] },
+      "action": "route",
+      "priority": 999,
+      "targets": [{ "kind": "sip", "address": "198.51.100.36", "port": 5060, "timeout_ms": 1000 }],
       "rewrite": {}
     },
     {
       "id": "priority-low",
-      "match": { "dest_pattern": "700*", "source_cidr": [] },
+      "match": { "dest_pattern": "_700.", "source_cidr": [] },
       "action": "route",
       "priority": 10,
       "targets": [{ "kind": "sip", "address": "198.51.100.40", "port": 5060, "timeout_ms": 1000 }],
@@ -57,7 +106,7 @@
     },
     {
       "id": "priority-high",
-      "match": { "dest_pattern": "700*", "source_cidr": [] },
+      "match": { "dest_pattern": "_700.", "source_cidr": [] },
       "action": "route",
       "priority": 20,
       "targets": [{ "kind": "sip", "address": "198.51.100.41", "port": 5060, "timeout_ms": 1000 }],
@@ -65,7 +114,7 @@
     },
     {
       "id": "tie-route",
-      "match": { "dest_pattern": "900*", "source_cidr": [] },
+      "match": { "dest_pattern": "_900.", "source_cidr": [] },
       "action": "route",
       "priority": 50,
       "targets": [{ "kind": "sip", "address": "198.51.100.50", "port": 5060, "timeout_ms": 1000 }],
@@ -73,18 +122,43 @@
     },
     {
       "id": "tie-reject",
-      "match": { "dest_pattern": "900*", "source_cidr": [] },
+      "match": { "dest_pattern": "_900.", "source_cidr": [] },
       "action": "reject",
       "priority": 50,
-      "targets": [{ "kind": "sip", "address": "198.51.100.51", "port": 5060, "timeout_ms": 1000 }],
+      "targets": [],
+      "rewrite": {}
+    },
+    {
+      "id": "same-action-z",
+      "match": { "dest_pattern": "_800.", "source_cidr": [] },
+      "action": "route",
+      "priority": 50,
+      "targets": [{ "kind": "sip", "address": "198.51.100.60", "port": 5060, "timeout_ms": 1000 }],
+      "rewrite": {}
+    },
+    {
+      "id": "same-action-a",
+      "match": { "dest_pattern": "_800.", "source_cidr": [] },
+      "action": "route",
+      "priority": 50,
+      "targets": [{ "kind": "sip", "address": "198.51.100.61", "port": 5060, "timeout_ms": 1000 }],
       "rewrite": {}
     }
   ],
   "cases": [
-    { "name": "destination specificity", "dialed_number": "1205555", "source": { "address": "203.0.113.1" }, "expected_rule_id": "prefix-120" },
-    { "name": "source user ranking", "dialed_number": "5551234", "source": { "address": "192.0.2.10", "user": "alice" }, "expected_rule_id": "source-user" },
-    { "name": "source CIDR ranking", "dialed_number": "5551234", "source": { "address": "192.0.2.10", "user": "bob" }, "expected_rule_id": "source-network" },
-    { "name": "priority tiebreak", "dialed_number": "7001234", "source": { "address": "203.0.113.1" }, "expected_rule_id": "priority-low" },
-    { "name": "reject wins exact tie", "dialed_number": "9001234", "source": { "address": "203.0.113.1" }, "expected_rule_id": "tie-reject" }
+    { "name": "exact destination", "dialed_number": "1205555", "source": { "address": "203.0.113.1" }, "expected": { "action": "route", "rule_id": "exact-1205555" } },
+    { "name": "pattern destination", "dialed_number": "120999", "source": { "address": "203.0.113.1" }, "expected": { "action": "route", "rule_id": "prefix-120" } },
+    { "name": "default destination", "dialed_number": "888", "source": { "address": "203.0.113.1" }, "expected": { "action": "route", "rule_id": "default" } },
+    { "name": "narrow CIDR", "dialed_number": "5551234", "source": { "address": "192.0.2.10" }, "expected": { "action": "route", "rule_id": "source-narrow" } },
+    { "name": "source user", "dialed_number": "5551234", "source": { "address": "192.0.2.10", "user": "alice" }, "expected": { "action": "route", "rule_id": "source-user" } },
+    { "name": "source user absent", "dialed_number": "5551234", "source": { "address": "192.0.2.10" }, "expected": { "action": "route", "rule_id": "source-narrow" } },
+    { "name": "source user differs", "dialed_number": "5551234", "source": { "address": "192.0.2.10", "user": "bob" }, "expected": { "action": "route", "rule_id": "source-narrow" } },
+    { "name": "invalid source does not match CIDR", "dialed_number": "5551234", "source": { "address": "not-an-address" }, "expected": { "action": "route", "rule_id": "source-any" } },
+    { "name": "IPv4 narrow CIDR", "dialed_number": "6001234", "source": { "address": "198.18.0.10" }, "expected": { "action": "route", "rule_id": "ipv4-narrow" } },
+    { "name": "same-action tie uses rule ID", "dialed_number": "8001234", "source": { "address": "203.0.113.1" }, "expected": { "action": "route", "rule_id": "same-action-a" } },
+    { "name": "destination outranks source", "dialed_number": "1205555", "source": { "address": "203.0.113.1", "user": "alice" }, "expected": { "action": "route", "rule_id": "exact-1205555" } },
+    { "name": "priority", "dialed_number": "7001234", "source": { "address": "203.0.113.1" }, "expected": { "action": "route", "rule_id": "priority-low" } },
+    { "name": "reject tie", "dialed_number": "9001234", "source": { "address": "203.0.113.1" }, "expected": { "action": "reject", "rule_id": "tie-reject" } },
+    { "name": "no match rejects", "dialed_number": "", "source": { "address": "203.0.113.1" }, "expected": { "action": "reject", "rule_id": null } }
   ]
 }
