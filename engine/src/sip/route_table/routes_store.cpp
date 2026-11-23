@@ -201,9 +201,11 @@ struct SourceRank {
                 kMaxTargets));
         }
         for (const auto& target : rule.targets) {
-            const bool is_supported_target =
-                target.kind == Protocols::SipRouteTargetKind::kSip && !target.address.empty() &&
-                target.address.size() <= kMaxTargetAddressLength && target.port > 0 && target.port <= kMaxSipPort;
+            const bool is_sip_target =
+                target.kind == Protocols::SipRouteTargetKind::kSip && target.port > 0 && target.port <= kMaxSipPort;
+            const bool is_registered_target = target.kind == Protocols::SipRouteTargetKind::kRegistered;
+            const bool is_supported_target = (is_sip_target || is_registered_target) && !target.address.empty() &&
+                                             target.address.size() <= kMaxTargetAddressLength;
             if (!is_supported_target) {
                 return std::unexpected(Error(
                     std::make_error_code(std::errc::invalid_argument),
