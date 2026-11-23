@@ -525,13 +525,19 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
     snapshot.routes.emplace_back(
         Protocols::SipRouteRule{
             .id = "catch-all",
-            .match = {.dest_pattern = "*"},
+            .match = {.dest_pattern = "*", .source_cidr = {}, .source_user = std::nullopt},
             .action = Protocols::SipRouteAction::kRoute,
             .priority = 1,
-            .targets = {Protocols::SipRouteTarget{
-                .kind = Protocols::SipRouteTargetKind::kSip,
-                .address = "192.0.2.1",
-                .port = kTestRoutePort}},
+            .targets =
+                {
+                    Protocols::SipRouteTarget{
+                        .kind = Protocols::SipRouteTargetKind::kSip,
+                        .address = "192.0.2.1",
+                        .port = kTestRoutePort,
+                        .codec = std::nullopt,
+                        .timeout_ms = 0,
+                    },
+                },
         });
     REQUIRE(routes.set_snapshot(std::move(snapshot)));
     UsersStore users;

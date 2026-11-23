@@ -196,6 +196,51 @@ TEST_CASE("BindingStore find_preferred is nullopt for an unknown AOR") {
     CHECK_FALSE(store.find_preferred("nobody@sbc.local", kEpoch).has_value());
 }
 
+TEST_CASE("BindingStore resolves an AOR from a live binding source address") {
+    BindingStore store;
+    const auto now = kEpoch;
+    auto binding = make_binding("sip:alice@1.1.1.1", "call-1", 1, now, std::chrono::seconds(60));
+    binding.source_address_ = "10.0.0.2";
+    store.apply_contacts("alice@sbc.local", {binding});
+
+    CHECK(store.find_aor_by_source_address("10.0.0.2", now) == "alice@sbc.local");
+}
+
+TEST_CASE("BindingStore does not resolve an expired binding source address") {
+    BindingStore store;
+    const auto now = kEpoch;
+    auto binding = make_binding("sip:alice@1.1.1.1", "call-1", 1, now, std::chrono::seconds(60));
+    binding.source_address_ = "10.0.0.2";
+    store.apply_contacts("alice@sbc.local", {binding});
+
+    CHECK_FALSE(store.find_aor_by_source_address("10.0.0.2", now + std::chrono::seconds(60)).has_value());
+}
+
+TEST_CASE("BindingStore does not resolve an unknown binding source address") {
+    const BindingStore store;
+
+    CHECK_FALSE(store.find_aor_by_source_address("10.0.0.2", kEpoch).has_value());
+}
+
+TEST_CASE("BindingStore resolves shared source addresses by recency then AOR") {
+    BindingStore store;
+    const auto t0 = kEpoch;
+    auto alice = make_binding("sip:alice@1.1.1.1", "call-1", 1, t0, std::chrono::seconds(60));
+    alice.source_address_ = "10.0.0.2";
+    store.apply_contacts("alice@sbc.local", {alice});
+
+    const auto t1 = t0 + std::chrono::seconds(5);
+    auto bob = make_binding("sip:bob@1.1.1.2", "call-2", 1, t1, std::chrono::seconds(60));
+    bob.source_address_ = "10.0.0.2";
+    store.apply_contacts("bob@sbc.local", {bob});
+    CHECK(store.find_aor_by_source_address("10.0.0.2", t1) == "bob@sbc.local");
+
+    auto aaron = make_binding("sip:aaron@1.1.1.3", "call-3", 1, t1, std::chrono::seconds(60));
+    aaron.source_address_ = "10.0.0.2";
+    store.apply_contacts("aaron@sbc.local", {aaron});
+    CHECK(store.find_aor_by_source_address("10.0.0.2", t1) == "aaron@sbc.local");
+}
+
 } // namespace SbcEngine
 
 // NOLINTEND(bugprone-unchecked-optional-access,cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers,readability-identifier-length)
