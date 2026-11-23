@@ -1,12 +1,41 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <map>
+#include <optional>
 #include <string_view>
+#include <vector>
+
+#include <glaze/glaze.hpp>
 
 #include "sip/route_table/dial_pattern.hpp"
 #include "sip/route_table/routes_store.hpp"
 
 namespace SbcEngine {
+
+struct RuleMatchVectorSource {
+    std::string address;
+    std::optional<std::string> user;
+};
+
+struct RuleMatchVectorExpected {
+    Protocols::SipRouteAction action;
+    std::optional<std::string> rule_id;
+};
+
+struct RuleMatchVectorCase {
+    std::string name;
+    std::string dialed_number;
+    RuleMatchVectorSource source;
+    RuleMatchVectorExpected expected;
+};
+
+struct RuleMatchVectors {
+    int schema_version{};
+    std::map<std::string, std::string> matching;
+    std::vector<Protocols::SipRouteRule> rules;
+    std::vector<RuleMatchVectorCase> cases;
+};
 
 namespace {
 
@@ -20,13 +49,15 @@ Protocols::SipRouteSnapshot make_snapshot(std::string table_id, int version, std
     snapshot.routes.emplace_back(
         Protocols::SipRouteRule{
             .id = "catch-all",
-            .match = {.dest_pattern = "*"},
+            .match = {.dest_pattern = "*", .source_cidr = {}, .source_user = std::nullopt},
             .action = Protocols::SipRouteAction::kRoute,
             .priority = 1,
             .targets = {Protocols::SipRouteTarget{
                 .kind = Protocols::SipRouteTargetKind::kSip,
                 .address = std::move(catch_all_address),
-                .port = kTestPort}},
+                .port = kTestPort,
+                .codec = std::nullopt,
+                .timeout_ms = 0}},
         });
     return snapshot;
 }
@@ -66,6 +97,16 @@ TEST_CASE("DialPattern reports invalid syntax with an error code", "[dial_patter
         REQUIRE_FALSE(invalid.has_value());
         CHECK(invalid.error().code() == std::errc::invalid_argument);
     }
+}
+
+TEST_CASE("DialPattern matches and ranks a catch-all Asterisk pattern", "[dial_pattern]") {
+    const auto catch_all_pattern = DialPattern::create("_.");
+    const auto prefix_pattern = DialPattern::create("_120.");
+
+    REQUIRE(catch_all_pattern.has_value());
+    REQUIRE(prefix_pattern.has_value());
+    CHECK(catch_all_pattern->matches("anything"));
+    CHECK(DialPattern::compare(*prefix_pattern, *catch_all_pattern) == std::strong_ordering::less);
 }
 
 TEST_CASE("DialPattern applies the shared destination-specificity vector", "[dial_pattern]") {
@@ -177,6 +218,14 @@ TEST_CASE("RoutesStore rejects an unsupported snapshot schema version", "[routes
     REQUIRE_FALSE(routes.set_snapshot(std::move(unsupported)));
 }
 
+TEST_CASE("RoutesStore rejects duplicate rule IDs", "[routes_store]") {
+    RoutesStore routes;
+    auto duplicate_ids = make_snapshot("default", 1, "192.0.2.1");
+    duplicate_ids.routes.push_back(duplicate_ids.routes.front());
+
+    REQUIRE_FALSE(routes.set_snapshot(duplicate_ids));
+}
+
 TEST_CASE("RoutesStore rejects oversized route snapshot inputs", "[routes_store]") {
     RoutesStore routes;
     auto oversized = make_snapshot("default", 1, "192.0.2.1");
@@ -196,6 +245,40 @@ TEST_CASE("RoutesStore rejects oversized route snapshot inputs", "[routes_store]
     REQUIRE_FALSE(routes.set_snapshot(std::move(oversized_targets)));
 
     CHECK(routes.version() == 0);
+}
+
+TEST_CASE("RoutesStore follows shared v2 route-ranking vectors", "[routes_store]") {
+    RuleMatchVectors vectors;
+    std::string buffer;
+    REQUIRE_FALSE(glz::read_file_json(vectors, SBC_RULE_MATCH_VECTORS_PATH, buffer));
+    REQUIRE(vectors.schema_version == 1);
+    RoutesStore routes;
+    REQUIRE(routes.set_snapshot(
+        Protocols::SipRouteSnapshot{
+            .schema_version = 2,
+            .table_id = "shared-vectors",
+            .version = 1,
+            .routes = std::move(vectors.rules),
+        }));
+    for (const RuleMatchVectorCase& test_case : vectors.cases) {
+        DYNAMIC_SECTION(test_case.name) {
+            const auto decision = routes.decide(
+                RouteQuery{
+                    .destination_ = test_case.dialed_number,
+                    .source_address_ = test_case.source.address,
+                    .source_user_ = test_case.source.user,
+                });
+            const auto expected_kind = test_case.expected.action == Protocols::SipRouteAction::kRoute
+                                           ? RouteDecision::Kind::kRoute
+                                           : RouteDecision::Kind::kReject;
+            REQUIRE(decision.kind_ == expected_kind);
+            REQUIRE(decision.rule_.has_value() == test_case.expected.rule_id.has_value());
+            if (test_case.expected.rule_id) {
+                // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- checked above.
+                CHECK(decision.rule_->id == *test_case.expected.rule_id);
+            }
+        }
+    }
 }
 
 } // namespace SbcEngine
