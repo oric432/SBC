@@ -281,4 +281,20 @@ TEST_CASE("RoutesStore follows shared v2 route-ranking vectors", "[routes_store]
     }
 }
 
+TEST_CASE("RoutesStore rejects an unmatched route query", "[routes_store]") {
+    RoutesStore routes;
+    REQUIRE(routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1")));
+    const auto decision = routes.decide(
+        RouteQuery{.destination_ = "unmatched", .source_address_ = "192.0.2.1", .source_user_ = std::nullopt});
+    REQUIRE(decision.kind_ == RouteDecision::Kind::kRoute);
+
+    auto no_match = make_snapshot("default", 2, "192.0.2.1");
+    no_match.routes.front().match.dest_pattern = "100";
+    REQUIRE(routes.set_snapshot(no_match));
+    const auto rejected =
+        routes.decide(RouteQuery{.destination_ = "200", .source_address_ = "192.0.2.1", .source_user_ = std::nullopt});
+    CHECK(rejected.kind_ == RouteDecision::Kind::kReject);
+    CHECK_FALSE(rejected.rule_.has_value());
+}
+
 } // namespace SbcEngine

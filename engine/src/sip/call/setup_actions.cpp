@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
+#include <iterator>
 #include <utility>
 #include <pjsip_ua.h>
 
@@ -19,6 +20,15 @@
 namespace SbcEngine {
 namespace {
 constexpr int kMinFinalErrorCode = 300;
+
+std::string extract_source_address(const pjsip_rx_data* rdata) {
+    if (rdata == nullptr) {
+        return {};
+    }
+    const char* const source_end = std::ranges::find(rdata->pkt_info.src_name, '\0');
+    return {std::cbegin(rdata->pkt_info.src_name), source_end};
+}
+
 void finish_exchange(CallSession& session, ExchangeOutcome outcome) {
     if (outcome == ExchangeOutcome::kPending) {
         return;
@@ -59,7 +69,8 @@ RouteResolution SetupActions::resolve_route() {
                         .kind_ = RouteResolution::Kind::kFound,
                         .destination_ =
                             std::format("sip:{}@{}:{}", user, binding->source_address_, binding->source_port_),
-                        .required_codec_ = std::nullopt};
+                        .required_codec_ = std::nullopt,
+                    };
                 }
                 Log::sip()->warn("[{}] {} is a known local user with no active registration", session_.call_id(), aor);
                 return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
@@ -67,22 +78,30 @@ RouteResolution SetupActions::resolve_route() {
         }
     }
 
-    auto route = stores_.routes_ != nullptr ? stores_.routes_->find_route(request_uri) : std::nullopt;
-    if (!route) {
-        Log::sip()->warn("[{}] no route found for {}", session_.call_id(), request_uri);
-        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
+    const std::string source_address = extract_source_address(session_.current_rdata());
+    const auto source_user =
+        stores_.bindings_ != nullptr
+            ? stores_.bindings_->find_aor_by_source_address(source_address, std::chrono::steady_clock::now())
+            : std::nullopt;
+    const auto decision = stores_.routes_ != nullptr ? stores_.routes_->decide(
+                                                           RouteQuery{
+                                                               .destination_ = extract_uri_user(request_uri),
+                                                               .source_address_ = source_address,
+                                                               .source_user_ = source_user,
+                                                           })
+                                                     : RouteDecision{};
+    if (decision.kind_ == RouteDecision::Kind::kReject || !decision.rule_) {
+        Log::sip()->warn("[{}] route policy rejected {}", session_.call_id(), request_uri);
+        return {.kind_ = RouteResolution::Kind::kRejected, .destination_ = {}, .required_codec_ = {}};
     }
 
-    if (route->action != Protocols::SipRouteAction::kRoute) {
-        Log::sip()->warn("[{}] route for {} does not permit routing", session_.call_id(), request_uri);
-        return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
-    }
+    const auto& route = *decision.rule_;
 
-    if (route->targets.empty() || route->targets.front().kind != Protocols::SipRouteTargetKind::kSip) {
+    if (route.targets.empty() || route.targets.front().kind != Protocols::SipRouteTargetKind::kSip) {
         Log::sip()->warn("[{}] route for {} has no SIP target", session_.call_id(), request_uri);
         return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
     }
-    const auto& target = route->targets.front();
+    const auto& target = route.targets.front();
 
     if (target.address == ctx->config_.local_ip_ && std::cmp_equal(target.port, ctx->config_.sip_port_)) {
         // The routing table points this request straight back at this
@@ -160,6 +179,10 @@ void SetupActions::route_failed() {
         Protocols::CallStatus::kNoRouteAvailable,
         std::format("no route available for {}", session_.request_uri()));
     Inv::answer(session_.inv_caller(), PJSIP_SC_TEMPORARILY_UNAVAILABLE);
+}
+void SetupActions::route_rejected() {
+    note_failure(Protocols::CallStatus::kFailed, std::format("route policy rejected {}", session_.request_uri()));
+    Inv::answer(session_.inv_caller(), PJSIP_SC_FORBIDDEN);
 }
 void SetupActions::routing_loop_detected() {
     note_failure(Protocols::CallStatus::kFailed, "routing loop detected");

@@ -13,7 +13,7 @@ namespace SbcEngine {
 // Outcome of a synchronous routing lookup, returned by ISetupActions::resolve_route()
 // so the SM's own transition table can decide which follow-up event to self-fire.
 struct RouteResolution {
-    enum class Kind : std::uint8_t { kFound, kFailed, kLoop, kCodecMismatch };
+    enum class Kind : std::uint8_t { kFound, kFailed, kRejected, kLoop, kCodecMismatch };
 
     Kind kind_ = Kind::kFailed;
     std::string destination_; // only meaningful when kind_ == kFound
@@ -34,6 +34,7 @@ public:
     virtual void begin_setup() = 0;
     virtual RouteResolution resolve_route() = 0;
     virtual void route_failed() = 0;
+    virtual void route_rejected() = 0;
     virtual void routing_loop_detected() = 0;
     virtual void codec_mismatch_detected() = 0;
     // Starts a fresh exchange. Completion is delivered as a logical setup event.

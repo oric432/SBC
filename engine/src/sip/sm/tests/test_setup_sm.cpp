@@ -72,6 +72,10 @@ TEST_CASE("Setup routing failures never allocate an exchange", "[setup_sm]") {
         actions.route_resolution_.kind_ = RouteResolution::Kind::kFailed;
         expected_call = "route_failed";
     }
+    SECTION("Policy rejection") {
+        actions.route_resolution_.kind_ = RouteResolution::Kind::kRejected;
+        expected_call = "route_rejected";
+    }
     SECTION("Routing loop") {
         actions.route_resolution_.kind_ = RouteResolution::Kind::kLoop;
         expected_call = "routing_loop_detected";

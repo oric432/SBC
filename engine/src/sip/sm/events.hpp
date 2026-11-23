@@ -19,6 +19,7 @@ struct RouteFound {
     std::optional<Protocols::SupportedCodec> required_codec_;
 };
 struct RouteFailed {};
+struct RouteRejected {};
 struct LoopDetected {};
 struct CodecMismatch {};
 struct ProgressReceived {

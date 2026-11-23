@@ -33,6 +33,7 @@ public:
         return route_resolution_;
     }
     void route_failed() override { calls_.emplace_back("route_failed"); }
+    void route_rejected() override { calls_.emplace_back("route_rejected"); }
     void routing_loop_detected() override { calls_.emplace_back("routing_loop_detected"); }
     void codec_mismatch_detected() override { calls_.emplace_back("codec_mismatch_detected"); }
     ExchangeOutcome start_exchange(

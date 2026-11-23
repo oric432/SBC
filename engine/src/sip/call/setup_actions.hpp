@@ -26,6 +26,7 @@ public:
     void begin_setup() override;
     RouteResolution resolve_route() override;
     void route_failed() override;
+    void route_rejected() override;
     void routing_loop_detected() override;
     void codec_mismatch_detected() override;
     ExchangeOutcome start_exchange(
