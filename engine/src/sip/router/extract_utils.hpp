@@ -59,4 +59,8 @@ std::string extract_uri_host(const std::string& uri);
 // agree on this format or routing to a registered user silently breaks.
 std::string make_aor(const std::string& user, const std::string& host);
 
+// Extracts the username from a bare BindingStore AOR (`user@domain`). Returns
+// empty when the AOR has no username or domain separator.
+std::string extract_user_from_aor(const std::string& aor);
+
 } // namespace SbcEngine

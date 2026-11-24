@@ -49,10 +49,14 @@ RouteResolution SetupActions::resolve_route() {
     const std::string& request_uri = session_.request_uri();
 
     const std::string source_address = extract_source_address(session_.current_rdata());
-    const auto source_user =
+    const auto source_aor =
         stores_.bindings_ != nullptr
             ? stores_.bindings_->find_aor_by_source_address(source_address, std::chrono::steady_clock::now())
             : std::nullopt;
+    std::optional<std::string> source_user;
+    if (source_aor) {
+        source_user = extract_user_from_aor(source_aor.value());
+    }
     const auto decision = stores_.routes_ != nullptr ? stores_.routes_->decide(
                                                            RouteQuery{
                                                                .destination_ = extract_uri_user(request_uri),
