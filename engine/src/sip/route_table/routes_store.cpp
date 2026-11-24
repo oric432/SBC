@@ -332,16 +332,6 @@ RouteDecision RoutesStore::decide(const RouteQuery& query) const {
     };
 }
 
-std::optional<Protocols::SipRouteRule> RoutesStore::find_route(const std::string& request_uri) const {
-    const std::shared_lock lock(mutex_);
-    for (const auto& rule : snapshot_.routes) {
-        if (rule.match.dest_pattern == "*" || rule.match.dest_pattern == request_uri) {
-            return rule;
-        }
-    }
-    return std::nullopt;
-}
-
 int RoutesStore::version() const {
     const std::shared_lock lock(mutex_);
     return snapshot_.version;

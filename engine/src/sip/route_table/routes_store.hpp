@@ -38,10 +38,6 @@ public:
     // No matching policy returns kReject with no rule.
     [[nodiscard]] RouteDecision decide(const RouteQuery& query) const;
 
-    // First supplied rule whose dest_pattern matches request_uri exactly, or
-    // is "*". std::nullopt if nothing matches.
-    [[nodiscard]] std::optional<Protocols::SipRouteRule> find_route(const std::string& request_uri) const;
-
     [[nodiscard]] int version() const;
 
 private:

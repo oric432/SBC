@@ -137,12 +137,13 @@ TEST_CASE("RoutesStore applies the first snapshot unconditionally", "[routes_sto
     RoutesStore routes;
     REQUIRE(routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1")));
     REQUIRE(routes.version() == 1);
-    const auto route = routes.find_route("sip:anything");
-    REQUIRE(route.has_value());
+    const auto decision = routes.decide(
+        RouteQuery{.destination_ = "anything", .source_address_ = "192.0.2.1", .source_user_ = std::nullopt});
+    REQUIRE(decision.rule_.has_value());
     // The has_value() check above is hidden from clang-tidy's dataflow
     // inside Catch2's REQUIRE macro expansion.
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    REQUIRE(route->targets.front().address == "192.0.2.1");
+    REQUIRE(decision.rule_->targets.front().address == "192.0.2.1");
 }
 
 TEST_CASE("RoutesStore applies a newer version for the same table", "[routes_store]") {
@@ -150,10 +151,11 @@ TEST_CASE("RoutesStore applies a newer version for the same table", "[routes_sto
     REQUIRE(routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1")));
     REQUIRE(routes.set_snapshot(make_snapshot("default", 2, "192.0.2.2")));
     REQUIRE(routes.version() == 2);
-    const auto route = routes.find_route("sip:anything");
-    REQUIRE(route.has_value());
+    const auto decision = routes.decide(
+        RouteQuery{.destination_ = "anything", .source_address_ = "192.0.2.1", .source_user_ = std::nullopt});
+    REQUIRE(decision.rule_.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    REQUIRE(route->targets.front().address == "192.0.2.2");
+    REQUIRE(decision.rule_->targets.front().address == "192.0.2.2");
 }
 
 TEST_CASE(
@@ -165,10 +167,11 @@ TEST_CASE(
     REQUIRE(routes.set_snapshot(make_snapshot("default", 2, "192.0.2.2")));
     REQUIRE(routes.set_snapshot(make_snapshot("default", 1, "192.0.2.1")));
     REQUIRE(routes.version() == 1);
-    const auto route = routes.find_route("sip:anything");
-    REQUIRE(route.has_value());
+    const auto decision = routes.decide(
+        RouteQuery{.destination_ = "anything", .source_address_ = "192.0.2.1", .source_user_ = std::nullopt});
+    REQUIRE(decision.rule_.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    REQUIRE(route->targets.front().address == "192.0.2.1");
+    REQUIRE(decision.rule_->targets.front().address == "192.0.2.1");
 }
 
 TEST_CASE("RoutesStore applies a snapshot for a different table regardless of version", "[routes_store]") {
@@ -177,10 +180,11 @@ TEST_CASE("RoutesStore applies a snapshot for a different table regardless of ve
     REQUIRE(routes.set_snapshot(make_snapshot("default", kHigherVersion, "192.0.2.2")));
     REQUIRE(routes.set_snapshot(make_snapshot("other", 1, "192.0.2.3")));
     REQUIRE(routes.version() == 1);
-    const auto route = routes.find_route("sip:anything");
-    REQUIRE(route.has_value());
+    const auto decision = routes.decide(
+        RouteQuery{.destination_ = "anything", .source_address_ = "192.0.2.1", .source_user_ = std::nullopt});
+    REQUIRE(decision.rule_.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    REQUIRE(route->targets.front().address == "192.0.2.3");
+    REQUIRE(decision.rule_->targets.front().address == "192.0.2.3");
 }
 
 TEST_CASE("RoutesStore rejects an invalid snapshot without replacing the active route", "[routes_store]") {
@@ -192,10 +196,11 @@ TEST_CASE("RoutesStore rejects an invalid snapshot without replacing the active 
     REQUIRE_FALSE(routes.set_snapshot(std::move(invalid)));
 
     CHECK(routes.version() == 1);
-    const auto route = routes.find_route("sip:anything");
-    REQUIRE(route.has_value());
+    const auto decision = routes.decide(
+        RouteQuery{.destination_ = "anything", .source_address_ = "192.0.2.1", .source_user_ = std::nullopt});
+    REQUIRE(decision.rule_.has_value());
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) -- see above.
-    CHECK(route->targets.front().address == "192.0.2.1");
+    CHECK(decision.rule_->targets.front().address == "192.0.2.1");
 }
 
 TEST_CASE("RoutesStore rejects malformed CIDRs and invalid action-target combinations", "[routes_store]") {
