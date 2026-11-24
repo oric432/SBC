@@ -39,11 +39,22 @@ _WS_HANDSHAKE_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 @dataclass(frozen=True)
-class RouteRule:
-    uri: str
-    sip_address: str
-    port: int
+class RouteTarget:
+    kind: str
+    address: str
+    port: int = 0
     codec: str | None = None
+
+
+@dataclass(frozen=True)
+class RouteRule:
+    id: str
+    dest_pattern: str
+    priority: int
+    targets: tuple[RouteTarget, ...] = ()
+    action: str = "route"
+    source_cidr: tuple[str, ...] = ()
+    source_user: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,7 +114,7 @@ class RoutesStubServer:
     """
 
     def __init__(self) -> None:
-        self._routes: dict[int, RouteRule] = {}
+        self._routes: list[RouteRule] = []
         self._users: list[SipUserFixture] = []
         self._lock = threading.Lock()
         stub = self
@@ -178,20 +189,27 @@ class RoutesStubServer:
                         "version": 1,
                         "routes": [
                             {
-                                "id": f"pytest-{priority}",
-                                "match": {"dest_pattern": rule.uri, "source_cidr": []},
-                                "action": "route",
-                                "priority": priority,
-                                "targets": [{
-                                    "kind": "sip",
-                                    "address": rule.sip_address,
-                                    "port": rule.port,
-                                    "codec": rule.codec,
-                                    "timeout_ms": 1000,
-                                }],
+                                "id": rule.id,
+                                "match": {
+                                    "dest_pattern": rule.dest_pattern,
+                                    "source_cidr": list(rule.source_cidr),
+                                    "source_user": rule.source_user,
+                                },
+                                "action": rule.action,
+                                "priority": rule.priority,
+                                "targets": [
+                                    {
+                                        "kind": target.kind,
+                                        "address": target.address,
+                                        "port": target.port,
+                                        "codec": target.codec,
+                                        "timeout_ms": 1000,
+                                    }
+                                    for target in rule.targets
+                                ],
                                 "rewrite": {},
                             }
-                            for priority, rule in routes.items()
+                            for rule in routes
                         ],
                     },
                     "users_snapshot": {
@@ -268,9 +286,9 @@ class RoutesStubServer:
         host, port = self._server.server_address
         return f"ws://{host}:{port}/ws/engine"
 
-    def set_routes(self, routes: dict[int, RouteRule]) -> None:
+    def set_routes(self, routes: list[RouteRule]) -> None:
         with self._lock:
-            self._routes = dict(routes)
+            self._routes = list(routes)
 
     def set_users(self, users: list[SipUserFixture]) -> None:
         with self._lock:
@@ -356,8 +374,8 @@ def sip_port() -> int:
 
 
 @pytest.fixture(scope="session")
-def initial_routes() -> dict[int, RouteRule]:
-    return {}
+def initial_routes() -> list[RouteRule]:
+    return []
 
 
 @pytest.fixture(scope="session")
