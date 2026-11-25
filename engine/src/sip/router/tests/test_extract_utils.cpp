@@ -703,7 +703,7 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
     snapshot.routes.emplace_back(
         Protocols::SipRouteRule{
             .id = "catch-all",
-            .match = {.dest_pattern = "*", .source_cidr = {}, .source_user = std::nullopt},
+            .match = {.dest_pattern = "_.", .source_cidr = {}, .source_user = std::nullopt},
             .action = Protocols::SipRouteAction::kRoute,
             .priority = 1,
             .targets =
