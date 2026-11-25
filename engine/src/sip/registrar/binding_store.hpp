@@ -64,6 +64,14 @@ public:
         const std::string& aor,
         std::chrono::steady_clock::time_point now) const;
 
+    // The registered AOR whose live binding was observed from source_address,
+    // or nullopt if none matches. When several bindings match, returns the
+    // AOR with the most recently refreshed binding; an equal refresh time is
+    // broken by lexical AOR order so the result never depends on map order.
+    [[nodiscard]] std::optional<std::string> find_aor_by_source_address(
+        const std::string& source_address,
+        std::chrono::steady_clock::time_point now) const;
+
     // Drops every expired contact (and any AOR left with none). find_live()/
     // find_preferred() already filter expired contacts out on their own, so
     // this is only about not leaking memory for AORs nobody looks up again

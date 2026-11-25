@@ -105,6 +105,59 @@ def test_b2bua_call(sbc_engine, render_scenario, run_sipp_pair, scenario):
     _log.info("scenario '%s' passed", scenario.name)
 
 
+def test_b2bua_v2_policy_allows_call(sbc_engine, render_scenario, run_sipp_pair):
+    caller_xml = render_scenario("caller.xml.j2", scenario_name="v2_policy_allowed", holds_ms=[100])
+    callee_xml = render_scenario("callee.xml.j2", scenario_name="v2_policy_allowed")
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+def test_b2bua_v2_policy_rejects_source_cidr(sbc_engine, render_scenario, run_sipp_client):
+    caller_xml = render_scenario(
+        "caller.xml.j2", scenario_name="v2_policy_source_cidr_rejected", destination="blocked", expected_status=403
+    )
+
+    run_sipp_client(caller_xml)
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+def test_b2bua_v2_policy_selects_pattern_route(sbc_engine, render_scenario, run_sipp_pair):
+    caller_xml = render_scenario(
+        "caller.xml.j2", scenario_name="v2_policy_pattern_route", destination="123", holds_ms=[100]
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name="v2_policy_pattern_route")
+
+    run_sipp_pair(caller_xml, callee_xml)
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
+def test_b2bua_v2_policy_routes_to_registered_user(
+    sbc_engine, render_scenario, run_sipp_pair, run_sipp_register, registered_user, ports
+):
+    registration_xml = render_scenario(
+        "register.xml.j2",
+        scenario_name="v2_policy_registered_user_registration",
+        username=registered_user.username,
+        realm=registered_user.realm,
+        password=registered_user.password,
+        expires=90,
+        expected_status=200,
+    )
+    run_sipp_register(registration_xml)
+    caller_xml = render_scenario(
+        "caller.xml.j2", scenario_name="v2_policy_registered_user", destination="registered", holds_ms=[100]
+    )
+    callee_xml = render_scenario("callee.xml.j2", scenario_name="v2_policy_registered_user")
+
+    run_sipp_pair(caller_xml, callee_xml, callee_port=ports.register_port)
+
+    assert not sbc_engine.has_error_logs(), sbc_engine.log_tail()
+
+
 def test_b2bua_reinvite_same_sdp(sbc_engine, render_scenario, run_sipp_pair):
     """A mid-call re-INVITE carrying the same SDP is answered locally on that
     leg (200 OK) without being forwarded to the other leg."""

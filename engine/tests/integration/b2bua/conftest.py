@@ -13,7 +13,7 @@ from typing import Callable
 import pytest
 from jinja2 import Environment, FileSystemLoader
 
-from ..conftest import RouteRule, SipUserFixture
+from ..conftest import RouteRule, RouteTarget, SipUserFixture
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _BACKEND_TIMEOUT_S = 5
@@ -89,16 +89,25 @@ def sip_users(registered_user: SipUserFixture, other_registered_user: SipUserFix
 
 
 @pytest.fixture(scope="session")
-def initial_routes(ports: Ports) -> dict[int, RouteRule]:
-    # SIPp's [service] macro defaults to the literal "service", so this is
-    # the exact request-URI the caller scenario will send.
-    return {
-        2: RouteRule(
-            uri=f"sip:service@{ports.local_ip}:{ports.sbc_port}",
-            sip_address=ports.local_ip,
-            port=ports.callee_port,
+def initial_routes(ports: Ports, registered_user: SipUserFixture) -> list[RouteRule]:
+    callee = RouteTarget(kind="sip", address=ports.local_ip, port=ports.callee_port)
+    return [
+        RouteRule(id="allowed-service", dest_pattern="service", priority=20, targets=(callee,)),
+        RouteRule(
+            id="reject-local-source",
+            dest_pattern="blocked",
+            priority=10,
+            action="reject",
+            source_cidr=(f"{ports.local_ip}/32",),
         ),
-    }
+        RouteRule(id="pattern-service", dest_pattern="_12X", priority=20, targets=(callee,)),
+        RouteRule(
+            id="registered-alice",
+            dest_pattern="registered",
+            priority=20,
+            targets=(RouteTarget(kind="registered", address=f"{registered_user.username}@{registered_user.realm}"),),
+        ),
+    ]
 
 
 @pytest.fixture(scope="session")
@@ -197,7 +206,12 @@ def _communicate_sipp(
 @pytest.fixture
 def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., str | None]:
     def _run(
-        caller_scenario: Path, callee_scenario: Path, *, trace: bool = False, trace_callee_messages: bool = False
+        caller_scenario: Path,
+        callee_scenario: Path,
+        *,
+        callee_port: int | None = None,
+        trace: bool = False,
+        trace_callee_messages: bool = False,
     ) -> str | None:
         sbc_engine.log_start = len(sbc_engine.log_lines)
         callee_message_file = callee_scenario.with_suffix(".messages.log") if trace_callee_messages else None
@@ -206,7 +220,7 @@ def run_sipp_pair(sipp_binary: Path, sbc_engine, ports: Ports) -> Callable[..., 
             callee_scenario,
             None,
             ports.local_ip,
-            ports.callee_port,
+            ports.callee_port if callee_port is None else callee_port,
             ports.callee_media_port,
             callee_message_file,
             trace=trace,

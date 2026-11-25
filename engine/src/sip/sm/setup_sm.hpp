@@ -22,6 +22,7 @@ struct Done {};
 using SetupSelfFireQueue = Sml::back::process<
     Setup::RouteFound,
     Setup::RouteFailed,
+    Setup::RouteRejected,
     Setup::LoopDetected,
     Setup::CodecMismatch,
     Setup::ExchangeFinished,
@@ -39,12 +40,18 @@ struct SetupSm {
                 result(Setup::RouteFound{route.destination_, route.required_codec_});
                 break;
             case RouteResolution::Kind::kFailed: result(Setup::RouteFailed{}); break;
+            case RouteResolution::Kind::kRejected: result(Setup::RouteRejected{}); break;
             case RouteResolution::Kind::kLoop: result(Setup::LoopDetected{}); break;
             case RouteResolution::Kind::kCodecMismatch: result(Setup::CodecMismatch{}); break;
             }
         };
         const auto route_failed = [](Context& actions, SetupSelfFireQueue result) {
             actions.route_failed();
+            actions.terminate_call();
+            result(Setup::Cleanup{});
+        };
+        const auto route_rejected = [](Context& actions, SetupSelfFireQueue result) {
+            actions.route_rejected();
             actions.terminate_call();
             result(Setup::Cleanup{});
         };
@@ -108,6 +115,7 @@ struct SetupSm {
              // Routing state
              Sml::state<Setup::Routing>     + (Sml::event<Setup::RouteFound>    / start)          = Sml::state<Setup::Negotiating>,
              Sml::state<Setup::Routing>     + (Sml::event<Setup::RouteFailed>   / route_failed)   = Sml::state<Setup::Failed>,
+             Sml::state<Setup::Routing>     + (Sml::event<Setup::RouteRejected> / route_rejected) = Sml::state<Setup::Failed>,
              Sml::state<Setup::Routing>     + (Sml::event<Setup::LoopDetected>  / loop)           = Sml::state<Setup::Failed>,
              Sml::state<Setup::Routing>     + (Sml::event<Setup::CodecMismatch> / codec_mismatch) = Sml::state<Setup::Failed>,
 

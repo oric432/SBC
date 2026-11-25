@@ -43,16 +43,17 @@ TEST_CASE("parse_envelope parses a snapshot envelope") {
     const auto result = parse_envelope(R"({
         "type": "snapshot",
         "routes_snapshot": {
+            "schema_version": 2,
             "table_id": "main-routes",
             "version": 3,
-            "routes": {
-                "10": {
-                    "uri": "sip:alice@example.com",
-                    "sip_address": "192.168.1.10",
-                    "port": 5060,
-                    "codec": "PCMA"
-                }
-            }
+            "routes": [{
+                "id": "alice-route",
+                "match": {"dest_pattern": "sip:alice@example.com", "source_cidr": []},
+                "action": "route",
+                "priority": 10,
+                "targets": [{"kind": "sip", "address": "192.168.1.10", "port": 5060, "codec": "PCMA", "timeout_ms": 1000}],
+                "rewrite": {}
+            }]
         }
     })");
 
@@ -61,8 +62,8 @@ TEST_CASE("parse_envelope parses a snapshot envelope") {
     REQUIRE(result->routes_snapshot.has_value());
     CHECK(result->routes_snapshot->table_id == "main-routes");
     CHECK(result->routes_snapshot->version == 3);
-    REQUIRE(result->routes_snapshot->routes.contains(10));
-    CHECK(result->routes_snapshot->routes.at(10).uri == "sip:alice@example.com");
+    REQUIRE(result->routes_snapshot->routes.size() == 1);
+    CHECK(result->routes_snapshot->routes.front().match.dest_pattern == "sip:alice@example.com");
 }
 
 TEST_CASE("parse_envelope parses a seq field when present") {

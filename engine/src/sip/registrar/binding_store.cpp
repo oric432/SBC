@@ -74,6 +74,26 @@ std::optional<Binding> BindingStore::find_preferred(const std::string& aor, std:
     return live.front();
 }
 
+std::optional<std::string> BindingStore::find_aor_by_source_address(
+    const std::string& source_address,
+    std::chrono::steady_clock::time_point now) const {
+    const Binding* preferred_binding = nullptr;
+    const std::string* preferred_aor = nullptr;
+    for (const auto& [aor, contacts] : bindings_) {
+        for (const auto& [contact_uri, binding] : contacts) {
+            if (binding.source_address_ != source_address || binding.expires_at_ <= now) {
+                continue;
+            }
+            if (preferred_binding == nullptr || binding.refreshed_at_ > preferred_binding->refreshed_at_ ||
+                (binding.refreshed_at_ == preferred_binding->refreshed_at_ && aor < *preferred_aor)) {
+                preferred_binding = &binding;
+                preferred_aor = &aor;
+            }
+        }
+    }
+    return preferred_aor != nullptr ? std::optional<std::string>(*preferred_aor) : std::nullopt;
+}
+
 void BindingStore::sweep(std::chrono::steady_clock::time_point now) {
     for (auto aor_iter = bindings_.begin(); aor_iter != bindings_.end();) {
         auto& contacts = aor_iter->second;

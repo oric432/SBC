@@ -3,13 +3,13 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
+#include <iterator>
 #include <utility>
 #include <pjsip_ua.h>
 
 #include "sip/call/call_manager.hpp"
 #include "sip/call/call_session.hpp"
 #include "sip/registrar/binding_store.hpp"
-#include "sip/registrar/users_store.hpp"
 #include "sip/router/extract_utils.hpp"
 #include "sip/route_table/routes_store.hpp"
 #include "sip/stack/inv_session.hpp"
@@ -19,6 +19,15 @@
 namespace SbcEngine {
 namespace {
 constexpr int kMinFinalErrorCode = 300;
+
+std::string extract_source_address(const pjsip_rx_data* rdata) {
+    if (rdata == nullptr) {
+        return {};
+    }
+    const char* const source_end = std::ranges::find(rdata->pkt_info.src_name, '\0');
+    return {std::cbegin(rdata->pkt_info.src_name), source_end};
+}
+
 void finish_exchange(CallSession& session, ExchangeOutcome outcome) {
     if (outcome == ExchangeOutcome::kPending) {
         return;
@@ -39,41 +48,54 @@ RouteResolution SetupActions::resolve_route() {
     const PjContext* ctx = session_.ctx();
     const std::string& request_uri = session_.request_uri();
 
-    // Local domain (i.e. some enabled SIP user's realm) + a user we know:
-    // route to that user's current registration, or 480 if they're not
-    // bound right now. A local domain with an *unknown* user falls through
-    // to the static route table below -- e.g. a registered phone dialling
-    // the PSTN puts our own domain in its outbound Request-URI, since it
-    // sends everything to us. With no users provisioned there are no local
-    // domains at all, so this is inert and routing behaves exactly as it
-    // did before the registrar existed.
-    if (stores_.users_ != nullptr && stores_.bindings_ != nullptr) {
-        const std::string host = extract_uri_host(request_uri);
-        if (stores_.users_->is_local_domain(host)) {
-            const std::string user = extract_uri_user(request_uri);
-            if (stores_.users_->find(user, host)) {
-                const std::string aor = make_aor(user, host);
-                if (auto binding = stores_.bindings_->find_preferred(aor, std::chrono::steady_clock::now())) {
-                    Log::sip()->debug("[{}] routing {} to its current registration", session_.call_id(), aor);
-                    return {
-                        .kind_ = RouteResolution::Kind::kFound,
-                        .destination_ =
-                            std::format("sip:{}@{}:{}", user, binding->source_address_, binding->source_port_),
-                        .required_codec_ = std::nullopt};
-                }
-                Log::sip()->warn("[{}] {} is a known local user with no active registration", session_.call_id(), aor);
-                return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
-            }
-        }
+    const std::string source_address = extract_source_address(session_.current_rdata());
+    const auto source_aor =
+        stores_.bindings_ != nullptr
+            ? stores_.bindings_->find_aor_by_source_address(source_address, std::chrono::steady_clock::now())
+            : std::nullopt;
+    std::optional<std::string> source_user;
+    if (source_aor) {
+        source_user = extract_user_from_aor(source_aor.value());
+    }
+    const auto decision = stores_.routes_ != nullptr ? stores_.routes_->decide(
+                                                           RouteQuery{
+                                                               .destination_ = extract_uri_user(request_uri),
+                                                               .source_address_ = source_address,
+                                                               .source_user_ = source_user,
+                                                           })
+                                                     : RouteDecision{};
+    if (decision.kind_ == RouteDecision::Kind::kReject || !decision.rule_) {
+        Log::sip()->warn("[{}] route policy rejected {}", session_.call_id(), request_uri);
+        return {.kind_ = RouteResolution::Kind::kRejected, .destination_ = {}, .required_codec_ = {}};
     }
 
-    auto route = stores_.routes_ != nullptr ? stores_.routes_->find_route(request_uri) : std::nullopt;
-    if (!route) {
-        Log::sip()->warn("[{}] no route found for {}", session_.call_id(), request_uri);
+    const auto& route = *decision.rule_;
+
+    if (route.targets.empty()) {
+        Log::sip()->warn("[{}] route for {} has no target", session_.call_id(), request_uri);
         return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
     }
+    const auto& target = route.targets.front();
 
-    if (route->sip_address == ctx->config_.local_ip_ && std::cmp_equal(route->port, ctx->config_.sip_port_)) {
+    std::string target_address = target.address;
+    int target_port = target.port;
+    if (target.kind == Protocols::SipRouteTargetKind::kRegistered) {
+        const auto binding = stores_.bindings_ != nullptr
+                                 ? stores_.bindings_->find_preferred(target.address, std::chrono::steady_clock::now())
+                                 : std::nullopt;
+        if (!binding) {
+            Log::sip()->warn(
+                "[{}] registered route target {} has no active binding",
+                session_.call_id(),
+                target.address);
+            return {.kind_ = RouteResolution::Kind::kFailed, .destination_ = {}, .required_codec_ = {}};
+        }
+        target_address = binding->source_address_;
+        target_port = binding->source_port_;
+    }
+
+    if (target.kind == Protocols::SipRouteTargetKind::kSip && target_address == ctx->config_.local_ip_ &&
+        std::cmp_equal(target_port, ctx->config_.sip_port_)) {
         // The routing table points this request straight back at this
         // engine's own listening address. Max-Forwards decrementing alone is
         // a fallback net (it still bounds a loop that hops through other
@@ -84,14 +106,14 @@ RouteResolution SetupActions::resolve_route() {
             "[{}] route for {} points back at this SBC ({}:{}), loop detected",
             session_.call_id(),
             request_uri,
-            route->sip_address,
-            route->port);
+            target_address,
+            target_port);
         return {.kind_ = RouteResolution::Kind::kLoop, .destination_ = {}, .required_codec_ = {}};
     }
 
     std::optional<Protocols::SupportedCodec> required_codec;
-    if (route->codec) {
-        const auto* supported = Protocols::find_supported_codec_by_name(*route->codec);
+    if (target.codec) {
+        const auto* supported = Protocols::find_supported_codec_by_name(*target.codec);
         if (supported == nullptr) {
             // Configured with a codec name this build doesn't have compiled
             // in at all. Same strict semantics as "caller doesn't offer it"
@@ -102,7 +124,7 @@ RouteResolution SetupActions::resolve_route() {
                 "[{}] route for {} requires unrecognized codec '{}'",
                 session_.call_id(),
                 request_uri,
-                *route->codec);
+                *target.codec);
             return {.kind_ = RouteResolution::Kind::kCodecMismatch, .destination_ = {}, .required_codec_ = {}};
         }
         const pjmedia_sdp_session* caller_offer = Sdp::parse(session_.pool(), session_.caller_offer_sdp());
@@ -120,11 +142,10 @@ RouteResolution SetupActions::resolve_route() {
         required_codec = *supported;
     }
 
-    std::string user = extract_uri_user(route->uri);
-    const std::string dest = user.empty() ? std::format("sip:{}:{}", route->sip_address, route->port)
-                                          : std::format("sip:{}@{}:{}", user, route->sip_address, route->port);
-    Log::sip()
-        ->debug("Found route for request uri {}, route uri : {}:{}", request_uri, route->sip_address, route->port);
+    std::string user = extract_uri_user(request_uri);
+    const std::string dest = user.empty() ? std::format("sip:{}:{}", target_address, target_port)
+                                          : std::format("sip:{}@{}:{}", user, target_address, target_port);
+    Log::sip()->debug("Found route for request uri {}, route target: {}:{}", request_uri, target_address, target_port);
     return {.kind_ = RouteResolution::Kind::kFound, .destination_ = dest, .required_codec_ = required_codec};
 }
 
@@ -150,6 +171,10 @@ void SetupActions::route_failed() {
         Protocols::CallStatus::kNoRouteAvailable,
         std::format("no route available for {}", session_.request_uri()));
     Inv::answer(session_.inv_caller(), PJSIP_SC_TEMPORARILY_UNAVAILABLE);
+}
+void SetupActions::route_rejected() {
+    note_failure(Protocols::CallStatus::kFailed, std::format("route policy rejected {}", session_.request_uri()));
+    Inv::answer(session_.inv_caller(), PJSIP_SC_FORBIDDEN);
 }
 void SetupActions::routing_loop_detected() {
     note_failure(Protocols::CallStatus::kFailed, "routing loop detected");

@@ -122,12 +122,16 @@ void ControlPlaneClient::on_message(const std::string& raw) {
     }
     if (envelope.routes_snapshot) {
         const auto& snapshot = *envelope.routes_snapshot;
-        Log::app()->info(
-            "applied routing table '{}' version {} with {} routes",
-            snapshot.table_id,
-            snapshot.version,
-            snapshot.routes.size());
-        routes_store_->set_snapshot(snapshot);
+        if (auto result = routes_store_->set_snapshot(snapshot); result) {
+            Log::app()->info(
+                "applied routing table '{}' version {} with {} routes",
+                snapshot.table_id,
+                snapshot.version,
+                snapshot.routes.size());
+        }
+        else {
+            Log::app()->error("control-plane websocket rejected route snapshot: {}", result.error());
+        }
     }
     if (envelope.users_snapshot) {
         Log::app()->info("applied {} SIP user(s)", envelope.users_snapshot->users.size());

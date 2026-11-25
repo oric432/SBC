@@ -257,4 +257,12 @@ std::string make_aor(const std::string& user, const std::string& host) {
     return std::format("{}@{}", user, host);
 }
 
+std::string extract_user_from_aor(const std::string& aor) {
+    const std::size_t at_pos = aor.find('@');
+    if (at_pos == std::string::npos) {
+        return {};
+    }
+    return aor.substr(0, at_pos);
+}
+
 } // namespace SbcEngine

@@ -514,6 +514,184 @@ TEST_CASE("make_aor composes user@host", "[extract_utils]") {
     CHECK(make_aor("alice", "sbc.local") == "alice@sbc.local");
 }
 
+TEST_CASE("extract_user_from_aor extracts the user from a bare AOR", "[extract_utils]") {
+    CHECK(extract_user_from_aor("alice@sbc.local") == "alice");
+    CHECK(extract_user_from_aor("sbc.local").empty());
+    CHECK(extract_user_from_aor("@sbc.local").empty());
+}
+
+TEST_CASE("SetupActions matches a route source user from a registered AOR", "[setup_actions]") {
+    constexpr int kRoutePort = 5070;
+    constexpr char kSourceAddress[] = "198.51.100.25";
+    boost::asio::io_context ioc;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    RoutesStore routes;
+    Protocols::SipRouteSnapshot snapshot{.schema_version = 2, .table_id = "test", .version = 1, .routes = {}};
+    snapshot.routes.emplace_back(
+        Protocols::SipRouteRule{
+            .id = "alice-source",
+            .match = {.dest_pattern = "bob", .source_cidr = {}, .source_user = "alice"},
+            .action = Protocols::SipRouteAction::kRoute,
+            .priority = 1,
+            .targets = {Protocols::SipRouteTarget{
+                .kind = Protocols::SipRouteTargetKind::kSip,
+                .address = "203.0.113.10",
+                .port = kRoutePort,
+                .codec = std::nullopt,
+                .timeout_ms = 0,
+            }},
+        });
+    REQUIRE(routes.set_snapshot(std::move(snapshot)));
+    UsersStore users;
+    BindingStore bindings;
+    const auto now = std::chrono::steady_clock::now();
+    REQUIRE(
+        bindings.apply_contacts(
+            "alice@sbc.local",
+            {Binding{
+                .contact_uri_ = "sip:alice@192.0.2.25",
+                .source_address_ = kSourceAddress,
+                .source_port_ = 5060,
+                .transport_ = "udp",
+                .call_id_ = "register-1",
+                .cseq_ = 1,
+                .expires_at_ = now + std::chrono::minutes(1),
+                .refreshed_at_ = now,
+                .mirrored_at_ = {},
+            }}) == BindingStore::ApplyResult::kApplied);
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    std::memcpy(request.pkt_info.src_name, kSourceAddress, sizeof(kSourceAddress));
+    auto* session = manager.create_session(
+        "source-user-route",
+        &context,
+        EngineStores{.routes_ = &routes, .users_ = &users, .bindings_ = &bindings},
+        ioc.get_executor(),
+        &request);
+
+    const auto resolution = session->setup_actions().resolve_route();
+
+    CHECK(resolution.kind_ == RouteResolution::Kind::kFound);
+    CHECK(resolution.destination_ == "sip:bob@203.0.113.10:5070");
+    manager.schedule_remove("source-user-route");
+    manager.purge_scheduled();
+}
+
+TEST_CASE("SetupActions resolves a registered route target through its live binding", "[setup_actions]") {
+    constexpr int kRegisteredPort = 5070;
+    boost::asio::io_context ioc;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    RoutesStore routes;
+    Protocols::SipRouteSnapshot snapshot{.schema_version = 2, .table_id = "test", .version = 1, .routes = {}};
+    snapshot.routes.emplace_back(
+        Protocols::SipRouteRule{
+            .id = "registered-alice",
+            .match = {.dest_pattern = "bob", .source_cidr = {}, .source_user = std::nullopt},
+            .action = Protocols::SipRouteAction::kRoute,
+            .priority = 1,
+            .targets = {Protocols::SipRouteTarget{
+                .kind = Protocols::SipRouteTargetKind::kRegistered,
+                .address = "alice@sbc.local",
+                .codec = std::nullopt,
+                .timeout_ms = 0,
+            }},
+        });
+    REQUIRE(routes.set_snapshot(std::move(snapshot)));
+    UsersStore users;
+    BindingStore bindings;
+    const auto now = std::chrono::steady_clock::now();
+    REQUIRE(
+        bindings.apply_contacts(
+            "alice@sbc.local",
+            {Binding{
+                .contact_uri_ = "sip:alice@192.0.2.25",
+                .source_address_ = "198.51.100.25",
+                .source_port_ = kRegisteredPort,
+                .transport_ = "udp",
+                .call_id_ = "register-1",
+                .cseq_ = 1,
+                .expires_at_ = now + std::chrono::minutes(1),
+                .refreshed_at_ = now,
+                .mirrored_at_ = {},
+            }}) == BindingStore::ApplyResult::kApplied);
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* session = manager.create_session(
+        "registered-route",
+        &context,
+        EngineStores{.routes_ = &routes, .users_ = &users, .bindings_ = &bindings},
+        ioc.get_executor(),
+        &request);
+
+    const auto resolution = session->setup_actions().resolve_route();
+
+    CHECK(resolution.kind_ == RouteResolution::Kind::kFound);
+    CHECK(resolution.destination_ == "sip:bob@198.51.100.25:5070");
+    manager.schedule_remove("registered-route");
+    manager.purge_scheduled();
+}
+
+TEST_CASE("SetupActions fails registered route targets without a live binding", "[setup_actions]") {
+    boost::asio::io_context ioc;
+    PjContext context;
+    context.endpt_ = kPjEndpoint.get();
+    RoutesStore routes;
+    Protocols::SipRouteSnapshot snapshot{.schema_version = 2, .table_id = "test", .version = 1, .routes = {}};
+    snapshot.routes.emplace_back(
+        Protocols::SipRouteRule{
+            .id = "registered-alice",
+            .match = {.dest_pattern = "bob", .source_cidr = {}, .source_user = std::nullopt},
+            .action = Protocols::SipRouteAction::kRoute,
+            .priority = 1,
+            .targets = {Protocols::SipRouteTarget{
+                .kind = Protocols::SipRouteTargetKind::kRegistered,
+                .address = "alice@sbc.local",
+                .codec = std::nullopt,
+                .timeout_ms = 0,
+            }},
+        });
+    REQUIRE(routes.set_snapshot(std::move(snapshot)));
+    UsersStore users;
+    BindingStore bindings;
+    CallManager manager;
+    const ScopedPool pool;
+    auto request = parse_rdata(pool.get(), kInviteWithSdp);
+    auto* session = manager.create_session(
+        "expired-registered-route",
+        &context,
+        EngineStores{.routes_ = &routes, .users_ = &users, .bindings_ = &bindings},
+        ioc.get_executor(),
+        &request);
+
+    const auto missing_resolution = session->setup_actions().resolve_route();
+    CHECK(missing_resolution.kind_ == RouteResolution::Kind::kFailed);
+
+    const auto now = std::chrono::steady_clock::now();
+    REQUIRE(
+        bindings.apply_contacts(
+            "alice@sbc.local",
+            {Binding{
+                .contact_uri_ = "sip:alice@192.0.2.25",
+                .source_address_ = "198.51.100.25",
+                .source_port_ = 5070,
+                .transport_ = "udp",
+                .call_id_ = "register-1",
+                .cseq_ = 1,
+                .expires_at_ = now - std::chrono::seconds(1),
+                .refreshed_at_ = now - std::chrono::minutes(1),
+                .mirrored_at_ = {},
+            }}) == BindingStore::ApplyResult::kApplied);
+    const auto expired_resolution = session->setup_actions().resolve_route();
+
+    CHECK(expired_resolution.kind_ == RouteResolution::Kind::kFailed);
+    manager.schedule_remove("expired-registered-route");
+    manager.purge_scheduled();
+}
+
 TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][call_session]") {
     constexpr int kTestRoutePort = 5060;
     boost::asio::io_context ioc;
@@ -521,10 +699,25 @@ TEST_CASE("CallSession retires a rejected exchange after dispatch", "[setup_sm][
     context.endpt_ = kPjEndpoint.get();
     RoutesStore routes;
     Protocols::SipRouteSnapshot snapshot;
-    snapshot.routes.emplace(
-        1,
-        Protocols::SipRouteRule{.uri = "*", .sip_address = "192.0.2.1", .port = kTestRoutePort, .codec = std::nullopt});
-    routes.set_snapshot(std::move(snapshot));
+    snapshot.schema_version = 2;
+    snapshot.routes.emplace_back(
+        Protocols::SipRouteRule{
+            .id = "catch-all",
+            .match = {.dest_pattern = "_.", .source_cidr = {}, .source_user = std::nullopt},
+            .action = Protocols::SipRouteAction::kRoute,
+            .priority = 1,
+            .targets =
+                {
+                    Protocols::SipRouteTarget{
+                        .kind = Protocols::SipRouteTargetKind::kSip,
+                        .address = "192.0.2.1",
+                        .port = kTestRoutePort,
+                        .codec = std::nullopt,
+                        .timeout_ms = 0,
+                    },
+                },
+        });
+    REQUIRE(routes.set_snapshot(std::move(snapshot)));
     UsersStore users;
     BindingStore bindings;
     CallManager manager;

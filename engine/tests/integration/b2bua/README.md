@@ -50,6 +50,11 @@ Backend with `--live-backend-url` (default `http://127.0.0.1:3001`, matching
 `--live-engine` run was interrupted before cleanup ran, the next run deletes
 and recreates the leftover row rather than failing on the conflict.
 
+The owned-engine fixture's control-plane stub sends a schema-v2 snapshot.
+Its policy cases cover allowed, source-CIDR-rejected (`403`), dial-pattern,
+and registered-user routes; they share the same engine fixture and use
+separate dialed destinations so their state stays isolated.
+
 ## Adding a new scenario
 
 Scenario XML lives in `templates/*.xml.j2` (Jinja2), rendered per test case by

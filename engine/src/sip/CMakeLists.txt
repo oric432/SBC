@@ -22,6 +22,7 @@ add_library(sip STATIC
     registrar/registrar_actions.cpp
     sm/sm_runner.cpp
     sm/options_actions.cpp
+    route_table/dial_pattern.cpp
 )
 target_include_directories(sip PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(sip PUBLIC
@@ -53,6 +54,9 @@ if(BUILD_TESTS)
 
     # Enable template instantiations for test types in state machine implementations
     target_compile_definitions(sip_tests PRIVATE __INCLUDE_MOCK_ACTIONS__)
+    target_compile_definitions(sip_tests PRIVATE
+        SBC_RULE_MATCH_VECTORS_PATH=\"${CMAKE_SOURCE_DIR}/../schemas/b2bua/rule_match_vectors.json\"
+    )
 
     target_precompile_headers(sip_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/src/sip/pch.hpp
